@@ -122,7 +122,7 @@ impl<'a> State<'a>
         // self.renderer.draw(0, [[1.0, 0.0, 0.0, 0.0], [0.0, 1.75, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], [0.0, 0.0, 1.0, 1.0]);
         // self.renderer.draw(0, [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], [1.0, 0.0, 0.0, 1.0]);
         draw(&mut self.renderer);
-        self.renderer.upload_instances(&self.device);
+        self.renderer.upload_instances(&self.device, &self.queue);
         {
             self.renderer.begin_pass(&mut encoder, &view);
         }
