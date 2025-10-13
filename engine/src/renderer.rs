@@ -38,7 +38,7 @@ pub struct Renderer
 
 impl Renderer
 {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, window_size: (f32, f32)) -> Self
+    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32)) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
@@ -123,6 +123,9 @@ impl Renderer
 
         let meshes = vec![quad_mesh];
 
+        let default_texture = Texture::white(device, queue).unwrap();
+        let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
+
         Self 
         { 
             pipeline,
@@ -131,7 +134,7 @@ impl Renderer
             meshes,
             window_size,
             virtual_size: window_size,
-            textures: Vec::new(),
+            textures: vec![default_bindgroup],
             texture_bindgroup_layout
             // diffuse_bind_group
             // texture_bind_groups
