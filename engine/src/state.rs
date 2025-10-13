@@ -70,7 +70,7 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &config, (size.width as f32, size.height as f32));
+        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
         Self 
         {
