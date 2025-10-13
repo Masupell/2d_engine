@@ -200,60 +200,6 @@ impl Renderer
         }
     }
 
-
-//     pub fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-//     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-//         label: Some("Render Pass"),
-//         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-//             view,
-//             resolve_target: None,
-//             ops: wgpu::Operations {
-//                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-//                 store: true,
-//             },
-//         })],
-//         depth_stencil_attachment: None,
-//         occlusion_query_set: None,
-//         timestamp_writes: None,
-//     });
-
-//     render_pass.set_pipeline(&self.pipeline);
-
-//     if let Some(ref instance_buf) = self.instance_buf {
-//         render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-
-//         // Batch draw by mesh + material
-//         let mut batch_start = 0;
-//         while batch_start < self.draw_commands.len() {
-//             let first = &self.draw_commands[batch_start];
-//             let mesh = &self.meshes[first.mesh_id];
-
-//             render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
-//             render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
-
-//             // Determine batch of consecutive commands with same mesh & material
-//             let mut batch_end = batch_start + 1;
-//             while batch_end < self.draw_commands.len() {
-//                 let cmd = &self.draw_commands[batch_end];
-//                 if cmd.mesh_id != first.mesh_id || cmd.material.kind != first.material.kind {
-//                     break;
-//                 }
-//                 batch_end += 1;
-//             }
-
-//             // Set bind group once for the whole batch
-//             match &first.material.kind {
-//                 MaterialType::Color(_) => render_pass.set_bind_group(0, self.textures[0].as_ref(), &[]),
-//                 MaterialType::Texture(texture) => render_pass.set_bind_group(0, texture.as_ref(), &[]),
-//             }
-
-//             // Draw all instances in one call
-//             render_pass.draw_indexed(0..mesh.index_count, 0, batch_start as u32..batch_end as u32);
-
-//             batch_start = batch_end;
-//         }
-//     }
-// }
     pub fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
