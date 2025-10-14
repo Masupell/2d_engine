@@ -100,8 +100,8 @@ impl EngineEvent for App
 {
     fn setup(&mut self, loader: &mut dyn state::Loader) 
     {
-        let _ = loader.load_texture("engine/src/image/owl.jpg");
-        let _ = loader.load_texture("engine/src/image/cheetah.jpg");
+        let _ = loader.load_texture("src/image/owl.jpg");
+        let _ = loader.load_texture("src/image/cheetah.jpg");
         let _ = loader.load_texture("/home/marcel/Downloads/2055741.jpg");
         let _ = loader.load_texture("/home/marcel/Downloads/2797130.png");
     }
