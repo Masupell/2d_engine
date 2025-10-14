@@ -48,7 +48,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let mut loader = LoadingContext::new(&mut state.renderer, &mut state.device, &mut state.queue);
+    let mut loader = LoadingContext::new(&mut state.renderer, &mut state.device, &mut state.queue, &mut state.config);
     game.setup(&mut loader);
 
     let mut last_frame_time = std::time::Instant::now();

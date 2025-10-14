@@ -8,7 +8,7 @@ pub struct State<'a>
     surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     pub renderer: Renderer
@@ -70,8 +70,7 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let mut renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
-        renderer.add_pipeline(&device, &config);
+        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
         Self 
         {
@@ -153,6 +152,7 @@ pub trait Loader
     fn load_texture(&mut self, path: &str) -> usize;
     fn load_char(&mut self, char: char) -> Option<usize>;
     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
+    fn load_shader(&mut self, path: &str) -> usize; // Returns pipeline number
 }
 
 pub struct LoadingContext<'a> 
@@ -160,13 +160,14 @@ pub struct LoadingContext<'a>
     renderer: &'a mut Renderer,
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
+    config: &'a wgpu::SurfaceConfiguration
 }
 
 impl<'a> LoadingContext<'a>
 {
-    pub fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue,) -> Self
+    pub fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
     {
-        Self { renderer, device, queue }
+        Self { renderer, device, queue, config }
     }
 }
 
@@ -185,5 +186,10 @@ impl<'a> Loader for LoadingContext<'a>
     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
     {
         self.renderer.load_text(self.device, self.queue, text, size)
+    }
+    
+    fn load_shader(&mut self, path: &str) -> usize 
+    {
+        self.renderer.add_pipeline(self.device, self.config, path)
     }
 }

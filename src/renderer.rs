@@ -144,9 +144,9 @@ impl Renderer
         }
     }
 
-    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration)
+    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, path: &str) -> usize
     {
-        self.shader.new_fragment(device, "src/shaders/test.wgsl", "fs_main");
+        self.shader.new_fragment(device, path, "fs_main");
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -201,8 +201,9 @@ impl Renderer
             multiview: None,
             cache: None
         });
-
+        let id = self.pipelines.len();
         self.pipelines.push(pipeline);
+        id
     }
 
     pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
