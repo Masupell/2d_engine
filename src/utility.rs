@@ -148,6 +148,7 @@ pub struct Material
 {
     // pub shader: Arc<Shader>, // Will do it later
     // pub texture: Option<Arc<Texture>>
+    pub pipeline_id: u8, // 0 for base, 1 for the next and so on (not sure if this is the best way, but works for now I think)
     pub kind: MaterialType
 }
 
@@ -162,19 +163,21 @@ impl Material
 
     //     }   
     // }
-    pub fn color(color: [f32; 4]) -> Self
+    pub fn color(color: [f32; 4], id: u8) -> Self
     {
-        Material 
+        Material
         {
-            kind: MaterialType::Color(color)
+            kind: MaterialType::Color(color),
+            pipeline_id: id
         }
     }
 
-    pub fn texture(texture: Arc<wgpu::BindGroup>) -> Self
+    pub fn texture(texture: Arc<wgpu::BindGroup>, id: u8) -> Self
     {
         Material 
         { 
-            kind: MaterialType::Texture(texture)
+            kind: MaterialType::Texture(texture),
+            pipeline_id: id
         }
     }
 }

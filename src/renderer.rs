@@ -24,14 +24,16 @@ pub const QUAD_INDICES: &[u16] =
 
 pub struct Renderer
 {
-    pub pipeline: wgpu::RenderPipeline,
+    // pub pipeline: wgpu::RenderPipeline,
+    pub pipelines: Vec<wgpu::RenderPipeline>,
     pub draw_commands: Vec<DrawCommand>,
     instance_buf: Option<wgpu::Buffer>,
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
     textures: Vec<Arc<wgpu::BindGroup>>,
-    texture_bindgroup_layout: wgpu::BindGroupLayout
+    texture_bindgroup_layout: wgpu::BindGroupLayout,
+    shader: Shader
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
 }
@@ -60,14 +62,14 @@ impl Renderer
             layout: Some(&layout),
             vertex: wgpu::VertexState 
             {
-                module: &shader.module,
+                module: &shader.vertex_module,
                 entry_point: Some(&shader.vs_entry),
                 buffers: &[Vertex::desc(), InstanceData::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default()
             },
             fragment: Some(wgpu::FragmentState
             {
-                module: &shader.module,
+                module: &shader.fragment_module,
                 entry_point: Some(&shader.fs_entry),
                 targets: &[Some(wgpu::ColorTargetState
                 {
@@ -128,17 +130,79 @@ impl Renderer
 
         Self 
         { 
-            pipeline,
+            pipelines: vec![pipeline],
             draw_commands: Vec::new(),
             instance_buf: None,
             meshes,
             window_size,
             virtual_size: window_size,
             textures: vec![default_bindgroup],
-            texture_bindgroup_layout
+            texture_bindgroup_layout,
+            shader
             // diffuse_bind_group
             // texture_bind_groups
         }
+    }
+
+    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration)
+    {
+        self.shader.new_fragment(device, "src/shaders/test.wgsl", "fs_main");
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some("Pipeline Layout"),
+            bind_group_layouts: 
+            &[
+                &self.texture_bindgroup_layout
+            ],
+            push_constant_ranges: &[]
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some("Render Pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState 
+            {
+                module: &self.shader.vertex_module,
+                entry_point: Some(&self.shader.vs_entry),
+                buffers: &[Vertex::desc(), InstanceData::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            },
+            fragment: Some(wgpu::FragmentState
+            {
+                module: &self.shader.fragment_module,
+                entry_point: Some(&self.shader.fs_entry),
+                targets: &[Some(wgpu::ColorTargetState
+                {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            }),
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
+                unclipped_depth: false,
+                conservative: false
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false
+            },
+            multiview: None,
+            cache: None
+        });
+
+        self.pipelines.push(pipeline);
     }
 
     pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
@@ -226,23 +290,21 @@ impl Renderer
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&self.pipeline);
-        // render_pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-
-        // if let Some(ref instance_buf) = self.instance_buf
-        // {
-        //     let mesh = &self.meshes[]
-
-        //     render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-        //     render_pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
-        //     render_pass.draw_indexed(0..self.index_count, 0, 0..self.draw_commands.len() as u32);
-        // }
+        // render_pass.set_pipeline(&self.pipelines[0]);
 
         if let Some(ref instance_buf) = self.instance_buf
         {
             render_pass.set_vertex_buffer(1, instance_buf.slice(..));
+            let mut current_pipeline: Option<u8> = None;
+
             for (instance_id, cmd) in self.draw_commands.iter().enumerate()
             {
+                if Some(cmd.material.pipeline_id) != current_pipeline
+                {
+                    current_pipeline = Some(cmd.material.pipeline_id);
+                    render_pass.set_pipeline(&self.pipelines[cmd.material.pipeline_id as usize]);
+                }
+                
                 let mesh = &self.meshes[cmd.mesh_id];
 
                 render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
@@ -258,8 +320,7 @@ impl Renderer
                     }
                     MaterialType::Texture(texture) => 
                     {
-                        let test = texture.as_ref();
-                        render_pass.set_bind_group(0, test, &[]);
+                        render_pass.set_bind_group(0, texture.as_ref(), &[]);
                     }
                 }
 
@@ -269,15 +330,15 @@ impl Renderer
         }
     }
 
-    pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32)
+    pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Color(color), */z_index, material: Arc::new(Material::color(color)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Color(color), */z_index, material: Arc::new(Material::color(color, id)) });
     }
 
-    pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32)
+    pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
         let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, id)) });
     }
 
     pub fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -288,7 +349,9 @@ impl Renderer
             return;
         }
 
-        self.draw_commands.sort_by_key(|cmd| cmd.z_index);
+        // self.draw_commands.sort_by_key(|cmd| cmd.z_index);
+        self.draw_commands.sort_by_key(|cmd| (cmd.material.pipeline_id, cmd.z_index)); // Sorting by pipeline now first
+
 
         let instances: Vec<InstanceData> = self.draw_commands.iter().map(|cmd|
         {

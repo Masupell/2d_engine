@@ -70,7 +70,8 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
+        let mut renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
+        renderer.add_pipeline(&device, &config);
 
         Self 
         {
