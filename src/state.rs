@@ -11,7 +11,9 @@ pub struct State<'a>
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
-    pub renderer: Renderer
+    pub renderer: Renderer,
+    screen_texture: Texture,
+    bind_group: wgpu::BindGroup
 }
 
 impl<'a> State<'a> 
@@ -72,6 +74,9 @@ impl<'a> State<'a>
         let size = window.inner_size();
         let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
+        let screen_texture = Texture::screen_texture(&device, size.width as u32, size.height as u32);
+        let bind_group = screen_texture.bind_group(&device, &renderer.texture_bindgroup_layout);
+
         Self 
         {
             surface,
@@ -80,7 +85,9 @@ impl<'a> State<'a>
             config,
             size,
             window,
-            renderer
+            renderer,
+            screen_texture,
+            bind_group
         }
     }
 
@@ -111,8 +118,6 @@ impl<'a> State<'a>
     {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let screen_texture = Texture::screen_texture(&self.device, self.size.width, self.size.height);
-        let bind_group = screen_texture.bind_group(&self.device, &self.renderer.texture_bindgroup_layout);
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor 
         {
@@ -121,9 +126,9 @@ impl<'a> State<'a>
 
         draw(&mut self.renderer);
         self.renderer.upload_instances(&self.device, &self.queue);
-        self.renderer.begin_pass(&mut encoder, &screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
+        self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
         // self.renderer.begin_pass(&mut encoder, &view);
-        self.renderer.screen_texture(&mut encoder, &view, 2, &bind_group); // Manual here for now. remember to remove from here later
+        self.renderer.screen_texture(&mut encoder, &view, 2, &self.bind_group); // Manual here for now. remember to remove from here later
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
