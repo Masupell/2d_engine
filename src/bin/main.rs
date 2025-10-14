@@ -9,7 +9,8 @@ impl EngineEvent for App
     fn setup(&mut self, loader: &mut dyn state::Loader) 
     {
         loader.load_texture("src/image/owl.jpg");
-        loader.load_shader("src/shaders/test.wgsl");
+        loader.load_shader(Some("src/shaders/test.wgsl"), None);
+        loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
 
     fn update(&mut self, _input: &Input, _dt: f64) {}

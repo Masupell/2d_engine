@@ -61,4 +61,16 @@ impl Shader
         self.fragment_module = fragment;
         self.fs_entry = entry.to_string();
     }
+
+    pub fn new_vertex(&mut self, device: &wgpu::Device, path: &str, entry: &str)
+    {
+        let source = fs::read_to_string(path).unwrap();
+        let vertex = device.create_shader_module(wgpu::ShaderModuleDescriptor
+        {
+            label: Some("Vertex"),
+            source: wgpu::ShaderSource::Wgsl(source.into())
+        });
+        self.vertex_module = vertex;
+        self.vs_entry = entry.to_string();
+    }
 }

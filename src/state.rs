@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::renderer::Renderer;
+use crate::{renderer::Renderer, texture::Texture};
 
 pub struct State<'a> 
 {
@@ -111,21 +111,19 @@ impl<'a> State<'a>
     {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let screen_texture = Texture::screen_texture(&self.device, self.size.width, self.size.height);
+        let bind_group = screen_texture.bind_group(&self.device, &self.renderer.texture_bindgroup_layout);
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor 
         {
             label: Some("Render Encoder"),
         });
 
-
-        // self.renderer.draw(0, [[1.75, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], [0.0, 0.0, 1.0, 1.0]);
-        // self.renderer.draw(0, [[1.0, 0.0, 0.0, 0.0], [0.0, 1.75, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], [0.0, 0.0, 1.0, 1.0]);
-        // self.renderer.draw(0, [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], [1.0, 0.0, 0.0, 1.0]);
         draw(&mut self.renderer);
         self.renderer.upload_instances(&self.device, &self.queue);
-        {
-            self.renderer.begin_pass(&mut encoder, &view);
-        }
+        self.renderer.begin_pass(&mut encoder, &screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
+        // self.renderer.begin_pass(&mut encoder, &view);
+        self.renderer.screen_texture(&mut encoder, &view, 2, &bind_group); // Manual here for now. remember to remove from here later
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
@@ -152,7 +150,7 @@ pub trait Loader
     fn load_texture(&mut self, path: &str) -> usize;
     fn load_char(&mut self, char: char) -> Option<usize>;
     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
-    fn load_shader(&mut self, path: &str) -> usize; // Returns pipeline number
+    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
 }
 
 pub struct LoadingContext<'a> 
@@ -188,8 +186,8 @@ impl<'a> Loader for LoadingContext<'a>
         self.renderer.load_text(self.device, self.queue, text, size)
     }
     
-    fn load_shader(&mut self, path: &str) -> usize 
+    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize 
     {
-        self.renderer.add_pipeline(self.device, self.config, path)
+        self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
     }
 }

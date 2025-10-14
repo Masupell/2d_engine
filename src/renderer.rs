@@ -32,7 +32,7 @@ pub struct Renderer
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
     textures: Vec<Arc<wgpu::BindGroup>>,
-    texture_bindgroup_layout: wgpu::BindGroupLayout,
+    pub texture_bindgroup_layout: wgpu::BindGroupLayout,
     shader: Shader
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
@@ -144,9 +144,16 @@ impl Renderer
         }
     }
 
-    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, path: &str) -> usize
+    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
     {
-        self.shader.new_fragment(device, path, "fs_main");
+        if let Some(path) = fragment_path
+        {
+            self.shader.new_fragment(device, path, "fs_main");
+        }
+        if let Some(path) = vertex_path
+        {
+            self.shader.new_vertex(device, path, "vs_main");
+        }
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -329,6 +336,44 @@ impl Renderer
                 render_pass.draw_indexed(0..mesh.index_count, 0, instance_id as u32..instance_id as u32 + 1);
             }
         }
+    }
+
+    pub fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup) 
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
+        {
+            label: Some("Single Texture Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment 
+            {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations 
+                {
+                    load: wgpu::LoadOp::Clear(wgpu::Color 
+                    {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_pipeline(&self.pipelines[pipeline_id]); // Post Processing Shader, then just draws full-screen texture with it
+
+        let mesh = &self.meshes[0]; // Just a quad
+        render_pass.set_vertex_buffer(1, self.instance_buf.as_ref().unwrap().slice(..));
+        render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
+        render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+
+        render_pass.set_bind_group(0, texture, &[]);
+
+        render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
