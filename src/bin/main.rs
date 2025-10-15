@@ -6,23 +6,23 @@ struct App { x: f32, y: f32}
 
 impl EngineEvent for App 
 {
-    fn setup(&mut self, loader: &mut dyn state::Loader) 
+    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
     {
         loader.load_texture("src/image/owl.jpg");
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
 
-    fn update(&mut self, input: &Input, _dt: f64) 
+    fn update(&mut self, update_ctx: &mut UpdateContext)
     {
-        self.x = input.mouse_position().0 as f32;
-        self.y = input.mouse_position().1 as f32;
+        self.x = update_ctx.input.mouse_position().0 as f32;
+        self.y = update_ctx.input.mouse_position().1 as f32;
     }
 
-    fn render(&self, renderer: &mut Renderer) 
+    fn render(&self, render_ctx: &mut RenderContext)
     {
-        renderer.draw_texture(0, renderer.texture_matrix((renderer.virtual_size.0/2.0, renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
-        renderer.draw_texture(0, renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
     }
 }
 

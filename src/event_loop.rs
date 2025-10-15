@@ -1,12 +1,15 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{input::Input, renderer::Renderer, state::{Loader, LoadingContext, State}};
+use crate::{context::{self, Context, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent 
 {
-    fn setup(&mut self, loader: &mut dyn Loader);
-    fn update(&mut self, input: &Input, dt: f64);
-    fn render(&self, renderer: &mut Renderer);
+    // fn setup(&mut self, loader: &mut dyn Loader);
+    // fn update(&mut self, input: &Input, dt: f64);
+    // fn render(&self, renderer: &mut Renderer);
+    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader);
+    fn update(&mut self, update_ctx: &mut UpdateContext);
+    fn render(&self, render_ctx: &mut RenderContext);
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
@@ -48,8 +51,11 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let mut loader = LoadingContext::new(&mut state.renderer, &mut state.device, &mut state.queue, &mut state.config);
-    game.setup(&mut loader);
+    let mut ctx = Context::new((size.width, size.height), false, false);
+    {
+        let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
+        game.setup(&mut ctx, &mut loader);
+    }
 
     let mut last_frame_time = std::time::Instant::now();
     let mut fps_accumulator = 0.0;
@@ -88,14 +94,16 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let dt = (now - last_frame_time).as_secs_f64();
                             last_frame_time = now;
 
-                            game.update(&input, dt);
-                            // state.update();
+                            let mut update_ctx = UpdateContext::new(&input, &mut ctx, dt);
 
+                            game.update(&mut update_ctx);
 
                             match state.render(|renderer| 
                             {
-                                game.render(renderer);
-                            }) 
+                                let mut render_ctx = RenderContext::new(renderer, &mut ctx);
+                                // game.render(renderer);
+                                game.render(&mut render_ctx);
+                            })
                             {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state.resize(state.size),
@@ -103,7 +111,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 {
                                     log::error!("OutOfMemory");
                                     control_flow.exit();
-                                }
+                                }   
                                 Err(wgpu::SurfaceError::Timeout) => 
                                 {
                                     log::warn!("Surface timeout");
