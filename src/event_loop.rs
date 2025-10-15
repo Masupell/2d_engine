@@ -51,7 +51,8 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let assets = AssetManager::new(&state.device);
+    let mut assets = AssetManager::new(&state.device);
+    assets.load_default_texture(&state.device, &state.queue); // Have to handle result still
     let mut ctx = Context::new((size.width, size.height), false, false, assets);
     {
         let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);

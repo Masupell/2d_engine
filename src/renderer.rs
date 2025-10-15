@@ -125,9 +125,6 @@ impl Renderer
 
         let meshes = vec![quad_mesh];
 
-        let default_texture = Texture::white(device, queue).unwrap();
-        let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
-
         Self 
         { 
             pipelines: vec![pipeline],
@@ -136,7 +133,7 @@ impl Renderer
             meshes,
             window_size,
             virtual_size: window_size,
-            textures: vec![default_bindgroup],
+            textures: vec![],
             texture_bindgroup_layout,
             shader
             // diffuse_bind_group
@@ -211,65 +208,6 @@ impl Renderer
         let id = self.pipelines.len();
         self.pipelines.push(pipeline);
         id
-    }
-
-    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
-    {
-        let error = format!("Failed to load texture with path: {}", path);
-        let texture = Texture::new(device, queue, path).expect(&error);
-        let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-        let id = self.textures.len();
-        self.textures.push(bindgroup);
-        id
-    }
-
-    pub(crate) fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
-    {
-        if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
-        {
-            let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, Some("char")).expect("Failed to create Texture");
-            let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-            let id = self.textures.len();
-            self.textures.push(bindgroup);
-            Some(id)
-        }
-        else
-        {
-            None
-        }
-    }
-
-    pub(crate) fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
-    {
-        match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size) 
-        {
-            Ok(text) => 
-            {
-                // Test
-                let output = image::GrayImage::from_vec(text.1 as u32, text.2 as u32, text.0.to_vec());
-                match output 
-                {
-                    Some(image) =>
-                    {
-                        image.save("engine/src/image/text_texture.png").unwrap();
-                    }
-                    None => println!("Hello")
-                }
-                // output.save("engine/src/image/text_texture.png").unwrap();
-                //
-
-                let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, Some("text")).expect("Failed to create Texture");
-                let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-                let id = self.textures.len();
-                self.textures.push(bindgroup);
-                Some(id)
-            }
-            Err(e) => 
-            {
-                println!("Text Rasterizing Failed: {:?}", e);
-                None
-            }
-        }
     }
 
     pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
