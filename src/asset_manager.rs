@@ -50,7 +50,10 @@ impl AssetManager
         self.textures.get(&id).cloned()
     }
 
-    // pub fn get_bind_group(&self, id: u64) -> Option<Arc<
+    pub fn get_bind_group(&self, id: u64) -> Option<Arc<wgpu::BindGroup>> 
+    {
+        self.textures.get(&id).map(|t| Arc::clone(&t.bind_group))
+    }
 }
 
 fn hash_path(path: &str) -> u64 
