@@ -1,4 +1,4 @@
-use crate::{Input, Renderer};
+use crate::{asset_manager::AssetManager, Input, Renderer};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -6,18 +6,20 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     screen_size: (u32, u32),
     vsync: bool, // Maybe put those two, with other things into a seperate struct later
     fullscreen: bool,
+    pub assets: AssetManager,
     pub(crate) pending_actions: Vec<ContextAction>
 }
 
 impl Context
 {
-    pub(crate) fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool) -> Self
+    pub(crate) fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool, assets: AssetManager) -> Self
     {
         Self
         {
             screen_size,
             vsync,
             fullscreen,
+            assets,
             pending_actions: Vec::new()
         }
     }
