@@ -53,6 +53,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
 
     let mut ctx = Context::new((size.width, size.height), false, false, assets);
     game.setup(&mut ctx);
+    ctx.assets.process_loading(&state.device, &state.queue);
 
     let mut last_frame_time = std::time::Instant::now();
     let mut fps_accumulator = 0.0;
@@ -90,6 +91,8 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let now = std::time::Instant::now();
                             let dt = (now - last_frame_time).as_secs_f64();
                             last_frame_time = now;
+
+                            ctx.assets.process_loading(&state.device, &state.queue);
 
                             let mut update_ctx = UpdateContext::new(&input, &mut ctx, dt);
 

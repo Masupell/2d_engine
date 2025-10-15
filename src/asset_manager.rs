@@ -1,4 +1,5 @@
 use std::{collections::HashMap, hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
+use std::result::Result::Ok;
 use anyhow::*;
 
 use crate::{shader::Shader, texture::Texture, utility::{InstanceData, Vertex}};
@@ -9,7 +10,9 @@ pub struct AssetManager
     pub textures: TextureAssets,
     
     pub shader: Shader,
-    pub pipelines: PipelineAssets
+    pub pipelines: PipelineAssets,
+
+    load_queue: Vec<LoadRequest>
 }
 
 impl AssetManager
@@ -29,14 +32,59 @@ impl AssetManager
             textures,
 
             shader,
-            pipelines: PipelineAssets::new()
+            pipelines: PipelineAssets::new(),
+
+            load_queue: Vec::new()
         })
     }
 
-    pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<u64>
-    {
-        self.textures.load_texture(device, queue, path, &self.texture_bindgroup_layout)
+    pub fn load_texture<F>(&mut self, path: &str, callback: F)
+    where F: Fn(u64) + Send + 'static
+    {        
+        self.load_queue.push(LoadRequest
+        {
+            path: path.to_string(),
+            callback: Box::new(callback)
+        });
     }
+
+    // pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<u64>
+    // {
+    //     self.textures.load_texture(device, queue, path, &self.texture_bindgroup_layout)
+    // }
+
+
+    pub fn process_loading(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let mut completed = Vec::new();
+
+        for (i, request) in self.load_queue.iter().enumerate()
+        {
+            match self.textures.load_texture(device, queue, &request.path, &self.texture_bindgroup_layout)
+            {
+                Ok(id) => 
+                {
+                    (request.callback)(id);
+                    completed.push(i);
+                }
+                Err(e) =>
+                {
+                    eprintln!("Failed to load {}: {:?}", request.path, e);
+                }
+            }
+        }
+
+        for &i in completed.iter().rev() 
+        {
+            self.load_queue.swap_remove(i);
+        }
+    }
+}
+
+pub struct LoadRequest
+{
+    path: String,
+    callback: Box<dyn Fn(u64) + Send + 'static>
 }
 
 pub struct TextureAssets

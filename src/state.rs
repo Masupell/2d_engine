@@ -128,9 +128,9 @@ impl<'a> State<'a>
 
         draw(&mut self.renderer);
         self.renderer.upload_instances(&self.device, &self.queue);
-        self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
+        self.renderer.begin_pass(&mut encoder, &view/*self.screen_texture.view/&view*/); // Normal Render Pass -> outputs to Texture, not View
         // self.renderer.begin_pass(&mut encoder, &view);
-        self.renderer.screen_texture(&mut encoder, &view, 2, &self.screen_texture.bind_group); // Manual here for now. remember to remove from here later
+        // self.renderer.screen_texture(&mut encoder, &view, 2, &self.screen_texture.bind_group); // Manual here for now. remember to remove from here later
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

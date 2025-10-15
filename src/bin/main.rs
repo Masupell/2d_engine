@@ -1,18 +1,25 @@
-use engine::*;
+use std::sync::Arc;
+
+use engine::{texture::Texture, *};
 // use rand::Rng;
 
 
-struct App { x: f32, y: f32}
+struct App { texture: Option<Arc<Texture>>, x: f32, y: f32}
 
 impl EngineEvent for App 
 {
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
+    fn setup(&mut self, ctx: &mut Context)
     {
         ctx.toggle_vsync();
         ctx.toggle_fullscreen();
-        loader.load_texture("src/image/owl.jpg");
-        loader.load_shader(Some("src/shaders/test.wgsl"), None);
-        loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
+        ctx.assets.load_texture("src/image/owl.jpg", |id|
+        {
+            println!("Texture loaded! ID = {}", id);
+        });
+        // self.texture = ctx.assets.textures.get_texture(1);
+        // loader.load_texture("src/image/owl.jpg");
+        // loader.load_shader(Some("src/shaders/test.wgsl"), None);
+        // loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
@@ -28,12 +35,13 @@ impl EngineEvent for App
         
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
+        self.texture = update_ctx.context.assets.textures.get_texture(1);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), self.texture.clone().unwrap(), 0, 0);
+        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
     }
 }
 
@@ -41,7 +49,7 @@ impl App
 {
     fn new() -> Self 
     {
-        Self {x: 0.0, y: 0.0}
+        Self {texture: None, x: 0.0, y: 0.0}
     }
 }
 
