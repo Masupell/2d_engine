@@ -12,10 +12,10 @@ impl EngineEvent for App
     {
         ctx.toggle_vsync();
         ctx.toggle_fullscreen();
-        ctx.assets.load_texture("src/image/owl.jpg", |id|
-        {
-            println!("Texture loaded! ID = {}", id);
-        });
+        // ctx.assets.load_texture("src/image/owl.jpg", |id|
+        // {
+        //     println!("Texture loaded! ID = {}", id);
+        // });
         // self.texture = ctx.assets.textures.get_texture(1);
         // loader.load_texture("src/image/owl.jpg");
         // loader.load_shader(Some("src/shaders/test.wgsl"), None);
@@ -32,6 +32,13 @@ impl EngineEvent for App
         {
             update_ctx.context.toggle_vsync();
         }
+        if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyW)
+        {
+            update_ctx.context.assets.load_texture("src/image/owl.jpg", |id|
+            {
+                println!("Texture loaded! ID = {}", id);
+            });
+        }
         
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
@@ -40,7 +47,10 @@ impl EngineEvent for App
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), self.texture.clone().unwrap(), 0, 0);
+        if let Some(texture) = &self.texture
+        {
+            render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), texture.clone(), 0, 0);
+        }
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
     }
 }
