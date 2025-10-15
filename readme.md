@@ -77,3 +77,10 @@ Other things as well for now:
             })
         }
 - Should be all I need for now
+
+1. EngineContext + better Api
+2. AssetManager + Handle System
+3. Runtime Config
+4. Scene Handler (If I want to)
+5. Debug tools (Once I need them)
+6. Hot reloading (Not very important, makes it a lot faster to work with, but also can cause problems if not done correctly)
