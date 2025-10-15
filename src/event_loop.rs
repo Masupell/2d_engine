@@ -1,6 +1,6 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{asset_manager::AssetManager, context::{self, Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{asset_manager::AssetManager, context::{Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent 
 {
@@ -51,8 +51,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let mut assets = AssetManager::new(&state.device);
-    assets.load_default_texture(&state.device, &state.queue); // Have to handle result still
+    let assets = AssetManager::new(&state.device, &state.queue).unwrap(); //Proper error handling gonna come soon
     let mut ctx = Context::new((size.width, size.height), false, false, assets);
     {
         let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);

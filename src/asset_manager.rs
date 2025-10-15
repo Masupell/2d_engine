@@ -1,9 +1,27 @@
-use std::{collections::HashMap, error::Error, hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
+use std::{collections::HashMap, hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
 use anyhow::*;
 
 use crate::texture::Texture;
 
 pub struct AssetManager
+{
+    pub textures: TextureAssets
+}
+
+impl AssetManager
+{
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self>
+    {
+        let mut textures = TextureAssets::new(device);
+        textures.load_default_texture(device, queue)?;
+        Ok(Self
+        {
+            textures
+        })
+    }   
+}
+
+pub struct TextureAssets
 {
     pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
     textures: HashMap<u64, Arc<Texture>>, // Maybe store path later too, for hot reloading (but right now it is completely fine)
@@ -11,7 +29,7 @@ pub struct AssetManager
     next_id: u64
 }
 
-impl AssetManager
+impl TextureAssets
 {
     pub fn new(device: &wgpu::Device) -> Self
     {
