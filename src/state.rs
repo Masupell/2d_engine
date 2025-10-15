@@ -5,7 +5,7 @@ use crate::{renderer::Renderer, texture::Texture};
 
 pub struct State<'a> 
 {
-    surface: wgpu::Surface<'a>,
+    pub(crate) surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
@@ -136,5 +136,18 @@ impl<'a> State<'a>
         self.renderer.draw_commands.clear();
 
         Ok(())
+    }
+
+    pub fn set_fullscreen(&mut self, fullscreen: bool)
+    {
+        if fullscreen
+        {
+            let monitor = self.window().current_monitor();
+            self.window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(monitor)));
+        }
+        else 
+        {
+            self.window.set_fullscreen(None);
+        }
     }
 }

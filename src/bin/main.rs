@@ -15,6 +15,15 @@ impl EngineEvent for App
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
     {
+        if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::F11)
+        {
+            update_ctx.context.toggle_fullscreen();
+        }
+        if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyQ)
+        {
+            update_ctx.context.toggle_vsync();
+        }
+        
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
     }

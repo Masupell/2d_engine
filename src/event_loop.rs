@@ -1,6 +1,6 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{context::{self, Context, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{context::{self, Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent 
 {
@@ -97,6 +97,24 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let mut update_ctx = UpdateContext::new(&input, &mut ctx, dt);
 
                             game.update(&mut update_ctx);
+
+                            // Process things like fullscreen toggle, etc
+                            while let Some(action) = ctx.pending_actions.pop() 
+                            {
+                                match action 
+                                {
+                                    ContextAction::ToggleFullscreen(fullscreen) => 
+                                    {
+                                        state.set_fullscreen(fullscreen);
+                                    }
+                                    ContextAction::SetVSync(vsync) => 
+                                    {
+                                        let present_mode = if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync };
+                                        state.config.present_mode = present_mode;
+                                        state.surface.configure(&state.device, &state.config);
+                                    }
+                                }
+                            }
 
                             match state.render(|renderer| 
                             {

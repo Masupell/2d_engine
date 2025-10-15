@@ -6,6 +6,7 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     screen_size: (u32, u32),
     vsync: bool, // Maybe put those two, with other things into a seperate struct later
     fullscreen: bool,
+    pub pending_actions: Vec<ContextAction>
 }
 
 impl Context
@@ -16,31 +17,50 @@ impl Context
         {
             screen_size,
             vsync,
-            fullscreen
+            fullscreen,
+            pending_actions: Vec::new()
         }
     }
 
-    pub fn set_screen_size(&mut self, screen_size: (u32, u32)) // Should not be accessed by game, but also needs to be public because it needs to be accessed by renderloop
-    {
-        self.screen_size = screen_size;
-    }
+    // pub fn set_screen_size(&mut self, screen_size: (u32, u32)) // Should not be accessed by game, but also needs to be public because it needs to be accessed by renderloop
+    // {
+    //     self.screen_size = screen_size;
+    // }
 
     pub fn screen_size(&self) -> (u32, u32)
     {
         self.screen_size
     }
 
+    pub fn toggle_fullscreen(&mut self)
+    {
+        self.fullscreen = !self.fullscreen;
+        self.pending_actions.push(ContextAction::ToggleFullscreen(self.fullscreen));
+    }
+
     pub fn set_fullscreen(&mut self, fullscreen: bool)
     {
         self.fullscreen = fullscreen;
-        // Do the fullscreen stuff, need to loock how I am gonna do that
+        self.pending_actions.push(ContextAction::ToggleFullscreen(fullscreen));
+    }
+
+    pub fn toggle_vsync(&mut self)
+    {
+        self.vsync = !self.vsync;
+        self.pending_actions.push(ContextAction::SetVSync(self.vsync));
     }
 
     pub fn set_vsync(&mut self, vsync: bool)
     {
         self.vsync = vsync;
-        // Also do vsync stuff
+        self.pending_actions.push(ContextAction::SetVSync(vsync));
     }
+}
+
+pub enum ContextAction
+{
+    ToggleFullscreen(bool),
+    SetVSync(bool)
 }
 
 pub struct UpdateContext<'a>
