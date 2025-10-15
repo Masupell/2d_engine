@@ -74,7 +74,7 @@ impl<'a> State<'a>
 
         let assets = AssetManager::new(&device, &queue).unwrap(); //Proper error handling gonna come soon, moved it in here because the renderer needs the default texture
 
-        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32), assets.textures.get_bind_group(0).unwrap()); // Gotta check if this works, might not, especially because I probably did some stupid error here
+        let renderer = Renderer::new(&device, &config, (size.width as f32, size.height as f32), &assets.shader, assets.textures.get_bind_group(0).unwrap()); // Gotta check if this works, might not, especially because I probably did some stupid error here
 
         let screen_texture = Texture::screen_texture(&device, size.width as u32, size.height as u32, &assets.texture_bindgroup_layout);
 

@@ -1,12 +1,15 @@
 use std::{collections::HashMap, hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
 use anyhow::*;
 
-use crate::texture::Texture;
+use crate::{shader::Shader, texture::Texture, utility::{InstanceData, Vertex}};
 
 pub struct AssetManager
 {
     pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
-    pub textures: TextureAssets
+    pub textures: TextureAssets,
+    
+    pub shader: Shader,
+    pub pipelines: PipelineAssets
 }
 
 impl AssetManager
@@ -17,10 +20,16 @@ impl AssetManager
         
         let mut textures = TextureAssets::new();
         textures.load_default_texture(device, queue, &texture_bindgroup_layout)?;
+
+        let shader = Shader::default(device);
+
         Ok(Self
         {
             texture_bindgroup_layout,
-            textures
+            textures,
+
+            shader,
+            pipelines: PipelineAssets::new()
         })
     }
 
@@ -139,6 +148,117 @@ impl TextureAssets
         self.textures.get(&id).map(|t| Arc::clone(&t.bind_group))
     }
 }
+
+
+pub struct PipelineAssets
+{
+    pipelines: HashMap<u64, Arc<wgpu::RenderPipeline>>,
+    path_to_id: HashMap<u64, u64>,
+    next_id: u64
+}
+
+impl PipelineAssets
+{
+    pub fn new() -> Self
+    {
+        Self 
+        {
+            pipelines: HashMap::new(),
+            path_to_id: HashMap::new(),
+            next_id: 0,
+        }    
+    }
+
+    pub(crate) fn load_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, shader: &mut Shader, layout: &wgpu::BindGroupLayout) -> u64
+    {
+        let mut buff = String::new();
+
+        if let Some(path) = fragment_path
+        {
+            shader.new_fragment(device, path, "fs_main");
+            buff += path;
+        }
+        if let Some(path) = vertex_path
+        {
+            shader.new_vertex(device, path, "vs_main");
+            buff += path;
+        }
+        let hash = hash_path(&buff);
+
+        if let Some(&id) = self.path_to_id.get(&hash) 
+        {
+            return id;
+        }
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some("Pipeline Layout"),
+            bind_group_layouts: 
+            &[
+                layout
+            ],
+            push_constant_ranges: &[]
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some("Render Pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState 
+            {
+                module: &shader.vertex_module,
+                entry_point: Some(&shader.vs_entry),
+                buffers: &[Vertex::desc(), InstanceData::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            },
+            fragment: Some(wgpu::FragmentState
+            {
+                module: &shader.fragment_module,
+                entry_point: Some(&shader.fs_entry),
+                targets: &[Some(wgpu::ColorTargetState
+                {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            }),
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
+                unclipped_depth: false,
+                conservative: false
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false
+            },
+            multiview: None,
+            cache: None
+        });
+
+        let id = self.next_id;
+        self.next_id += 1;
+
+        self.pipelines.insert(id, Arc::new(pipeline));
+        self.path_to_id.insert(hash, id);
+
+        id
+    }
+
+    pub fn get_pipeline(&self, id: u64) -> Option<Arc<wgpu::RenderPipeline>>
+    {
+        self.pipelines.get(&id).cloned()
+    }
+}
+
 
 fn hash_path(path: &str) -> u64 
 {

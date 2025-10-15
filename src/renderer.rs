@@ -31,7 +31,6 @@ pub struct Renderer
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
-    shader: Shader,
     default_texture: Arc<wgpu::BindGroup>
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
@@ -39,11 +38,9 @@ pub struct Renderer
 
 impl Renderer
 {
-    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32), default_texture: Arc<wgpu::BindGroup>) -> Self
+    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, window_size: (f32, f32), shader: &Shader, default_texture: Arc<wgpu::BindGroup>) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
-
-        let shader = Shader::default(device);
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -132,80 +129,10 @@ impl Renderer
             meshes,
             window_size,
             virtual_size: window_size,
-            shader,
             default_texture
             // diffuse_bind_group
             // texture_bind_groups
         }
-    }
-
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
-    {
-        if let Some(path) = fragment_path
-        {
-            self.shader.new_fragment(device, path, "fs_main");
-        }
-        if let Some(path) = vertex_path
-        {
-            self.shader.new_vertex(device, path, "vs_main");
-        }
-
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
-        {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: 
-            &[
-                &self.texture_bindgroup_layout
-            ],
-            push_constant_ranges: &[]
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
-        {
-            label: Some("Render Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState 
-            {
-                module: &self.shader.vertex_module,
-                entry_point: Some(&self.shader.vs_entry),
-                buffers: &[Vertex::desc(), InstanceData::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState
-            {
-                module: &self.shader.fragment_module,
-                entry_point: Some(&self.shader.fs_entry),
-                targets: &[Some(wgpu::ColorTargetState
-                {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState
-            {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None,
-            cache: None
-        });
-        let id = self.pipelines.len();
-        self.pipelines.push(pipeline);
-        id
     }
 
     pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
