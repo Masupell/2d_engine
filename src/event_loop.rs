@@ -1,13 +1,13 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{asset_manager::AssetManager, context::{Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{asset_manager::AssetManager, context::{Context, ContextAction, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent 
 {
     // fn setup(&mut self, loader: &mut dyn Loader);
     // fn update(&mut self, input: &Input, dt: f64);
     // fn render(&self, renderer: &mut Renderer);
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader);
+    fn setup(&mut self, ctx: &mut Context);
     fn update(&mut self, update_ctx: &mut UpdateContext);
     fn render(&self, render_ctx: &mut RenderContext);
 }
@@ -46,17 +46,13 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
         let _ = window.request_inner_size(PhysicalSize::new(450, 400));
     }
 
-    let mut state = State::new(&window).await;
+    let (mut state, assets) = State::new(&window).await;
     let mut surface_configured = false;
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let assets = AssetManager::new(&state.device, &state.queue).unwrap(); //Proper error handling gonna come soon
     let mut ctx = Context::new((size.width, size.height), false, false, assets);
-    {
-        let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
-        game.setup(&mut ctx, &mut loader);
-    }
+    game.setup(&mut ctx);
 
     let mut last_frame_time = std::time::Instant::now();
     let mut fps_accumulator = 0.0;

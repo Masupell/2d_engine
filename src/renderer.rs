@@ -31,16 +31,15 @@ pub struct Renderer
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
-    textures: Vec<Arc<wgpu::BindGroup>>,
-    pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
-    shader: Shader
+    shader: Shader,
+    default_texture: Arc<wgpu::BindGroup>
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
 }
 
 impl Renderer
 {
-    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32)) -> Self
+    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32), default_texture: Arc<wgpu::BindGroup>) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
@@ -133,9 +132,8 @@ impl Renderer
             meshes,
             window_size,
             virtual_size: window_size,
-            textures: vec![],
-            texture_bindgroup_layout,
-            shader
+            shader,
+            default_texture
             // diffuse_bind_group
             // texture_bind_groups
         }
@@ -262,11 +260,12 @@ impl Renderer
                 {
                     MaterialType::Color(_) =>
                     {
-                        render_pass.set_bind_group(0, self.textures[0].as_ref(), &[]);
+                        render_pass.set_bind_group(0, self.default_texture.as_ref(), &[]);
                     }
                     MaterialType::Texture(texture) => 
                     {
-                        render_pass.set_bind_group(0, texture.as_ref(), &[]);
+                        // render_pass.set_bind_group(0, texture.as_ref(), &[]);
+                        render_pass.set_bind_group(0, texture.bind_group.as_ref(), &[]);
                     }
                 }
 
@@ -319,9 +318,8 @@ impl Renderer
         self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Color(color), */z_index, material: Arc::new(Material::color(color, id)) });
     }
 
-    pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
+    pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture: Arc<Texture>, z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
         self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, id)) });
     }
 

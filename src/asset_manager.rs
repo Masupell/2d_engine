@@ -5,25 +5,33 @@ use crate::texture::Texture;
 
 pub struct AssetManager
 {
+    pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
     pub textures: TextureAssets
 }
 
 impl AssetManager
 {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self>
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self>
     {
-        let mut textures = TextureAssets::new(device);
-        textures.load_default_texture(device, queue)?;
+        let texture_bindgroup_layout = Texture::bind_group_layout(device);
+        
+        let mut textures = TextureAssets::new();
+        textures.load_default_texture(device, queue, &texture_bindgroup_layout)?;
         Ok(Self
         {
+            texture_bindgroup_layout,
             textures
         })
-    }   
+    }
+
+    pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<u64>
+    {
+        self.textures.load_texture(device, queue, path, &self.texture_bindgroup_layout)
+    }
 }
 
 pub struct TextureAssets
 {
-    pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
     textures: HashMap<u64, Arc<Texture>>, // Maybe store path later too, for hot reloading (but right now it is completely fine)
     path_to_id: HashMap<u64, u64>,
     next_id: u64
@@ -31,23 +39,20 @@ pub struct TextureAssets
 
 impl TextureAssets
 {
-    pub fn new(device: &wgpu::Device) -> Self
-    {
-        let texture_bindgroup_layout = Texture::bind_group_layout(device);
-        
+    pub(crate) fn new() -> Self
+    {        
         Self
         {
-            texture_bindgroup_layout,
             textures: HashMap::new(),
             path_to_id: HashMap::new(),
             next_id: 0
         }
     }
 
-    pub(crate) fn load_default_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<u64>
+    pub(crate) fn load_default_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout) -> Result<u64>
     {
         let hash = hash_path("white_texture");
-        let default_texture = Texture::white(device, queue, &self.texture_bindgroup_layout)?;
+        let default_texture = Texture::white(device, queue, layout)?;
         let id = self.next_id;
         self.next_id += 1;
         self.textures.insert(id, Arc::new(default_texture));
@@ -55,7 +60,7 @@ impl TextureAssets
         Ok(id)
     }
 
-    pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<u64>
+    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, layout: &wgpu::BindGroupLayout) -> Result<u64>
     {
         let hash = hash_path(path);
 
@@ -64,7 +69,7 @@ impl TextureAssets
             return Ok(id);
         }
 
-        let texture = Texture::new(device, queue, path, &self.texture_bindgroup_layout)?;
+        let texture = Texture::new(device, queue, path, layout)?;
 
         let id = self.next_id;
         self.next_id += 1;

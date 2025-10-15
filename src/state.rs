@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::{renderer::Renderer, texture::Texture};
+use crate::{asset_manager::AssetManager, renderer::Renderer, texture::Texture};
 
 pub struct State<'a> 
 {
@@ -12,13 +12,12 @@ pub struct State<'a>
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     pub renderer: Renderer,
-    screen_texture: Texture,
-    bind_group: wgpu::BindGroup
+    screen_texture: Texture
 }
 
 impl<'a> State<'a> 
 {
-    pub async fn new(window: &'a Window) -> State<'a> 
+    pub async fn new(window: &'a Window) -> (State<'a>, AssetManager) 
     {
         let size = window.inner_size();
 
@@ -72,12 +71,14 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
-        let screen_texture = Texture::screen_texture(&device, size.width as u32, size.height as u32);
-        let bind_group = screen_texture.bind_group(&device, &renderer.texture_bindgroup_layout);
+        let assets = AssetManager::new(&device, &queue).unwrap(); //Proper error handling gonna come soon, moved it in here because the renderer needs the default texture
 
-        Self 
+        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32), assets.textures.get_bind_group(0).unwrap()); // Gotta check if this works, might not, especially because I probably did some stupid error here
+
+        let screen_texture = Texture::screen_texture(&device, size.width as u32, size.height as u32, &assets.texture_bindgroup_layout);
+
+        let state = Self 
         {
             surface,
             device,
@@ -86,9 +87,10 @@ impl<'a> State<'a>
             size,
             window,
             renderer,
-            screen_texture,
-            bind_group
-        }
+            screen_texture
+        };
+
+        (state, assets)
     }
 
     pub fn window(&self) -> &Window 
@@ -128,7 +130,7 @@ impl<'a> State<'a>
         self.renderer.upload_instances(&self.device, &self.queue);
         self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
         // self.renderer.begin_pass(&mut encoder, &view);
-        self.renderer.screen_texture(&mut encoder, &view, 2, &self.bind_group); // Manual here for now. remember to remove from here later
+        self.renderer.screen_texture(&mut encoder, &view, 2, &self.screen_texture.bind_group); // Manual here for now. remember to remove from here later
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

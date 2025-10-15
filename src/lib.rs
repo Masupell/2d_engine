@@ -10,6 +10,6 @@ pub mod context;
 pub mod asset_manager;
 
 pub use event_loop::{EngineEvent, game_loop};
-pub use context::{Context, UpdateContext, RenderContext, Loader};
+pub use context::{Context, UpdateContext, RenderContext};
 pub use renderer::Renderer;
 pub use input::Input;

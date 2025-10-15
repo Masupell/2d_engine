@@ -104,49 +104,49 @@ impl<'a> RenderContext<'a>
 }
 
 
-pub trait Loader // Will be replaced by Asset Manager in the Future, or rather, maybe this loader will stay, but will be implemented for it
-{
-    fn load_texture(&mut self, path: &str) -> usize;
-    fn load_char(&mut self, char: char) -> Option<usize>;
-    fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
-    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
-}
+// pub trait Loader // Will be replaced by Asset Manager in the Future, or rather, maybe this loader will stay, but will be implemented for it
+// {
+//     fn load_texture(&mut self, path: &str) -> usize;
+//     fn load_char(&mut self, char: char) -> Option<usize>;
+//     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
+//     fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
+// }
 
-pub struct LoadingContext<'a> 
-{
-    renderer: &'a mut Renderer,
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-    config: &'a wgpu::SurfaceConfiguration
-}
+// pub struct LoadingContext<'a> 
+// {
+//     renderer: &'a mut Renderer,
+//     device: &'a wgpu::Device,
+//     queue: &'a wgpu::Queue,
+//     config: &'a wgpu::SurfaceConfiguration
+// }
 
-impl<'a> LoadingContext<'a>
-{
-    pub(crate) fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
-    {
-        Self { renderer, device, queue, config }
-    }
-}
+// impl<'a> LoadingContext<'a>
+// {
+//     pub(crate) fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
+//     {
+//         Self { renderer, device, queue, config }
+//     }
+// }
 
-impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
-{
-    fn load_texture(&mut self, path: &str) -> usize 
-    {
-        self.renderer.load_texture(self.device, self.queue, path)
-    }
+// impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
+// {
+//     fn load_texture(&mut self, path: &str) -> usize 
+//     {
+//         self.renderer.load_texture(self.device, self.queue, path)
+//     }
 
-    fn load_char(&mut self, char: char) -> Option<usize>
-    {
-        self.renderer.load_char(self.device, self.queue, char)
-    }
+//     fn load_char(&mut self, char: char) -> Option<usize>
+//     {
+//         self.renderer.load_char(self.device, self.queue, char)
+//     }
 
-    fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
-    {
-        self.renderer.load_text(self.device, self.queue, text, size)
-    }
+//     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
+//     {
+//         self.renderer.load_text(self.device, self.queue, text, size)
+//     }
     
-    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize 
-    {
-        self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
-    }
-}
+//     fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize 
+//     {
+//         self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
+//     }
+// }

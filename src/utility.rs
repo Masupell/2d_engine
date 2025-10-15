@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::texture::Texture;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex
@@ -54,7 +56,8 @@ pub enum DrawType
 
 pub enum MaterialType
 {
-    Texture(Arc<wgpu::BindGroup>),
+    // Texture(Arc<wgpu::BindGroup>),
+    Texture(Arc<Texture>),
     Color([f32; 4])
 }
 
@@ -172,7 +175,7 @@ impl Material
         }
     }
 
-    pub fn texture(texture: Arc<wgpu::BindGroup>, id: u8) -> Self
+    pub fn texture(texture: Arc<Texture>, id: u8) -> Self
     {
         Material 
         { 
