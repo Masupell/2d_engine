@@ -8,6 +8,8 @@ impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
     {
+        ctx.toggle_vsync();
+        ctx.toggle_fullscreen();
         loader.load_texture("src/image/owl.jpg");
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));

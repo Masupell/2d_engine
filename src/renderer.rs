@@ -25,14 +25,14 @@ pub const QUAD_INDICES: &[u16] =
 pub struct Renderer
 {
     // pub pipeline: wgpu::RenderPipeline,
-    pub pipelines: Vec<wgpu::RenderPipeline>,
-    pub draw_commands: Vec<DrawCommand>,
+    pub(crate) pipelines: Vec<wgpu::RenderPipeline>,
+    pub(crate) draw_commands: Vec<DrawCommand>,
     instance_buf: Option<wgpu::Buffer>,
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
     textures: Vec<Arc<wgpu::BindGroup>>,
-    pub texture_bindgroup_layout: wgpu::BindGroupLayout,
+    pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
     shader: Shader
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
@@ -40,7 +40,7 @@ pub struct Renderer
 
 impl Renderer
 {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32)) -> Self
+    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32)) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
@@ -144,7 +144,7 @@ impl Renderer
         }
     }
 
-    pub fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
     {
         if let Some(path) = fragment_path
         {
@@ -213,7 +213,7 @@ impl Renderer
         id
     }
 
-    pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
+    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
     {
         let error = format!("Failed to load texture with path: {}", path);
         let texture = Texture::new(device, queue, path).expect(&error);
@@ -223,7 +223,7 @@ impl Renderer
         id
     }
 
-    pub fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
+    pub(crate) fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
     {
         if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
         {
@@ -239,7 +239,7 @@ impl Renderer
         }
     }
 
-    pub fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
+    pub(crate) fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
     {
         match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size) 
         {
@@ -272,7 +272,7 @@ impl Renderer
         }
     }
 
-    pub fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
+    pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
         {
@@ -338,7 +338,7 @@ impl Renderer
         }
     }
 
-    pub fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup) 
+    pub(crate) fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup) 
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
         {
@@ -387,7 +387,7 @@ impl Renderer
         self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, id)) });
     }
 
-    pub fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
+    pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
         if self.draw_commands.is_empty()
         {

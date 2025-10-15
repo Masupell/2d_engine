@@ -6,12 +6,12 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     screen_size: (u32, u32),
     vsync: bool, // Maybe put those two, with other things into a seperate struct later
     fullscreen: bool,
-    pub pending_actions: Vec<ContextAction>
+    pub(crate) pending_actions: Vec<ContextAction>
 }
 
 impl Context
 {
-    pub fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool) -> Self
+    pub(crate) fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool) -> Self
     {
         Self
         {
@@ -72,7 +72,7 @@ pub struct UpdateContext<'a>
 
 impl<'a> UpdateContext<'a>
 {
-    pub fn new(input: &'a Input, context: &'a mut Context, dt: f64) -> Self
+    pub(crate) fn new(input: &'a Input, context: &'a mut Context, dt: f64) -> Self
     {
         Self
         {
@@ -91,7 +91,7 @@ pub struct RenderContext<'a> // Seperate from UpdateContext because of borrowing
 
 impl<'a> RenderContext<'a>
 {
-    pub fn new(renderer: &'a mut Renderer, context: &'a mut Context) -> Self
+    pub(crate) fn new(renderer: &'a mut Renderer, context: &'a mut Context) -> Self
     {
         Self
         {
@@ -120,7 +120,7 @@ pub struct LoadingContext<'a>
 
 impl<'a> LoadingContext<'a>
 {
-    pub fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
+    pub(crate) fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
     {
         Self { renderer, device, queue, config }
     }
