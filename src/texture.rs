@@ -8,7 +8,7 @@ pub struct Texture
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub bind_group: Option<wgpu::BindGroup>
+    pub bind_group: Option<wgpu::BindGroup> // Does never actually store any bind)group here (it's always None), so should remove it
 }
 
 impl Texture
