@@ -4,6 +4,7 @@ use crate::texture::Texture;
 
 pub struct AssetManager
 {
+    pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
     textures: HashMap<u64, Arc<Texture>>,
     path_to_id: HashMap<u64, u64>,
     next_id: u64
@@ -11,10 +12,13 @@ pub struct AssetManager
 
 impl AssetManager
 {
-    pub fn new() -> Self
+    pub fn new(device: &wgpu::Device) -> Self
     {
+        let texture_bindgroup_layout = Texture::bind_group_layout(device);
+        
         Self
         {
+            texture_bindgroup_layout,
             textures: HashMap::new(),
             path_to_id: HashMap::new(),
             next_id: 0
@@ -30,7 +34,7 @@ impl AssetManager
             return id;
         }
 
-        let texture = Texture::new(device, queue, path).unwrap(); //No error Handling
+        let texture = Texture::new(device, queue, path, &self.texture_bindgroup_layout).unwrap(); //No error Handling
 
         let id = self.next_id;
         self.next_id += 1;
