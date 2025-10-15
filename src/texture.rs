@@ -1,38 +1,39 @@
+use std::sync::Arc;
+
 use image::GenericImageView;
 use anyhow::*;
+use wgpu::TextureView;
 
-
-// Right now, it is just used as a hlper, that returns things, but I need to change it, so that it does everything texture related
 pub struct Texture
 {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub bind_group: Option<wgpu::BindGroup> // Does never actually store any bind)group here (it's always None), so should remove it
+    pub bind_group: Arc<wgpu::BindGroup>
 }
 
 impl Texture
 {
-    pub fn white(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self>
+    pub fn white(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout) -> Result<Self>
     {
         let pixel: [u8; 4] = [255, 255, 255, 255];
         let img = image::DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(1, 1, pixel.to_vec()).unwrap());
-        Self::from_image(device, queue, &img, Some("White"))
+        Self::from_image(device, queue, &img, Some("White"), layout)
     }
     
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<Self>
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, path: &str, layout: &wgpu::BindGroupLayout) -> Result<Self>
     {
         let img = image::open(path)?;
-        Self::from_image(device, queue, &img, None)
+        Self::from_image(device, queue, &img, None, layout)
     }
     
-    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str) -> Result<Self>
+    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str, layout: &wgpu::BindGroupLayout) -> Result<Self>
     {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
+        Self::from_image(device, queue, &img, Some(label), layout)
     }
 
-    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self>
+    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, label: Option<&str>, layout: &wgpu::BindGroupLayout) -> Result<Self>
     {
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
@@ -87,11 +88,13 @@ impl Texture
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler, bind_group: None })
+        let bind_group = bind_group(device, layout, &view, &sampler);
+
+        Ok(Self { texture, view, sampler, bind_group: Arc::new(bind_group) })
     }
 
     // Right now pretty much almost the exact same code as from_image, but to lazy to combine into one right now
-    pub fn from_alpha_bitmap(device: &wgpu::Device, queue: &wgpu::Queue, bitmap: &[u8], width: usize, height: usize, label: Option<&str>) -> Result<Self>
+    pub fn from_alpha_bitmap(device: &wgpu::Device, queue: &wgpu::Queue, bitmap: &[u8], width: usize, height: usize, label: Option<&str>, layout: &wgpu::BindGroupLayout) -> Result<Self>
     {
         let mut rgba =  Vec::with_capacity(width * height * 4);
         for &alpha in bitmap 
@@ -149,11 +152,13 @@ impl Texture
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler, bind_group: None })
+        let bind_group = bind_group(device, layout, &view, &sampler);
+
+        Ok(Self { texture, view, sampler, bind_group: Arc::new(bind_group) })
     }
 
 
-    pub fn screen_texture(device: &wgpu::Device, width: u32, height: u32) -> Self
+    pub fn screen_texture(device: &wgpu::Device, width: u32, height: u32, layout: &wgpu::BindGroupLayout) -> Self
     {
         let size = wgpu::Extent3d
         {
@@ -186,7 +191,9 @@ impl Texture
             ..Default::default()
         });
 
-        Self { texture, view, sampler, bind_group: None }
+        let bind_group = bind_group(device, layout, &view, &sampler);
+
+        Self { texture, view, sampler, bind_group: Arc::new(bind_group) }
     }
 
 
@@ -221,29 +228,27 @@ impl Texture
         });
         texture_bindgroup_layout
     }
+}
 
-    // bind_group
-    pub fn bind_group(&self, device: &wgpu::Device, bindgroup_layout: &wgpu::BindGroupLayout) -> wgpu::BindGroup
+fn bind_group(device: &wgpu::Device, bindgroup_layout: &wgpu::BindGroupLayout, view: &TextureView, sampler: &wgpu::Sampler) -> wgpu::BindGroup
+{
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
     {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            label: Some("Diffuse Bind Group"),
-            layout: bindgroup_layout,
-            entries:
-            &[
-                wgpu::BindGroupEntry
-                {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.view),
-                },
-                wgpu::BindGroupEntry
-                {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                }
-            ]
-        });
-        // self.bind_group = Some(bind_group);
-        bind_group
-    }
+        label: Some("Diffuse Bind Group"),
+        layout: bindgroup_layout,
+        entries:
+        &[
+            wgpu::BindGroupEntry
+            {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry
+            {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            }
+        ]
+    });
+    bind_group
 }
