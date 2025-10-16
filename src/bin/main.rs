@@ -1,17 +1,15 @@
-use std::sync::Arc;
-
-use engine::{texture::Texture, *};
+use engine::{asset_manager::TextureHandle, *};
 // use rand::Rng;
 
 
-struct App { texture: Option<Arc<Texture>>, x: f32, y: f32}
+struct App { texture: TextureHandle, x: f32, y: f32}
 
 impl EngineEvent for App 
 {
     fn setup(&mut self, ctx: &mut Context)
     {
         ctx.toggle_vsync();
-        ctx.toggle_fullscreen();
+        // ctx.toggle_fullscreen();
         // ctx.assets.load_texture("src/image/owl.jpg", |id|
         // {
         //     println!("Texture loaded! ID = {}", id);
@@ -34,20 +32,20 @@ impl EngineEvent for App
         }
         if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyW)
         {
-            update_ctx.context.assets.load_texture("src/image/owl.jpg", |id|
+            self.texture = update_ctx.context.assets.request_texture("src/image/owl.jpg", |id|
             {
-                println!("Texture loaded! ID = {}", id);
+                println!("Texture loaded! ID = {}", id.0);
             });
         }
         
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
-        self.texture = update_ctx.context.assets.textures.get_texture(1);
+        // self.texture = update_ctx.context.assets.textures.get_texture(1);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        if let Some(texture) = &self.texture
+        if let Some(texture) = render_ctx.context.assets.textures.get_texture(&self.texture)
         {
             render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), texture.clone(), 0, 0);
         }
@@ -59,7 +57,7 @@ impl App
 {
     fn new() -> Self 
     {
-        Self {texture: None, x: 0.0, y: 0.0}
+        Self {texture: TextureHandle::default(), x: 0.0, y: 0.0}
     }
 }
 

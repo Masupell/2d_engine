@@ -4,6 +4,22 @@ use anyhow::*;
 
 use crate::{shader::Shader, texture::Texture, utility::{InstanceData, Vertex}};
 
+pub struct TextureHandle(pub u64);
+
+impl TextureHandle
+{
+    pub fn default() -> Self
+    {
+        Self(0)
+    }
+}
+
+pub enum TextureState
+{
+    Loaded(Arc<Texture>),
+    Loading
+}
+
 pub struct AssetManager
 {
     pub(crate) texture_bindgroup_layout:  wgpu::BindGroupLayout,
@@ -38,20 +54,17 @@ impl AssetManager
         })
     }
 
-    pub fn load_texture<F>(&mut self, path: &str, callback: F)
-    where F: Fn(u64) + Send + 'static
-    {        
-        self.load_queue.push(LoadRequest
-        {
-            path: path.to_string(),
-            callback: Box::new(callback)
-        });
+    pub fn request_texture<F>(&mut self, path: &str, callback: F) -> TextureHandle
+    where F: Fn(TextureHandle) + Send + 'static
+    {
+        // self.load_queue.push(LoadRequest
+        // {
+        //     path: path.to_string(),
+        //     callback: Box::new(callback)
+        // });
+        let id = self.textures.request_texture(path, callback, &mut self.load_queue);
+        TextureHandle(id)
     }
-
-    // pub fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<u64>
-    // {
-    //     self.textures.load_texture(device, queue, path, &self.texture_bindgroup_layout)
-    // }
 
 
     pub fn process_loading(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -60,18 +73,31 @@ impl AssetManager
 
         for (i, request) in self.load_queue.iter().enumerate()
         {
-            match self.textures.load_texture(device, queue, &request.path, &self.texture_bindgroup_layout)
+            match Texture::new(device, queue, &request.path, &self.texture_bindgroup_layout)
             {
-                Ok(id) => 
+                Ok(texture) => 
                 {
-                    (request.callback)(id);
+                    let arc_texture = Arc::new(texture);
+                    let id = self.textures.path_to_id[&hash_path(&request.path)];
+                    self.textures.finalize_load(id, arc_texture);
+                    (request.callback)(TextureHandle(id));
                     completed.push(i);
-                }
-                Err(e) =>
-                {
-                    eprintln!("Failed to load {}: {:?}", request.path, e);
-                }
+                },
+                Err(e) => eprintln!("Failed to load {}: {:?}", request.path, e),
             }
+
+            // match self.textures.load_texture(device, queue, &request.path, &self.texture_bindgroup_layout)
+            // {
+            //     Ok(id) => 
+            //     {
+            //         (request.callback)(id);
+            //         completed.push(i);
+            //     }
+            //     Err(e) =>
+            //     {
+            //         eprintln!("Failed to load {}: {:?}", request.path, e);
+            //     }
+            // }
         }
 
         for &i in completed.iter().rev() 
@@ -84,12 +110,12 @@ impl AssetManager
 pub struct LoadRequest
 {
     path: String,
-    callback: Box<dyn Fn(u64) + Send + 'static>
+    callback: Box<dyn Fn(TextureHandle) + Send + 'static>
 }
 
 pub struct TextureAssets
 {
-    textures: HashMap<u64, Arc<Texture>>, // Maybe store path later too, for hot reloading (but right now it is completely fine)
+    textures: HashMap<u64, TextureState>, // Maybe store path later too, for hot reloading (but right now it is completely fine)
     path_to_id: HashMap<u64, u64>,
     next_id: u64
 }
@@ -109,33 +135,76 @@ impl TextureAssets
     pub(crate) fn load_default_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout) -> Result<u64>
     {
         let hash = hash_path("white_texture");
-        let default_texture = Texture::white(device, queue, layout)?;
+        let default_texture = Arc::new(Texture::white(device, queue, layout)?);
         let id = self.next_id;
         self.next_id += 1;
-        self.textures.insert(id, Arc::new(default_texture));
+        self.textures.insert(id, TextureState::Loaded(default_texture));
         self.path_to_id.insert(hash, id);
         Ok(id)
     }
 
-    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, layout: &wgpu::BindGroupLayout) -> Result<u64>
+    pub(crate) fn request_texture<F>(&mut self, path: &str, callback: F, load_queue: &mut Vec<LoadRequest>) -> u64
+    where F: Fn(TextureHandle) + Send + 'static
     {
         let hash = hash_path(path);
 
         if let Some(&id) = self.path_to_id.get(&hash)
         {
-            return Ok(id);
+            if let TextureState::Loaded(_) = self.textures[&id]
+            {
+                callback(TextureHandle(id))
+            }
+            return id;
         }
-
-        let texture = Texture::new(device, queue, path, layout)?;
 
         let id = self.next_id;
         self.next_id += 1;
 
-        self.textures.insert(id, Arc::new(texture));
+        self.textures.insert(id, TextureState::Loading);
         self.path_to_id.insert(hash, id);
 
-        Ok(id)
+        load_queue.push(LoadRequest
+        {
+            path: path.to_string(),
+            callback: Box::new(callback)
+        });
+
+        id
     }
+
+    pub fn finalize_load(&mut self, id: u64, texture: Arc<Texture>)
+    {
+        self.textures.insert(id, TextureState::Loaded(texture));
+    }
+
+    pub fn get_texture(&self, handle: &TextureHandle) -> Option<Arc<Texture>>
+    {
+        match self.textures.get(&handle.0)?
+        {
+            TextureState::Loaded(texture) => Some(Arc::clone(texture)),
+            TextureState::Loading => None,
+        }
+    }
+
+    // pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, layout: &wgpu::BindGroupLayout) -> Result<u64>
+    // {
+    //     let hash = hash_path(path);
+
+    //     if let Some(&id) = self.path_to_id.get(&hash)
+    //     {
+    //         return Ok(id);
+    //     }
+
+    //     let texture = Texture::new(device, queue, path, layout)?;
+
+    //     let id = self.next_id;
+    //     self.next_id += 1;
+
+    //     self.textures.insert(id, Arc::new(texture));
+    //     self.path_to_id.insert(hash, id);
+
+    //     Ok(id)
+    // }
 
     // Both those functions, I need to rewrite to fit better, so right now no text for me anymore :(
     // pub fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
@@ -186,14 +255,23 @@ impl TextureAssets
     //     }
     // }
 
-    pub fn get_texture(&self, id: u64) -> Option<Arc<Texture>>
-    {
-        self.textures.get(&id).cloned()
-    }
+    // pub fn get_ref(&self, id: u64) -> Option<&Texture> 
+    // {
+    //     self.textures.get(&id).map(|arc| arc.as_ref())
+    // }
 
-    pub fn get_bind_group(&self, id: u64) -> Option<Arc<wgpu::BindGroup>> 
+    // pub fn get_bind_group(&self, id: u64) -> Option<Arc<wgpu::BindGroup>> 
+    // {
+    //     self.textures.get(&id).map(|t| Arc::clone(&t.bind_group))
+    // }
+
+    pub fn get_bind_group(&self, handle: TextureHandle) -> Option<Arc<wgpu::BindGroup>> 
     {
-        self.textures.get(&id).map(|t| Arc::clone(&t.bind_group))
+        match &self.textures[&handle.0] 
+        {
+            TextureState::Loaded(texture) => Some(Arc::clone(&texture.bind_group)),
+            TextureState::Loading => None
+        }
     }
 }
 
