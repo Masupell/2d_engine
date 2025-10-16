@@ -10,7 +10,7 @@ impl TextureHandle
 {
     pub fn default() -> Self
     {
-        Self(u64::MAX)
+        Self(0)
     }
 }
 
@@ -177,12 +177,19 @@ impl TextureAssets
         self.textures.insert(id, TextureState::Loaded(texture));
     }
 
-    pub fn get_texture(&self, handle: &TextureHandle) -> Option<Arc<Texture>>
+    pub fn get_texture(&self, handle: &TextureHandle) -> Arc<Texture>
     {
-        match self.textures.get(&handle.0)?
+        match self.textures.get(&handle.0)
         {
-            TextureState::Loaded(texture) => Some(Arc::clone(texture)),
-            TextureState::Loading => None,
+            Some(TextureState::Loaded(texture)) => Arc::clone(texture),
+            Some(TextureState::Loading) | None => 
+            {
+                match self.textures.get(&0) 
+                {
+                    Some(TextureState::Loaded(default_texture)) => Arc::clone(default_texture),
+                    _ => panic!("Default texture is missing!"),
+                }
+            }
         }
     }
 

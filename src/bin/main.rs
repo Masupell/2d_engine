@@ -45,8 +45,9 @@ impl EngineEvent for App
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        if let Some(texture) = render_ctx.context.assets.textures.get_texture(&self.texture)
+        // if let Some(texture) = render_ctx.context.assets.textures.get_texture(&self.texture)
         {
+            let texture = render_ctx.context.assets.textures.get_texture(&self.texture);
             render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), texture.clone(), 0, 0);
         }
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
