@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
+use std::{collections::HashMap, hash::{DefaultHasher, Hash, Hasher}, sync::Arc, u64};
 use std::result::Result::Ok;
 use anyhow::*;
 
@@ -10,7 +10,7 @@ impl TextureHandle
 {
     pub fn default() -> Self
     {
-        Self(0)
+        Self(u64::MAX)
     }
 }
 
