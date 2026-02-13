@@ -1,8 +1,23 @@
 use engine::*;
 // use rand::Rng;
 
+type ActionFn = fn(&mut App, &mut UpdateContext);
+
+const ACTION_TABLE: [ActionFn; 1] = 
+[
+    App::toggle_fullscreen,
+    // + Rest, but fine for now
+];
 
 struct App { x: f32, y: f32}
+
+impl App
+{
+    fn toggle_fullscreen(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.context.toggle_fullscreen();
+    }
+}
 
 impl EngineEvent for App 
 {
@@ -17,17 +32,22 @@ impl EngineEvent for App
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
     {
-        if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::F11)
-        {
-            update_ctx.context.toggle_fullscreen();
-        }
-        if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyQ)
-        {
-            update_ctx.context.toggle_vsync();
-        }
+        // if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::F11)
+        // {
+        //     update_ctx.context.toggle_fullscreen();
+        // }
+        // if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyQ)
+        // {
+        //     update_ctx.context.toggle_vsync();
+        // }
         
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
+
+        for action in update_ctx.input.actions()
+        {
+            ACTION_TABLE[*action as usize](self, update_ctx);
+        }
     }
 
     fn render(&self, render_ctx: &mut RenderContext)

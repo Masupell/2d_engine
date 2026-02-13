@@ -13,3 +13,5 @@ pub use event_loop::{EngineEvent, game_loop};
 pub use context::{Context, UpdateContext, RenderContext, Loader};
 pub use renderer::Renderer;
 pub use input::Input;
+
+pub use winit::keyboard::KeyCode as Key; // Temporary here

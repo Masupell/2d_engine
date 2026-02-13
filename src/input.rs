@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use winit::{event::{ElementState, KeyEvent, MouseButton, WindowEvent}, keyboard::{KeyCode, PhysicalKey}};
 
@@ -10,13 +10,27 @@ pub struct Input
     prev_mouse_pressed: HashSet<MouseButton>,
     mouse_position: Option<(f64, f64)>,
     window_size: (f64, f64),
-    virtual_size: (f64, f64)
+    virtual_size: (f64, f64),
+    actions: Vec<Action>,
+    key_bindings: HashMap<KeyCode, Action>,
+    mouse_bindings: HashMap<MouseButton, MouseBinding>
 }
 
 impl Input
 {
     pub(crate) fn new(window_size: (f64, f64)) -> Self
     {
+        let mut key_bindings = HashMap::new();
+        key_bindings.insert(KeyCode::F11, Action::ToggleFullScreen);
+        // key_bindings.insert(KeyCode::KeyQ, Action::ToggleVSync);
+        key_bindings.insert(KeyCode::KeyA, Action::MoveLeft);
+        key_bindings.insert(KeyCode::KeyD, Action::MoveRight);
+        key_bindings.insert(KeyCode::Escape, Action::Esc);
+
+        let mut mouse_bindings = HashMap::new();
+        mouse_bindings.insert(MouseButton::Left, MouseBinding { pressed: Some(Action::MouseLeftPressed), released: Some(Action::MouseLeftReleased), hold: Some(Action::MouseLeftHold)});
+
+        
         Self
         {
             keys_pressed: HashSet::new(),
@@ -25,7 +39,10 @@ impl Input
             prev_mouse_pressed: HashSet::new(),
             mouse_position: None,
             window_size,
-            virtual_size: window_size
+            virtual_size: window_size,
+            actions: Vec::new(),
+            key_bindings,
+            mouse_bindings
         }
     }
 
@@ -71,6 +88,7 @@ impl Input
 
     pub(crate) fn prev_update(&mut self)
     {
+        self.generate_actions();
         self.prev_keys_pressed = self.keys_pressed.clone();
         self.prev_mouse_pressed = self.mouse_pressed.clone();
     }
@@ -78,26 +96,6 @@ impl Input
     pub(crate) fn update_screen(&mut self, size: (f64, f64))
     {
         self.window_size = size;
-    }
-
-    pub fn is_key_hold(&self, key: KeyCode) -> bool
-    {
-        self.keys_pressed.contains(&key)
-    }
-
-    pub fn is_key_pressed(&self, key: KeyCode) -> bool
-    {
-        self.keys_pressed.contains(&key) && !self.prev_keys_pressed.contains(&key)
-    }
-
-    pub fn is_mouse_hold(&self, button: MouseButton) -> bool
-    {
-        self.mouse_pressed.contains(&button)
-    }
-
-    pub fn is_mouse_pressed(&self, button: MouseButton) -> bool
-    {
-        self.mouse_pressed.contains(&button) && !self.prev_mouse_pressed.contains(&button)
     }
 
     pub fn actual_mouse_position(&self) -> (f64, f64)
@@ -117,4 +115,80 @@ impl Input
         }
         return (0.0, 0.0);
     }
+
+    pub fn generate_actions(&mut self)
+    {
+        self.actions.clear();
+
+        for key in &self.keys_pressed
+        {
+            if !self.prev_keys_pressed.contains(key)
+            {
+                if let Some(action) = self.key_bindings.get(key)
+                {
+                    self.actions.push(*action);
+                }
+            }
+        }
+
+        for button in &self.mouse_pressed
+        {
+            if let Some(binding) = self.mouse_bindings.get(button)
+            {
+                if !self.prev_mouse_pressed.contains(button)
+                {
+                    if let Some(action) = binding.pressed
+                    {
+                        self.actions.push(action);
+                    }
+                }
+
+                if let Some(action) = binding.hold
+                {
+                    self.actions.push(action);
+                }
+            }
+        }
+
+        for button in &self.prev_mouse_pressed
+        {
+            if !self.mouse_pressed.contains(button)
+            {
+                if let Some(binding) = self.mouse_bindings.get(button)
+                {
+                    if let Some(action) = binding.released
+                    {
+                        self.actions.push(action);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn actions(&self) -> &[Action]
+    {
+        &self.actions
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Action
+{
+    ToggleFullScreen,
+    // ToggleVSync,
+    MoveLeft,
+    MoveRight,
+    Esc,
+    // Mouse
+    MouseLeftPressed,
+    MouseLeftReleased,
+    MouseLeftHold
+}
+impl Action { pub const COUNT: usize = 8; }
+
+struct MouseBinding
+{
+    pressed: Option<Action>,
+    released: Option<Action>,
+    hold: Option<Action>
 }
