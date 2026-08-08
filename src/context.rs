@@ -65,14 +65,14 @@ pub enum ContextAction
 
 pub struct UpdateContext<'a>
 {
-    pub input: &'a Input,
+    pub input: &'a mut Input,
     pub dt: f64,
     pub context: &'a mut Context // For the general stuff
 }
 
 impl<'a> UpdateContext<'a>
 {
-    pub(crate) fn new(input: &'a Input, context: &'a mut Context, dt: f64) -> Self
+    pub(crate) fn new(input: &'a mut Input, context: &'a mut Context, dt: f64) -> Self
     {
         Self
         {
@@ -110,7 +110,7 @@ pub trait Loader // Will be replaced by Asset Manager in the Future, or rather, 
     fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
 }
 
-pub struct LoadingContext<'a> 
+pub struct LoadingContext<'a>
 {
     renderer: &'a mut Renderer,
     device: &'a wgpu::Device,
@@ -128,7 +128,7 @@ impl<'a> LoadingContext<'a>
 
 impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
 {
-    fn load_texture(&mut self, path: &str) -> usize 
+    fn load_texture(&mut self, path: &str) -> usize
     {
         self.renderer.load_texture(self.device, self.queue, path)
     }
@@ -142,8 +142,8 @@ impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
     {
         self.renderer.load_text(self.device, self.queue, text, size)
     }
-    
-    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize 
+
+    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
     {
         self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
     }

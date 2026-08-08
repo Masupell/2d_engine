@@ -3,16 +3,22 @@ use engine::*;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 
-const ACTION_TABLE: [ActionFn; 5] =
+const ACTION_TABLE: [ActionFn; 6] =
 [
     App::toggle_fullscreen,
     App::escape,
     App::mouse_left_pressed,
     App::mouse_left_released,
     App::mouse_left_hold,
+    App::print
 ];
 
-struct App { x: f32, y: f32}
+struct App
+{
+    x: f32,
+    y: f32,
+    button: no_if::button::Button
+}
 
 impl App
 {
@@ -40,6 +46,11 @@ impl App
     {
 
     }
+
+    fn print(&mut self, _ctx: &mut UpdateContext)
+    {
+        println!("Button Click detected")
+    }
 }
 
 impl EngineEvent for App
@@ -47,8 +58,8 @@ impl EngineEvent for App
     fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
     {
         ctx.toggle_vsync();
-        ctx.toggle_fullscreen();
-        loader.load_texture("src/image/owl.jpg");
+        // loader.load_texture("src/image/owl.jpg");
+        loader.load_texture("src/image/Player.png");
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
@@ -58,16 +69,21 @@ impl EngineEvent for App
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
 
-        for action in update_ctx.input.actions()
+        self.button.update(update_ctx.input);
+
+        let actions = update_ctx.input.actions().to_vec();
+        for action in actions
         {
-            ACTION_TABLE[*action as usize](self, update_ctx);
+            ACTION_TABLE[action as usize](self, update_ctx);
         }
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
+        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
+        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
+
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((0.0, 0.0), (200.0, 200.0), 0.0), 1, 0, 0);
     }
 }
 
@@ -75,7 +91,12 @@ impl App
 {
     fn new() -> Self
     {
-        Self {x: 0.0, y: 0.0}
+        Self
+        {
+            x: 0.0,
+            y: 0.0,
+            button: Button::new(Rect::new(0.0, 0.0, 200.0, 200.0), input::Action::Print)
+        }
     }
 }
 

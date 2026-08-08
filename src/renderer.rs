@@ -49,7 +49,7 @@ impl Renderer
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: 
+            bind_group_layouts:
             &[
                 &texture_bindgroup_layout
             ],
@@ -60,7 +60,7 @@ impl Renderer
         {
             label: Some("Render Pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState 
+            vertex: wgpu::VertexState
             {
                 module: &shader.vertex_module,
                 entry_point: Some(&shader.vs_entry),
@@ -100,14 +100,14 @@ impl Renderer
             cache: None
         });
 
-        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor 
+        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(QUAD_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor 
+        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(QUAD_INDICES),
@@ -128,8 +128,8 @@ impl Renderer
         let default_texture = Texture::white(device, queue).unwrap();
         let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
 
-        Self 
-        { 
+        Self
+        {
             pipelines: vec![pipeline],
             draw_commands: Vec::new(),
             instance_buf: None,
@@ -158,7 +158,7 @@ impl Renderer
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Pipeline Layout"),
-            bind_group_layouts: 
+            bind_group_layouts:
             &[
                 &self.texture_bindgroup_layout
             ],
@@ -169,7 +169,7 @@ impl Renderer
         {
             label: Some("Render Pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState 
+            vertex: wgpu::VertexState
             {
                 module: &self.shader.vertex_module,
                 entry_point: Some(&self.shader.vs_entry),
@@ -241,13 +241,13 @@ impl Renderer
 
     pub(crate) fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
     {
-        match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size) 
+        match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size)
         {
-            Ok(text) => 
+            Ok(text) =>
             {
                 // Test
                 let output = image::GrayImage::from_vec(text.1 as u32, text.2 as u32, text.0.to_vec());
-                match output 
+                match output
                 {
                     Some(image) =>
                     {
@@ -264,7 +264,7 @@ impl Renderer
                 self.textures.push(bindgroup);
                 Some(id)
             }
-            Err(e) => 
+            Err(e) =>
             {
                 println!("Text Rasterizing Failed: {:?}", e);
                 None
@@ -274,16 +274,16 @@ impl Renderer
 
     pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
     {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment 
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment
             {
                 view: &view,
                 resolve_target: None,
-                ops: wgpu::Operations 
+                ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(wgpu::Color 
+                    load: wgpu::LoadOp::Clear(wgpu::Color
                     {
                         r: 0.0,
                         g: 0.0,
@@ -312,7 +312,7 @@ impl Renderer
                     current_pipeline = Some(cmd.material.pipeline_id);
                     render_pass.set_pipeline(&self.pipelines[cmd.material.pipeline_id as usize]);
                 }
-                
+
                 let mesh = &self.meshes[cmd.mesh_id];
 
                 render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
@@ -320,13 +320,13 @@ impl Renderer
 
 
                 // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-                match &cmd.material.kind 
+                match &cmd.material.kind
                 {
                     MaterialType::Color(_) =>
                     {
                         render_pass.set_bind_group(0, self.textures[0].as_ref(), &[]);
                     }
-                    MaterialType::Texture(texture) => 
+                    MaterialType::Texture(texture) =>
                     {
                         render_pass.set_bind_group(0, texture.as_ref(), &[]);
                     }
@@ -338,18 +338,18 @@ impl Renderer
         }
     }
 
-    pub(crate) fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup) 
+    pub(crate) fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup)
     {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor 
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: Some("Single Texture Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment 
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment
             {
                 view,
                 resolve_target: None,
-                ops: wgpu::Operations 
+                ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(wgpu::Color 
+                    load: wgpu::LoadOp::Clear(wgpu::Color
                     {
                         r: 0.0,
                         g: 0.0,
@@ -423,7 +423,7 @@ impl Renderer
         {
             queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
         }
-        else 
+        else
         {
             self.instance_buf = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor
             {
@@ -444,9 +444,9 @@ impl Renderer
         let sin = rotation.sin();
 
         [
-            [scale*cos*size.0, sin*size.0, 0.0, 0.0], 
+            [scale*cos*size.0, sin*size.0, 0.0, 0.0],
             [scale*-sin*size.1, cos*size.1, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0], 
+            [0.0, 0.0, 1.0, 0.0],
             [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
         ]
     }
@@ -464,9 +464,9 @@ impl Renderer
         let pixel_size = ((size.0/self.window_size.1)*2.0, (size.1/self.window_size.1)*2.0);
 
         [
-            [scale*cos*pixel_size.0, sin*pixel_size.0, 0.0, 0.0], 
+            [scale*cos*pixel_size.0, sin*pixel_size.0, 0.0, 0.0],
             [scale*-sin*pixel_size.1, cos*pixel_size.1, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0], 
+            [0.0, 0.0, 1.0, 0.0],
             [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
         ]
     }
@@ -486,9 +486,9 @@ impl Renderer
         let scale_y = (size.1/self.virtual_size.1)*2.0;
 
         [
-            [scale*cos*scale_x, sin*scale_x, 0.0, 0.0], 
+            [scale*cos*scale_x, sin*scale_x, 0.0, 0.0],
             [scale*-sin*scale_y, cos*scale_y, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0], 
+            [0.0, 0.0, 1.0, 0.0],
             [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
         ]
     }
@@ -506,9 +506,9 @@ impl Renderer
         let scale_y = (texture_size.1/self.virtual_size.1)*2.0 * scale.1;
 
         [
-            [scale_fix*cos*scale_x, sin*scale_x, 0.0, 0.0], 
+            [scale_fix*cos*scale_x, sin*scale_x, 0.0, 0.0],
             [scale_fix*-sin*scale_y, cos*scale_y, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0], 
+            [0.0, 0.0, 1.0, 0.0],
             [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
         ]
     }

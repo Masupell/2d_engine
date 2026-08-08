@@ -165,13 +165,18 @@ impl Input
         }
     }
 
+    pub(crate) fn add_action(&mut self, action: Action)
+    {
+        self.actions.push(action);
+    }
+
     pub fn actions(&self) -> &[Action]
     {
         &self.actions
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Action
 {
     ToggleFullScreen,
@@ -182,9 +187,10 @@ pub enum Action
     // Mouse
     MouseLeftPressed,
     MouseLeftReleased,
-    MouseLeftHold
+    MouseLeftHold,
+    Print // Test
 }
-impl Action { pub const COUNT: usize = 7; }
+impl Action { pub const COUNT: usize = 6; }
 
 struct MouseBinding
 {

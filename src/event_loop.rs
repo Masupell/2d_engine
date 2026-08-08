@@ -2,7 +2,7 @@ use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBui
 
 use crate::{context::{self, Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
 
-pub trait EngineEvent 
+pub trait EngineEvent
 {
     // fn setup(&mut self, loader: &mut dyn Loader);
     // fn update(&mut self, input: &Input, dt: f64);
@@ -15,13 +15,13 @@ pub trait EngineEvent
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size: (i32, i32))
 {
-    cfg_if::cfg_if! 
+    cfg_if::cfg_if!
     {
-        if #[cfg(target_arch = "wasm32")] 
+        if #[cfg(target_arch = "wasm32")]
         {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
             console_log::init_with_level(log::Level::Info).expect("Couldn't initialize logger");
-        } else 
+        } else
         {
             env_logger::init();
         }
@@ -35,7 +35,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
         use winit::dpi::PhysicalSize;
 
         use winit::platform::web::WindowExtWebSys;
-        web_sys::window().and_then(|win| win.document()).and_then(|doc| 
+        web_sys::window().and_then(|win| win.document()).and_then(|doc|
         {
             let dst = doc.get_element_by_id("wasm-example")?;
             let canvas = web_sys::Element::from(window.canvas()?);
@@ -60,33 +60,33 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let mut last_frame_time = std::time::Instant::now();
     let mut fps_accumulator = 0.0;
     let mut fps_counter = 0;
-    event_loop.run(move |event, control_flow| 
+    event_loop.run(move |event, control_flow|
     {
-        match event 
+        match event
         {
-            Event::WindowEvent 
+            Event::WindowEvent
             {
                 ref event,
                 window_id,
-            } 
-            if window_id == state.window().id() => 
+            }
+            if window_id == state.window().id() =>
             {
                 input.update_inputs(&event);
-                if !state.input(event) 
+                if !state.input(event)
                 {
-                    match event 
+                    match event
                     {
                         WindowEvent::CloseRequested => control_flow.exit(),
-                        WindowEvent::Resized(physical_size) => 
+                        WindowEvent::Resized(physical_size) =>
                         {
                             log::info!("physical_size: {physical_size:?}");
                             surface_configured = true;
                             state.resize(*physical_size);
                             input.update_screen((physical_size.width as f64, physical_size.height as f64));
                         }
-                        WindowEvent::RedrawRequested => 
+                        WindowEvent::RedrawRequested =>
                         {
-                            if !surface_configured 
+                            if !surface_configured
                             {
                                 return;
                             }
@@ -94,20 +94,20 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let dt = (now - last_frame_time).as_secs_f64();
                             last_frame_time = now;
 
-                            let mut update_ctx = UpdateContext::new(&input, &mut ctx, dt);
+                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
 
                             game.update(&mut update_ctx);
 
                             // Process things like fullscreen toggle, etc
-                            while let Some(action) = ctx.pending_actions.pop() 
+                            while let Some(action) = ctx.pending_actions.pop()
                             {
-                                match action 
+                                match action
                                 {
-                                    ContextAction::ToggleFullscreen(fullscreen) => 
+                                    ContextAction::ToggleFullscreen(fullscreen) =>
                                     {
                                         state.set_fullscreen(fullscreen);
                                     }
-                                    ContextAction::SetVSync(vsync) => 
+                                    ContextAction::SetVSync(vsync) =>
                                     {
                                         let present_mode = if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync };
                                         state.config.present_mode = present_mode;
@@ -116,7 +116,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 }
                             }
 
-                            match state.render(|renderer| 
+                            match state.render(|renderer|
                             {
                                 let mut render_ctx = RenderContext::new(renderer, &mut ctx);
                                 // game.render(renderer);
@@ -125,12 +125,12 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state.resize(state.size),
-                                Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) => 
+                                Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) =>
                                 {
                                     log::error!("OutOfMemory");
                                     control_flow.exit();
-                                }   
-                                Err(wgpu::SurfaceError::Timeout) => 
+                                }
+                                Err(wgpu::SurfaceError::Timeout) =>
                                 {
                                     log::warn!("Surface timeout");
                                 }
