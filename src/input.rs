@@ -23,14 +23,14 @@ impl Input
         let mut key_bindings = HashMap::new();
         key_bindings.insert(KeyCode::F11, Action::ToggleFullScreen);
         // key_bindings.insert(KeyCode::KeyQ, Action::ToggleVSync);
-        key_bindings.insert(KeyCode::KeyA, Action::MoveLeft);
-        key_bindings.insert(KeyCode::KeyD, Action::MoveRight);
+        // key_bindings.insert(KeyCode::KeyA, Action::MoveLeft);
+        // key_bindings.insert(KeyCode::KeyD, Action::MoveRight);
         key_bindings.insert(KeyCode::Escape, Action::Esc);
 
         let mut mouse_bindings = HashMap::new();
         mouse_bindings.insert(MouseButton::Left, MouseBinding { pressed: Some(Action::MouseLeftPressed), released: Some(Action::MouseLeftReleased), hold: Some(Action::MouseLeftHold)});
 
-        
+
         Self
         {
             keys_pressed: HashSet::new(),
@@ -48,8 +48,8 @@ impl Input
 
     pub(crate) fn update_inputs(&mut self, event: &WindowEvent)
     {
-        if let WindowEvent::KeyboardInput 
-            { 
+        if let WindowEvent::KeyboardInput
+            {
                 event: KeyEvent
                 {
                     state,
@@ -66,8 +66,8 @@ impl Input
             }
         }
 
-        if let WindowEvent::MouseInput 
-            { 
+        if let WindowEvent::MouseInput
+            {
                 state,
                 button,
                 ..
@@ -176,15 +176,15 @@ pub enum Action
 {
     ToggleFullScreen,
     // ToggleVSync,
-    MoveLeft,
-    MoveRight,
+    // MoveLeft,
+    // MoveRight,
     Esc,
     // Mouse
     MouseLeftPressed,
     MouseLeftReleased,
     MouseLeftHold
 }
-impl Action { pub const COUNT: usize = 8; }
+impl Action { pub const COUNT: usize = 7; }
 
 struct MouseBinding
 {

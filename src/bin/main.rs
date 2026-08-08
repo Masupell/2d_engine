@@ -3,10 +3,13 @@ use engine::*;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 
-const ACTION_TABLE: [ActionFn; 1] = 
+const ACTION_TABLE: [ActionFn; 5] =
 [
     App::toggle_fullscreen,
-    // + Rest, but fine for now
+    App::escape,
+    App::mouse_left_pressed,
+    App::mouse_left_released,
+    App::mouse_left_hold,
 ];
 
 struct App { x: f32, y: f32}
@@ -17,9 +20,29 @@ impl App
     {
         ctx.context.toggle_fullscreen();
     }
+
+    fn escape(&mut self, ctx: &mut UpdateContext)
+    {
+
+    }
+
+    fn mouse_left_pressed(&mut self, ctx: &mut UpdateContext)
+    {
+
+    }
+
+    fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
+    {
+
+    }
+
+    fn mouse_left_hold(&mut self, ctx: &mut UpdateContext)
+    {
+
+    }
 }
 
-impl EngineEvent for App 
+impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
     {
@@ -32,15 +55,6 @@ impl EngineEvent for App
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
     {
-        // if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::F11)
-        // {
-        //     update_ctx.context.toggle_fullscreen();
-        // }
-        // if update_ctx.input.is_key_pressed(winit::keyboard::KeyCode::KeyQ)
-        // {
-        //     update_ctx.context.toggle_vsync();
-        // }
-        
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
 
@@ -59,13 +73,13 @@ impl EngineEvent for App
 
 impl App
 {
-    fn new() -> Self 
+    fn new() -> Self
     {
         Self {x: 0.0, y: 0.0}
     }
 }
 
-fn main() 
+fn main()
 {
     pollster::block_on(game_loop(Box::new(App::new()), "Performance", (1280, 720)));
 }
