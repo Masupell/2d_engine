@@ -19,13 +19,13 @@ impl Texture
         let img = image::DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(1, 1, pixel.to_vec()).unwrap());
         Self::from_image(device, queue, &img, Some("White"))
     }
-    
+
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<Self>
     {
         let img = image::open(path)?;
         Self::from_image(device, queue, &img, None)
     }
-    
+
     pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str) -> Result<Self>
     {
         let img = image::load_from_memory(bytes)?;
@@ -94,7 +94,7 @@ impl Texture
     pub fn from_alpha_bitmap(device: &wgpu::Device, queue: &wgpu::Queue, bitmap: &[u8], width: usize, height: usize, label: Option<&str>) -> Result<Self>
     {
         let mut rgba =  Vec::with_capacity(width * height * 4);
-        for &alpha in bitmap 
+        for &alpha in bitmap
         {
             rgba.extend_from_slice(&[255, 255, 255, alpha]);
         }
@@ -152,8 +152,8 @@ impl Texture
         Ok(Self { texture, view, sampler, bind_group: None })
     }
 
-
-    pub fn screen_texture(device: &wgpu::Device, width: u32, height: u32) -> Self
+    // Needs Surface Format, as it is for the output, 'from_image' does not, as it is an input
+    pub fn screen_texture(device: &wgpu::Device, surface_format: wgpu::TextureFormat, width: u32, height: u32) -> Self
     {
         let size = wgpu::Extent3d
         {
@@ -169,7 +169,7 @@ impl Texture
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: surface_format,//wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[]
         });
@@ -196,13 +196,13 @@ impl Texture
         let texture_bindgroup_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             label: Some("Texture Bind Group Layout"),
-            entries: 
+            entries:
             &[
                 wgpu::BindGroupLayoutEntry
                 {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture 
+                    ty: wgpu::BindingType::Texture
                     {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,

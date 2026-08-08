@@ -3,7 +3,7 @@ use winit::{event::*,window::Window};
 
 use crate::{renderer::Renderer, texture::Texture};
 
-pub struct State<'a> 
+pub struct State<'a>
 {
     pub(crate) surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
@@ -16,13 +16,13 @@ pub struct State<'a>
     bind_group: wgpu::BindGroup
 }
 
-impl<'a> State<'a> 
+impl<'a> State<'a>
 {
-    pub async fn new(window: &'a Window) -> State<'a> 
+    pub async fn new(window: &'a Window) -> State<'a>
     {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor 
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor
         {
             #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
@@ -33,22 +33,22 @@ impl<'a> State<'a>
 
         let surface = instance.create_surface(window).unwrap();
 
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions 
+        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions
         {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         }).await.unwrap();
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor 
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor
         {
             label: None,
             required_features: wgpu::Features::POLYGON_MODE_LINE,  // empty()
-            required_limits: if cfg!(target_arch = "wasm32") 
+            required_limits: if cfg!(target_arch = "wasm32")
             {
                 wgpu::Limits::downlevel_webgl2_defaults()
-            } 
-            else 
+            }
+            else
             {
                 wgpu::Limits::default()
             },
@@ -57,7 +57,7 @@ impl<'a> State<'a>
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(surface_caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration 
+        let config = wgpu::SurfaceConfiguration
         {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -74,10 +74,10 @@ impl<'a> State<'a>
         let size = window.inner_size();
         let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
-        let screen_texture = Texture::screen_texture(&device, size.width as u32, size.height as u32);
+        let screen_texture = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
         let bind_group = screen_texture.bind_group(&device, &renderer.texture_bindgroup_layout);
 
-        Self 
+        Self
         {
             surface,
             device,
@@ -91,14 +91,14 @@ impl<'a> State<'a>
         }
     }
 
-    pub fn window(&self) -> &Window 
+    pub fn window(&self) -> &Window
     {
         &self.window
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) 
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>)
     {
-        if new_size.width > 0 && new_size.height > 0 
+        if new_size.width > 0 && new_size.height > 0
         {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -119,7 +119,7 @@ impl<'a> State<'a>
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor 
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor
         {
             label: Some("Render Encoder"),
         });
@@ -145,7 +145,7 @@ impl<'a> State<'a>
             let monitor = self.window().current_monitor();
             self.window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(monitor)));
         }
-        else 
+        else
         {
             self.window.set_fullscreen(None);
         }
