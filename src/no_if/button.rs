@@ -25,15 +25,13 @@ impl Button
     pub fn update(&self, input: &mut crate::Input)
     {
         let clicked = input.actions().contains(&Action::MouseLeftPressed);
-        if self.rect.contains(input.mouse_position())
-        {
-            if clicked
-            {
-                self.actions[ButtonEvent::Click as usize].into_iter().for_each(|action| input.add_action(action));
-                return;
-            }
-            self.actions[ButtonEvent::Hover as usize].into_iter().for_each(|action| input.add_action(action));
-        }
+        const EVENT_TABLE: [[ButtonEvent; 2]; 2] =
+        [
+            [ButtonEvent::None,  ButtonEvent::None],
+            [ButtonEvent::Hover, ButtonEvent::Click],
+        ];
+        let event = EVENT_TABLE[self.rect.contains(input.mouse_position()) as usize][input.actions().contains(&Action::MouseLeftPressed) as usize];
+        self.actions[event as usize].into_iter().for_each(|action| input.add_action(action));
     }
 }
 
@@ -41,12 +39,13 @@ impl Button
 pub enum ButtonEvent
 {
     Hover,
-    Click
+    Click,
+    None
 }
 
 impl ButtonEvent
 {
-    pub const COUNT: usize = 2;
+    pub const COUNT: usize = 3;
 }
 
 #[derive(Copy, Clone)]
