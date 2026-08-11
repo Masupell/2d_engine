@@ -188,7 +188,8 @@ pub enum Action
     MouseLeftPressed,
     MouseLeftReleased,
     MouseLeftHold,
-    Print // Test
+    Print, // Test
+    Hover
 }
 impl Action { pub const COUNT: usize = 6; }
 

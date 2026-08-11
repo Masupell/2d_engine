@@ -3,14 +3,15 @@ use engine::*;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 
-const ACTION_TABLE: [ActionFn; 6] =
+const ACTION_TABLE: [ActionFn; 7] =
 [
     App::toggle_fullscreen,
     App::escape,
     App::mouse_left_pressed,
     App::mouse_left_released,
     App::mouse_left_hold,
-    App::print
+    App::print,
+    App::hover
 ];
 
 struct App
@@ -51,6 +52,11 @@ impl App
     {
         println!("Button Click detected")
     }
+
+    fn hover(&mut self, _ctx: &mut UpdateContext)
+    {
+        println!("Button Hover")
+    }
 }
 
 impl EngineEvent for App
@@ -83,7 +89,7 @@ impl EngineEvent for App
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
 
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((0.0, 0.0), (200.0, 200.0), 0.0), 1, 0, 0);
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
     }
 }
 
@@ -91,11 +97,15 @@ impl App
 {
     fn new() -> Self
     {
+        let mut button = Button::new(Rect::new(0.0, 0.0, 200.0, 200.0));
+        button.set_action(ButtonEvent::Click, input::Action::Print);
+        button.set_action(ButtonEvent::Hover, input::Action::Hover);
+
         Self
         {
             x: 0.0,
             y: 0.0,
-            button: Button::new(Rect::new(0.0, 0.0, 200.0, 200.0), input::Action::Print)
+            button
         }
     }
 }

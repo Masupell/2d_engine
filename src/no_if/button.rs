@@ -3,31 +3,51 @@ use crate::input::Action;
 pub struct Button
 {
     pub rect: Rect,
-    pub action: Action
+    pub actions: [Option<Action>; ButtonEvent::COUNT]
 }
 
 impl Button
 {
-    pub fn new(rect: Rect, action: Action) -> Self
+    pub fn new(rect: Rect) -> Self
     {
         Button
         {
             rect,
-            action
+            actions: [None; ButtonEvent::COUNT]
         }
+    }
+
+    pub fn set_action(&mut self, event: ButtonEvent, action: Action)
+    {
+        self.actions[event as usize] = Some(action)
     }
 
     pub fn update(&self, input: &mut crate::Input)
     {
         let clicked = input.actions().contains(&Action::MouseLeftPressed);
-
-        if clicked && self.rect.contains(input.mouse_position())
+        if self.rect.contains(input.mouse_position())
         {
-            input.add_action(self.action);
+            if clicked
+            {
+                self.actions[ButtonEvent::Click as usize].into_iter().for_each(|action| input.add_action(action));
+                return;
+            }
+            self.actions[ButtonEvent::Hover as usize].into_iter().for_each(|action| input.add_action(action));
         }
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum ButtonEvent
+{
+    Hover,
+    Click
+}
+
+impl ButtonEvent
+{
+    pub const COUNT: usize = 2;
+}
 
 #[derive(Copy, Clone)]
 pub struct Rect
