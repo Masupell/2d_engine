@@ -12,6 +12,7 @@ pub enum Action
     MouseLeftHold,
     Print, // Test
     Hover,
-    UnHover
+    UnHover,
+    Released
 }
 impl Action { pub const COUNT: usize = 8; }
