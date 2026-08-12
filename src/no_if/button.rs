@@ -46,7 +46,11 @@ impl Button
         // None, Click, Released
         let inside = self.rect.contains(input.mouse_position());
         // [was it inside?][is it still inside?][is it clicked (as bool, false is 0 therefore not clicked and hovered instead) + 2x is it released(2x1=1)]
-        let event = EVENT_TABLE[self.was_inside as usize][inside as usize][input.actions().contains(&Action::MouseLeftPressed) as usize + input.actions().contains(&Action::MouseLeftReleased) as usize+input.actions().contains(&Action::MouseLeftReleased) as usize];
+        let pressed = input.actions().contains(&Action::MouseLeftPressed) as usize;
+        let released = input.actions().contains(&Action::MouseLeftReleased) as usize;
+        // if somehow pressed and released was active in the same frame, it would give an index error (could add a 4th state for that, but its fine for now)
+        let mouse_event = pressed + released*2;
+        let event = EVENT_TABLE[self.was_inside as usize][inside as usize][mouse_event];
         self.actions[event as usize].into_iter().for_each(|action| input.add_action(action));
         self.was_inside = inside;
     }

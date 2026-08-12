@@ -113,7 +113,7 @@ impl App
         button.set_action(ButtonEvent::Click, Action::Print);
         button.set_action(ButtonEvent::Hover, Action::Hover);
         button.set_action(ButtonEvent::Unhover, Action::UnHover);
-        button.set_action(ButtonEvent::Released, Action::Released);
+        button.set_action(ButtonEvent::Released, Action::ToggleFullScreen);
 
         Self
         {
