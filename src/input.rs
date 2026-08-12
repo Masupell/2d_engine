@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use winit::{event::{ElementState, KeyEvent, MouseButton, WindowEvent}, keyboard::{KeyCode, PhysicalKey}};
+use crate::no_if::action::Action;
 
 pub struct Input
 {
@@ -175,24 +176,6 @@ impl Input
         &self.actions
     }
 }
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Action
-{
-    ToggleFullScreen,
-    // ToggleVSync,
-    // MoveLeft,
-    // MoveRight,
-    Esc,
-    // Mouse
-    MouseLeftPressed,
-    MouseLeftReleased,
-    MouseLeftHold,
-    Print, // Test
-    Hover,
-    UnHover
-}
-impl Action { pub const COUNT: usize = 6; }
 
 struct MouseBinding
 {

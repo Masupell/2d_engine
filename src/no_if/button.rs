@@ -1,4 +1,4 @@
-use crate::input::Action;
+use crate::no_if::action::Action;
 
 pub struct Button
 {

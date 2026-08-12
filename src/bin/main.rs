@@ -104,9 +104,9 @@ impl App
     fn new() -> Self
     {
         let mut button = Button::new(Rect::new(0.0, 0.0, 200.0, 200.0));
-        button.set_action(ButtonEvent::Click, input::Action::Print);
-        button.set_action(ButtonEvent::Hover, input::Action::Hover);
-        button.set_action(ButtonEvent::Unhover, input::Action::UnHover);
+        button.set_action(ButtonEvent::Click, Action::Print);
+        button.set_action(ButtonEvent::Hover, Action::Hover);
+        button.set_action(ButtonEvent::Unhover, Action::UnHover);
 
         Self
         {
