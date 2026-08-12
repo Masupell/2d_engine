@@ -3,7 +3,8 @@ use crate::input::Action;
 pub struct Button
 {
     pub rect: Rect,
-    pub actions: [Option<Action>; ButtonEvent::COUNT]
+    pub actions: [Option<Action>; ButtonEvent::COUNT],
+    was_inside: bool
 }
 
 impl Button
@@ -13,7 +14,8 @@ impl Button
         Button
         {
             rect,
-            actions: [None; ButtonEvent::COUNT]
+            actions: [None; ButtonEvent::COUNT],
+            was_inside: false
         }
     }
 
@@ -22,16 +24,30 @@ impl Button
         self.actions[event as usize] = Some(action)
     }
 
-    pub fn update(&self, input: &mut crate::Input)
+    pub fn update(&mut self, input: &mut crate::Input)
     {
-        let clicked = input.actions().contains(&Action::MouseLeftPressed);
-        const EVENT_TABLE: [[ButtonEvent; 2]; 2] =
+        const EVENT_TABLE: [[[ButtonEvent; 2]; 2]; 2] =
         [
-            [ButtonEvent::None,  ButtonEvent::None],
-            [ButtonEvent::Hover, ButtonEvent::Click],
+            // was_inside = false
+            [
+                // not in rect
+                [ButtonEvent::None, ButtonEvent::None],
+                // in rect
+                [ButtonEvent::Hover, ButtonEvent::Click],
+            ],
+            // was_inside = true
+            [
+                // not in rect
+                [ButtonEvent::Unhover, ButtonEvent::None],
+                // in rect
+                [ButtonEvent::None, ButtonEvent::Click],
+            ]
         ];
-        let event = EVENT_TABLE[self.rect.contains(input.mouse_position()) as usize][input.actions().contains(&Action::MouseLeftPressed) as usize];
+        let inside = self.rect.contains(input.mouse_position());
+        // [was it inside?][is it still inside?][is it clicked (as bool, false is 0 therefore not clicked and hovered instead)]
+        let event = EVENT_TABLE[self.was_inside as usize][inside as usize][input.actions().contains(&Action::MouseLeftPressed) as usize];
         self.actions[event as usize].into_iter().for_each(|action| input.add_action(action));
+        self.was_inside = inside;
     }
 }
 
@@ -40,12 +56,13 @@ pub enum ButtonEvent
 {
     Hover,
     Click,
+    Unhover,
     None
 }
 
 impl ButtonEvent
 {
-    pub const COUNT: usize = 3;
+    pub const COUNT: usize = 4;
 }
 
 #[derive(Copy, Clone)]

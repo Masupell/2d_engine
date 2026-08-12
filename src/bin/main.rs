@@ -3,7 +3,7 @@ use engine::*;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 
-const ACTION_TABLE: [ActionFn; 7] =
+const ACTION_TABLE: [ActionFn; 8] =
 [
     App::toggle_fullscreen,
     App::escape,
@@ -11,7 +11,8 @@ const ACTION_TABLE: [ActionFn; 7] =
     App::mouse_left_released,
     App::mouse_left_hold,
     App::print,
-    App::hover
+    App::hover,
+    App::unhover
 ];
 
 struct App
@@ -57,6 +58,11 @@ impl App
     {
         println!("Button Hover")
     }
+
+    fn unhover(&mut self, _ctx: &mut UpdateContext)
+    {
+        println!("Button Leaves Hover")
+    }
 }
 
 impl EngineEvent for App
@@ -100,6 +106,7 @@ impl App
         let mut button = Button::new(Rect::new(0.0, 0.0, 200.0, 200.0));
         button.set_action(ButtonEvent::Click, input::Action::Print);
         button.set_action(ButtonEvent::Hover, input::Action::Hover);
+        button.set_action(ButtonEvent::Unhover, input::Action::UnHover);
 
         Self
         {
