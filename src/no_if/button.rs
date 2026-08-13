@@ -1,11 +1,32 @@
 use crate::no_if::action::Action;
 
+const EVENT_TABLE: [[[ButtonEvent; 3]; 2]; 2] =
+[
+    // was_inside = false
+    [
+        // not in rect
+        [ButtonEvent::None, ButtonEvent::None, ButtonEvent::None],
+        // in rect
+        [ButtonEvent::Hover, ButtonEvent::Click, ButtonEvent::Released],
+    ],
+    // was_inside = true
+    [
+        // not in rect
+        [ButtonEvent::Unhover, ButtonEvent::None, ButtonEvent::None],
+        // in rect
+        [ButtonEvent::None, ButtonEvent::Click, ButtonEvent::Released],
+    ]
+];
+
 pub struct Button
 {
     pub rect: Rect, // Tope left Corner definition
     pub actions: [Option<Action>; ButtonEvent::COUNT],
     texture_id: usize,
-    was_inside: bool
+    was_inside: bool,
+    hover_enabled: bool,
+    normal_size: (f64, f64),
+    hover_scale: f32
 }
 
 impl Button
@@ -17,7 +38,10 @@ impl Button
             rect,
             actions: [None; ButtonEvent::COUNT],
             texture_id: 0,
-            was_inside: false
+            was_inside: false,
+            hover_enabled: true,
+            normal_size: (rect.width, rect.height),
+            hover_scale: 1.1
         }
     }
 
@@ -28,23 +52,6 @@ impl Button
 
     pub fn update(&mut self, input: &mut crate::Input)
     {
-        const EVENT_TABLE: [[[ButtonEvent; 3]; 2]; 2] =
-        [
-            // was_inside = false
-            [
-                // not in rect
-                [ButtonEvent::None, ButtonEvent::None, ButtonEvent::None],
-                // in rect
-                [ButtonEvent::Hover, ButtonEvent::Click, ButtonEvent::Released],
-            ],
-            // was_inside = true
-            [
-                // not in rect
-                [ButtonEvent::Unhover, ButtonEvent::None, ButtonEvent::None],
-                // in rect
-                [ButtonEvent::None, ButtonEvent::Click, ButtonEvent::Released],
-            ]
-        ];
         // None, Click, Released
         let inside = self.rect.contains(input.mouse_position());
         // [was it inside?][is it still inside?][is it clicked (as bool, false is 0 therefore not clicked and hovered instead) + 2x is it released(2x1=1)]
@@ -53,6 +60,7 @@ impl Button
         // if somehow pressed and released was active in the same frame, it would give an index error (could add a 4th state for that, but its fine for now)
         let mouse_event = pressed + released*2;
         let event = EVENT_TABLE[self.was_inside as usize][inside as usize][mouse_event];
+        self.handle_hover_event(event);
         self.actions[event as usize].into_iter().for_each(|action| input.add_action(action));
         self.was_inside = inside;
     }
@@ -61,6 +69,20 @@ impl Button
     {
         let center = ((self.rect.x + self.rect.width/2.0) as f32, (self.rect.y + self.rect.height/2.0) as f32);
         render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix(center, (self.rect.width as f32, self.rect.height as f32), 0.0), self.texture_id, z_index, shader_id);
+    }
+
+    fn handle_hover_event(&mut self, event: ButtonEvent)
+    {
+        let scale_table: [[Option<f32>; ButtonEvent::COUNT]; 2] =
+        [
+            [None, None, None, None, None], // Hover disabled
+            [None, None, Some(self.hover_scale), Some(1.0), None] // Hover enabled
+        ];
+
+        scale_table[self.hover_enabled as usize][event as usize].into_iter().for_each(|scale|
+        {
+            self.set_size_centered((self.normal_size.0 as f32 * scale, self.normal_size.1 as f32 * scale));
+        });
     }
 
     pub fn set_texture(&mut self, texture_id: usize)
@@ -90,6 +112,16 @@ impl Button
 
         self.rect.x = center_x - self.rect.width / 2.0;
         self.rect.y = center_y - self.rect.height / 2.0;
+    }
+
+    pub fn handle_hover(&mut self, enabled: bool)
+    {
+        self.hover_enabled = enabled;
+    }
+
+    pub fn set_hover_scale(&mut self, scale: f32)
+    {
+        self.hover_scale = scale;
     }
 }
 

@@ -58,13 +58,13 @@ impl App
     fn hover(&mut self, _ctx: &mut UpdateContext)
     {
         println!("Button Hover");
-        self.button.set_size_centered((220.0, 110.0));
+        // self.button.set_size_centered((220.0, 110.0));
     }
 
     fn unhover(&mut self, _ctx: &mut UpdateContext)
     {
         println!("Button Leaves Hover");
-        self.button.set_size_centered((200.0, 100.0));
+        // self.button.set_size_centered((200.0, 100.0));
     }
 
     fn released(&mut self, _ctx: &mut UpdateContext)
@@ -115,6 +115,7 @@ impl App
     fn new() -> Self
     {
         let mut button = Button::new(Rect::new(540.0, 310.0, 200.0, 100.0));
+        button.handle_hover(true);
         button.set_action(ButtonEvent::Click, Action::Print);
         button.set_action(ButtonEvent::Hover, Action::Hover);
         button.set_action(ButtonEvent::Unhover, Action::UnHover);
