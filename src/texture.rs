@@ -2,6 +2,24 @@ use image::GenericImageView;
 use anyhow::*;
 
 
+pub enum FilterMode
+{
+    Nearest,
+    Linear
+}
+
+impl FilterMode
+{
+    pub fn into_wgpu(self) -> wgpu::FilterMode
+    {
+        match self
+        {
+            Self::Nearest => wgpu::FilterMode::Nearest,
+            Self::Linear => wgpu::FilterMode::Linear
+        }
+    }
+}
+
 // Right now, it is just used as a hlper, that returns things, but I need to change it, so that it does everything texture related
 pub struct Texture
 {
@@ -13,26 +31,26 @@ pub struct Texture
 
 impl Texture
 {
-    pub fn white(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self>
+    pub fn white(device: &wgpu::Device, queue: &wgpu::Queue, mag_filter: FilterMode, min_filter: FilterMode) -> Result<Self>
     {
         let pixel: [u8; 4] = [255, 255, 255, 255];
         let img = image::DynamicImage::ImageRgba8(image::ImageBuffer::from_raw(1, 1, pixel.to_vec()).unwrap());
-        Self::from_image(device, queue, &img, Some("White"))
+        Self::from_image(device, queue, &img, mag_filter, min_filter, Some("White"))
     }
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> Result<Self>
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> Result<Self>
     {
         let img = image::open(path)?;
-        Self::from_image(device, queue, &img, None)
+        Self::from_image(device, queue, &img, mag_filter, min_filter, None)
     }
 
-    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str) -> Result<Self>
+    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode, label: &str) -> Result<Self>
     {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
+        Self::from_image(device, queue, &img, mag_filter, min_filter, Some(label))
     }
 
-    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, label: Option<&str>) -> Result<Self>
+    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, mag_filter: FilterMode, min_filter: FilterMode, label: Option<&str>) -> Result<Self>
     {
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
@@ -81,8 +99,8 @@ impl Texture
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: mag_filter.into_wgpu(),//wgpu::FilterMode::Nearest,
+            min_filter: min_filter.into_wgpu(),//wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });

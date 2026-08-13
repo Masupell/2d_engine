@@ -57,12 +57,14 @@ impl App
 
     fn hover(&mut self, _ctx: &mut UpdateContext)
     {
-        println!("Button Hover")
+        println!("Button Hover");
+        self.button.set_size_centered((220.0, 110.0));
     }
 
     fn unhover(&mut self, _ctx: &mut UpdateContext)
     {
-        println!("Button Leaves Hover")
+        println!("Button Leaves Hover");
+        self.button.set_size_centered((200.0, 100.0));
     }
 
     fn released(&mut self, _ctx: &mut UpdateContext)
@@ -77,7 +79,9 @@ impl EngineEvent for App
     {
         ctx.toggle_vsync();
         // loader.load_texture("src/image/owl.jpg");
-        loader.load_texture("src/image/Player.png");
+        // loader.load_texture("src/image/Player.png", FilterMode::Nearest, FilterMode::Nearest);
+        let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
+        self.button.set_texture(button_texture);
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
@@ -101,7 +105,8 @@ impl EngineEvent for App
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
 
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
+        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
+        self.button.draw(render_ctx, 0, 0);
     }
 }
 
@@ -109,7 +114,7 @@ impl App
 {
     fn new() -> Self
     {
-        let mut button = Button::new(Rect::new(0.0, 0.0, 200.0, 200.0));
+        let mut button = Button::new(Rect::new(540.0, 310.0, 200.0, 100.0));
         button.set_action(ButtonEvent::Click, Action::Print);
         button.set_action(ButtonEvent::Hover, Action::Hover);
         button.set_action(ButtonEvent::Unhover, Action::UnHover);

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::Shader, texture::Texture, utility::{DrawCommand, InstanceData, Material, MaterialType, Mesh, Vertex}};
+use crate::{shader::Shader, texture::{Texture, FilterMode}, utility::{DrawCommand, InstanceData, Material, MaterialType, Mesh, Vertex}};
 
 
 
@@ -125,7 +125,7 @@ impl Renderer
 
         let meshes = vec![quad_mesh];
 
-        let default_texture = Texture::white(device, queue).unwrap();
+        let default_texture = Texture::white(device, queue, FilterMode::Linear, FilterMode::Linear).unwrap();
         let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
 
         Self
@@ -213,10 +213,10 @@ impl Renderer
         id
     }
 
-    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str) -> usize
+    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
         let error = format!("Failed to load texture with path: {}", path);
-        let texture = Texture::new(device, queue, path).expect(&error);
+        let texture = Texture::new(device, queue, path, mag_filter, min_filter).expect(&error);
         let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
         let id = self.textures.len();
         self.textures.push(bindgroup);

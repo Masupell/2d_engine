@@ -1,4 +1,4 @@
-use crate::{Input, Renderer};
+use crate::{Input, Renderer, texture::FilterMode};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -104,7 +104,7 @@ impl<'a> RenderContext<'a>
 
 pub trait Loader // Will be replaced by Asset Manager in the Future, or rather, maybe this loader will stay, but will be implemented for it
 {
-    fn load_texture(&mut self, path: &str) -> usize;
+    fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize;
     fn load_char(&mut self, char: char) -> Option<usize>;
     fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
     fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
@@ -128,9 +128,9 @@ impl<'a> LoadingContext<'a>
 
 impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
 {
-    fn load_texture(&mut self, path: &str) -> usize
+    fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
-        self.renderer.load_texture(self.device, self.queue, path)
+        self.renderer.load_texture(self.device, self.queue, path, mag_filter, min_filter)
     }
 
     fn load_char(&mut self, char: char) -> Option<usize>
