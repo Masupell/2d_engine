@@ -105,6 +105,8 @@ impl<'a> State<'a>
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
             self.renderer.window_size = (new_size.width as f32, new_size.height as f32);
+            self.screen_texture = Texture::screen_texture(&self.device, self.config.format, new_size.width, new_size.height);
+            self.bind_group = self.screen_texture.bind_group(&self.device, &self.renderer.texture_bindgroup_layout);
         }
     }
 
