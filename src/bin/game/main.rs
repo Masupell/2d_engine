@@ -1,4 +1,8 @@
+pub mod player;
+
 use engine::*;
+
+use crate::player::Player;
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -20,7 +24,7 @@ struct App
 {
     x: f32,
     y: f32,
-    button: no_if::button::Button
+    player: Player
 }
 
 impl App
@@ -80,8 +84,10 @@ impl EngineEvent for App
         ctx.toggle_vsync();
         // loader.load_texture("src/image/owl.jpg");
         // loader.load_texture("src/image/Player.png", FilterMode::Nearest, FilterMode::Nearest);
-        let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
-        self.button.set_texture(button_texture);
+        // let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
+        // self.button.set_texture(button_texture);
+        let player_texture = loader.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
+        self.player.set_texture(player_texture);
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
@@ -91,7 +97,7 @@ impl EngineEvent for App
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
 
-        self.button.update(update_ctx.input);
+        // self.button.update(update_ctx.input);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -106,7 +112,7 @@ impl EngineEvent for App
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
-        self.button.draw(render_ctx, 0, 0);
+        self.player.draw(render_ctx, 0, 0);
     }
 }
 
@@ -114,18 +120,13 @@ impl App
 {
     fn new() -> Self
     {
-        let mut button = Button::new(Rect::new(540.0, 310.0, 200.0, 100.0));
-        button.handle_hover(true);
-        button.set_action(ButtonEvent::Click, Action::Print);
-        button.set_action(ButtonEvent::Hover, Action::Hover);
-        button.set_action(ButtonEvent::Unhover, Action::UnHover);
-        button.set_action(ButtonEvent::Released, Action::ToggleFullScreen);
+        let player = Player::new(Rect::new(576.0, 296.0, 128.0, 128.0));
 
         Self
         {
             x: 0.0,
             y: 0.0,
-            button
+            player
         }
     }
 }
