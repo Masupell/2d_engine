@@ -94,7 +94,15 @@ impl EngineEvent for App
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
-         self.player.rotate(std::f32::consts::PI*update_ctx.dt as f32);
+        let direction = (self.x-self.player.collision.x, self.y-self.player.collision.y);
+        let target_angle = -direction.1.atan2(direction.0)-std::f32::consts::PI/2.0;
+
+        let current_angle = self.player.collision.rotation;
+        let max_rotation = std::f32::consts::PI*2.0 * update_ctx.dt as f32;
+
+        let angle_diff = (target_angle - current_angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+
+        self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
