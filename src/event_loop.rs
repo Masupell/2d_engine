@@ -1,6 +1,6 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{context::{self, Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{context::{Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent
 {
@@ -9,8 +9,11 @@ pub trait EngineEvent
     // fn render(&self, renderer: &mut Renderer);
     fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader);
     fn update(&mut self, update_ctx: &mut UpdateContext);
+    fn physics_update(&mut self, update_ctx: &mut UpdateContext);
     fn render(&self, render_ctx: &mut RenderContext);
 }
+
+const MAX_FRAME_TIME: f64 = 0.25; // if for any reason there is some kind of freeze, that the dt does not get to huge
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size: (i32, i32))
@@ -60,6 +63,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let mut last_frame_time = std::time::Instant::now();
     let mut fps_accumulator = 0.0;
     let mut fps_counter = 0;
+    let mut fixed_accumulator = 0.0;
     event_loop.run(move |event, control_flow|
     {
         match event
@@ -79,7 +83,6 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                         WindowEvent::CloseRequested => control_flow.exit(),
                         WindowEvent::Resized(physical_size) =>
                         {
-                            log::info!("physical_size: {physical_size:?}");
                             surface_configured = true;
                             state.resize(*physical_size);
                             input.update_screen((physical_size.width as f64, physical_size.height as f64));
@@ -91,11 +94,24 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 return;
                             }
                             let now = std::time::Instant::now();
-                            let dt = (now - last_frame_time).as_secs_f64();
+                            let mut dt = (now - last_frame_time).as_secs_f64();
                             last_frame_time = now;
 
-                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
+                            if dt > MAX_FRAME_TIME
+                            {
+                                dt = MAX_FRAME_TIME;
+                            }
 
+                            fixed_accumulator += dt;
+                            let fixed_dt = ctx.fixed_dt();
+                            while fixed_accumulator >= fixed_dt
+                            {
+                                let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt);
+                                game.physics_update(&mut fixed_ctx);
+                                fixed_accumulator -= fixed_dt;
+                            }
+
+                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
                             game.update(&mut update_ctx);
 
                             // Process things like fullscreen toggle, etc
@@ -113,13 +129,16 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                         state.config.present_mode = present_mode;
                                         state.surface.configure(&state.device, &state.config);
                                     }
+                                    ContextAction::SetTitle(title) =>
+                                    {
+                                        state.window().set_title(&title);
+                                    }
                                 }
                             }
 
                             match state.render(|renderer|
                             {
                                 let mut render_ctx = RenderContext::new(renderer, &mut ctx);
-                                // game.render(renderer);
                                 game.render(&mut render_ctx);
                             })
                             {
@@ -141,7 +160,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             fps_counter += 1;
                             if fps_accumulator >= 0.25 {
                                 let fps = (fps_counter as f64 / fps_accumulator) as u32;
-                                // state.window().set_title(&format!("FPS: {}", fps));
+                                ctx.set_fps(fps);
                                 fps_accumulator = 0.0;
                                 fps_counter = 0;
                             }

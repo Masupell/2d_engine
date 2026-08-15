@@ -92,21 +92,19 @@ impl EngineEvent for App
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
 
+    fn physics_update(&mut self, update_ctx: &mut UpdateContext)
+    {
+         self.player.rotate(std::f32::consts::PI*update_ctx.dt as f32);
+    }
+
     fn update(&mut self, update_ctx: &mut UpdateContext)
     {
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
 
         // self.button.update(update_ctx.input);
-        self.player.rotate(std::f32::consts::PI*update_ctx.dt as f32);
+
         self.player.update(update_ctx.input);
-
-        // println!(
-        //     "dt: {:.4}, rotation: {:.4}",
-        //     update_ctx.dt,
-        //     self.player.collision.rotation
-        // );
-
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
         {

@@ -6,6 +6,8 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     screen_size: (u32, u32),
     vsync: bool, // Maybe put those two, with other things into a seperate struct later
     fullscreen: bool,
+    fixed_dt: f64, // fixed dt
+    fps: u32,
     pub(crate) pending_actions: Vec<ContextAction>
 }
 
@@ -18,6 +20,8 @@ impl Context
             screen_size,
             vsync,
             fullscreen,
+            fixed_dt: 1.0 / 60.0,
+            fps: 0,
             pending_actions: Vec::new()
         }
     }
@@ -55,12 +59,38 @@ impl Context
         self.vsync = vsync;
         self.pending_actions.push(ContextAction::SetVSync(vsync));
     }
+
+    pub fn fixed_dt(&self) -> f64
+    {
+        self.fixed_dt
+    }
+
+    pub fn set_fixed_dt(&mut self, fixed_dt: f64)
+    {
+        self.fixed_dt = fixed_dt;
+    }
+
+    pub fn fps(&self) -> u32
+    {
+        self.fps
+    }
+
+    pub(crate) fn set_fps(&mut self, fps: u32)
+    {
+        self.fps = fps
+    }
+
+    pub fn set_title(&mut self, title: impl Into<String>)
+    {
+        self.pending_actions.push(ContextAction::SetTitle(title.into()));
+    }
 }
 
 pub enum ContextAction
 {
     ToggleFullscreen(bool),
-    SetVSync(bool)
+    SetVSync(bool),
+    SetTitle(String)
 }
 
 pub struct UpdateContext<'a>
