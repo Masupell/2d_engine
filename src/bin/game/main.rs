@@ -16,6 +16,7 @@ const ACTION_TABLE: [ActionFn; Action::COUNT] =
     App::mouse_left_hold,
     App::player_rotate_left,
     App::player_rotate_right,
+    App::player_place_checkpoint,
     App::print,
     App::hover,
     App::unhover,
@@ -80,6 +81,11 @@ impl App
 
     fn player_rotate_left(&mut self, ctx: &mut UpdateContext) { self.player.rotate_left(ctx.dt as f32); }
     fn player_rotate_right(&mut self, ctx: &mut UpdateContext) { self.player.rotate_right(ctx.dt as f32); }
+
+    fn player_place_checkpoint(&mut self, _ctx: &mut UpdateContext)
+    {
+        println!("Checkpoint Placed");
+    }
 }
 
 impl EngineEvent for App
@@ -157,6 +163,7 @@ pub fn register_keys(input: &mut Input)
 {
     input.add_key_binding(Key::KeyA, None, None, Some(Action::RotateLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::RotateRight));
+    input.add_key_binding(Key::Space, Some(Action::PlaceCheckPoint), None, None);
 }
 
 fn main()
