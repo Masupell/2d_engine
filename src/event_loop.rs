@@ -109,7 +109,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                     }
                                     ContextAction::SetVSync(vsync) =>
                                     {
-                                        let present_mode = if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync };
+                                        let present_mode = if vsync { wgpu::PresentMode::Fifo } else { wgpu::PresentMode::AutoNoVsync };
                                         state.config.present_mode = present_mode;
                                         state.surface.configure(&state.device, &state.config);
                                     }
@@ -141,7 +141,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             fps_counter += 1;
                             if fps_accumulator >= 0.25 {
                                 let fps = (fps_counter as f64 / fps_accumulator) as u32;
-                                state.window().set_title(&format!("FPS: {}", fps));
+                                // state.window().set_title(&format!("FPS: {}", fps));
                                 fps_accumulator = 0.0;
                                 fps_counter = 0;
                             }

@@ -81,7 +81,7 @@ impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
     {
-        ctx.toggle_vsync();
+        // ctx.toggle_vsync();
         // loader.load_texture("src/image/owl.jpg");
         // loader.load_texture("src/image/Player.png", FilterMode::Nearest, FilterMode::Nearest);
         // let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
@@ -98,14 +98,14 @@ impl EngineEvent for App
         self.y = update_ctx.input.mouse_position().1 as f32;
 
         // self.button.update(update_ctx.input);
-        self.player.rotate(std::f32::consts::PI * (1.0 / 60.0));//std::f32::consts::PI*update_ctx.dt as f32);
+        self.player.rotate(std::f32::consts::PI*update_ctx.dt as f32);
         self.player.update(update_ctx.input);
 
-        println!(
-            "dt: {:.4}, rotation: {:.4}",
-            update_ctx.dt,
-            self.player.collision.rotation
-        );
+        // println!(
+        //     "dt: {:.4}, rotation: {:.4}",
+        //     update_ctx.dt,
+        //     self.player.collision.rotation
+        // );
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
