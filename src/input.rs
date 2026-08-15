@@ -13,7 +13,7 @@ pub struct Input
     window_size: (f64, f64),
     virtual_size: (f64, f64),
     actions: Vec<Action>,
-    key_bindings: HashMap<KeyCode, Action>,
+    key_bindings: HashMap<KeyCode, KeyBinding>,
     mouse_bindings: HashMap<MouseButton, MouseBinding>
 }
 
@@ -22,11 +22,11 @@ impl Input
     pub(crate) fn new(window_size: (f64, f64)) -> Self
     {
         let mut key_bindings = HashMap::new();
-        key_bindings.insert(KeyCode::F11, Action::ToggleFullScreen);
+        key_bindings.insert(KeyCode::F11, KeyBinding { pressed: Some(Action::ToggleFullScreen), released: None, hold: None});
         // key_bindings.insert(KeyCode::KeyQ, Action::ToggleVSync);
         // key_bindings.insert(KeyCode::KeyA, Action::MoveLeft);
         // key_bindings.insert(KeyCode::KeyD, Action::MoveRight);
-        key_bindings.insert(KeyCode::Escape, Action::Esc);
+        // key_bindings.insert(KeyCode::Escape, Action::Esc);
 
         let mut mouse_bindings = HashMap::new();
         mouse_bindings.insert(MouseButton::Left, MouseBinding { pressed: Some(Action::MouseLeftPressed), released: Some(Action::MouseLeftReleased), hold: Some(Action::MouseLeftHold)});
@@ -132,11 +132,33 @@ impl Input
 
         for key in &self.keys_pressed
         {
-            if !self.prev_keys_pressed.contains(key)
+            if let Some(binding) = self.key_bindings.get(key)
             {
-                if let Some(action) = self.key_bindings.get(key)
+                if !self.prev_keys_pressed.contains(key)
                 {
-                    self.actions.push(*action);
+                    if let Some(action) = binding.pressed
+                    {
+                        self.actions.push(action);
+                    }
+                }
+
+                if let Some(action) = binding.hold
+                {
+                    self.actions.push(action);
+                }
+            }
+        }
+
+        for key in &self.prev_keys_pressed
+        {
+            if !self.keys_pressed.contains(key)
+            {
+                if let Some(binding) = self.key_bindings.get(key)
+                {
+                    if let Some(action) = binding.released
+                    {
+                        self.actions.push(action);
+                    }
                 }
             }
         }
@@ -175,6 +197,11 @@ impl Input
         }
     }
 
+    pub fn add_key_binding(&mut self, key: KeyCode, pressed: Option<Action>, released: Option<Action>, held: Option<Action>)
+    {
+        self.key_bindings.insert(key, KeyBinding { pressed, released, hold: held });
+    }
+
     pub(crate) fn add_action(&mut self, action: Action)
     {
         self.actions.push(action);
@@ -184,6 +211,13 @@ impl Input
     {
         &self.actions
     }
+}
+
+struct KeyBinding
+{
+    pressed: Option<Action>,
+    released: Option<Action>,
+    hold: Option<Action>
 }
 
 struct MouseBinding
