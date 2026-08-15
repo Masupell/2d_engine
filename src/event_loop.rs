@@ -102,6 +102,9 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 dt = MAX_FRAME_TIME;
                             }
 
+                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
+                            game.update(&mut update_ctx);
+
                             fixed_accumulator += dt;
                             let fixed_dt = ctx.fixed_dt();
                             while fixed_accumulator >= fixed_dt
@@ -110,9 +113,6 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 game.physics_update(&mut fixed_ctx);
                                 fixed_accumulator -= fixed_dt;
                             }
-
-                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
-                            game.update(&mut update_ctx);
 
                             // Process things like fullscreen toggle, etc
                             while let Some(action) = ctx.pending_actions.pop()
