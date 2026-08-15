@@ -88,6 +88,12 @@ impl Triangle
         self.y = position.1;
     }
 
+    pub fn change_pos(&mut self, change: (f32, f32))
+    {
+        self.x += change.0;
+        self.y += change.1;
+    }
+
     pub fn move_by(&mut self, movement: (f32, f32))
     {
         self.x += movement.0;

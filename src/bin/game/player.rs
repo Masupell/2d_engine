@@ -37,7 +37,7 @@ impl Player
             rotation_speed,
             max_rotation,
             velocity: (0.0, 0.0),
-            speed: 0.0,
+            speed: 100.0,
             score: 0,
             actions: [None; PlayerEvent::COUNT]
         }
@@ -50,7 +50,11 @@ impl Player
 
     pub fn update(&mut self, input: &Input, dt: f64)
     {
+        let forward = (-self.collision.rotation.sin(), -self.collision.rotation.cos()); // Because my rotation is reversed, otherwise it would be (+, -)
+        self.velocity.0 = forward.0 * self.speed * dt as f32;
+        self.velocity.1 = forward.1 * self.speed * dt as f32;
 
+        self.collision.change_pos(self.velocity);
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)

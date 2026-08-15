@@ -102,6 +102,7 @@ impl EngineEvent for App
         register_keys(input);
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
+        loader.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -116,6 +117,8 @@ impl EngineEvent for App
 
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
+        self.player.update(update_ctx.input, update_ctx.dt);
+
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
         {
@@ -129,8 +132,6 @@ impl EngineEvent for App
         self.y = update_ctx.input.mouse_position().1 as f32;
 
         // self.button.update(update_ctx.input);
-
-        self.player.update(update_ctx.input, update_ctx.dt);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
@@ -139,7 +140,9 @@ impl EngineEvent for App
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
-        self.player.draw(render_ctx, 0, 0);
+        self.player.draw(render_ctx, 1, 0);
+
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
     }
 }
 
