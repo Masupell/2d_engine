@@ -98,6 +98,14 @@ impl EngineEvent for App
         self.y = update_ctx.input.mouse_position().1 as f32;
 
         // self.button.update(update_ctx.input);
+        self.player.rotate(std::f32::consts::PI * (1.0 / 60.0));//std::f32::consts::PI*update_ctx.dt as f32);
+        self.player.update(update_ctx.input);
+
+        println!(
+            "dt: {:.4}, rotation: {:.4}",
+            update_ctx.dt,
+            self.player.collision.rotation
+        );
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -120,7 +128,7 @@ impl App
 {
     fn new() -> Self
     {
-        let player = Player::new(Rect::new(576.0, 296.0, 128.0, 128.0));
+        let player = Player::new((640.0, 360.0), 128.0, 128.0);
 
         Self
         {

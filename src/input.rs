@@ -117,6 +117,15 @@ impl Input
         return (0.0, 0.0);
     }
 
+    pub fn mouse_position_f32(&self) -> (f32, f32)
+    {
+        if let Some(mouse_pos) = self.mouse_position
+        {
+            return ((mouse_pos.0/self.window_size.0*self.virtual_size.0) as f32, (mouse_pos.1/self.window_size.1*self.virtual_size.1) as f32);
+        }
+        return (0.0, 0.0);
+    }
+
     pub fn generate_actions(&mut self)
     {
         self.actions.clear();

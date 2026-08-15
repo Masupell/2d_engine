@@ -1,4 +1,4 @@
-use crate::no_if::{action::Action, rect::Rect};
+use crate::no_if::{action::Action, shapes::Rect};
 
 const EVENT_TABLE: [[[ButtonEvent; 3]; 2]; 2] =
 [

@@ -19,5 +19,5 @@ pub use input::Input;
 pub use winit::keyboard::KeyCode as Key; // Temporary here
 pub use no_if::button::*;
 pub use no_if::action::Action;
-pub use no_if::rect::Rect;
+pub use no_if::shapes::{Rect, Triangle};
 pub use texture::FilterMode;
