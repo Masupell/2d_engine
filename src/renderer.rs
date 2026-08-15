@@ -33,9 +33,10 @@ pub struct Renderer
     pub virtual_size: (f32, f32),
     textures: Vec<Arc<wgpu::BindGroup>>,
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
-    shader: Shader
+    shader: Shader,
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
+    camera_pos: (f32, f32)
 }
 
 impl Renderer
@@ -138,9 +139,10 @@ impl Renderer
             virtual_size: window_size,
             textures: vec![default_bindgroup],
             texture_bindgroup_layout,
-            shader
+            shader,
             // diffuse_bind_group
             // texture_bind_groups
+            camera_pos: (0.0, 0.0)
         }
     }
 
@@ -434,6 +436,11 @@ impl Renderer
         }
     }
 
+    pub fn set_camera_pos(&mut self, position: (f32, f32))
+    {
+        self.camera_pos = position;
+    }
+
     // pos in pixels, size as in 1.0 is default scale, rotation in radians (all for 2D, would work for 3D, but this is 2D)
     pub fn to_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
@@ -485,11 +492,14 @@ impl Renderer
         let scale_x = (size.0/self.virtual_size.1)*2.0;
         let scale_y = (size.1/self.virtual_size.1)*2.0;
 
+        let camera_x = pos.0 - self.camera_pos.0 + self.virtual_size.0/2.0;
+        let camera_y = pos.1 - self.camera_pos.1 + self.virtual_size.1/2.0;
+
         [
             [scale*cos*scale_x, sin*scale_x, 0.0, 0.0],
             [scale*-sin*scale_y, cos*scale_y, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
+            [(camera_x/self.virtual_size.0)*2.0-1.0, -((camera_y/self.virtual_size.1)*2.0-1.0), 0.0, 1.0] // without camera just pos.0, pos.1 instead
         ]
     }
 

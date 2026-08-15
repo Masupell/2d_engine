@@ -11,6 +11,7 @@ pub struct Player
 
     rotation_speed: f32,
     max_rotation: f32, // in both directions from 0 degrees (0 being up in my case)
+    velocity: (f32, f32),
     pub speed: f32,
     pub score: i32,
 
@@ -35,6 +36,7 @@ impl Player
             texture_id: 0,
             rotation_speed,
             max_rotation,
+            velocity: (0.0, 0.0),
             speed: 0.0,
             score: 0,
             actions: [None; PlayerEvent::COUNT]
@@ -54,6 +56,7 @@ impl Player
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
         render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((self.collision.x, self.collision.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
+        render_ctx.renderer.set_camera_pos((self.collision.x, self.collision.y)); // Basic Camera
     }
 
     pub fn set_texture(&mut self, texture_id: usize)
