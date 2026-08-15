@@ -10,9 +10,15 @@ pub enum Action
     MouseLeftPressed,
     MouseLeftReleased,
     MouseLeftHold,
-    Print, // Test
+
+    //Player
+    RotateLeft,
+    RotateRight,
+
+    // Test
+    Print,
     Hover,
     UnHover,
     Released
 }
-impl Action { pub const COUNT: usize = 8; }
+impl Action { pub const COUNT: usize = 11; }

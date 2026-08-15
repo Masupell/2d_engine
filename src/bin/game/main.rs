@@ -7,13 +7,15 @@ use crate::player::Player;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 
-const ACTION_TABLE: [ActionFn; 9] =
+const ACTION_TABLE: [ActionFn; Action::COUNT] =
 [
     App::toggle_fullscreen,
     App::escape,
     App::mouse_left_pressed,
     App::mouse_left_released,
     App::mouse_left_hold,
+    App::player_rotate_left,
+    App::player_rotate_right,
     App::print,
     App::hover,
     App::unhover,
@@ -75,11 +77,14 @@ impl App
     {
         println!("Button Released")
     }
+
+    fn player_rotate_left(&mut self, ctx: &mut UpdateContext) { self.player.rotate_left(ctx.dt as f32); }
+    fn player_rotate_right(&mut self, ctx: &mut UpdateContext) { self.player.rotate_right(ctx.dt as f32); }
 }
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader)
+    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader, input: &mut Input)
     {
         // ctx.toggle_vsync();
         // loader.load_texture("src/image/owl.jpg");
@@ -88,21 +93,28 @@ impl EngineEvent for App
         // self.button.set_texture(button_texture);
         let player_texture = loader.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
+        register_keys(input);
         loader.load_shader(Some("src/shaders/test.wgsl"), None);
         loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
-        let direction = (self.x-self.player.collision.x, self.y-self.player.collision.y);
-        let target_angle = -direction.1.atan2(direction.0)-std::f32::consts::PI/2.0;
+        // let direction = (self.x-self.player.collision.x, self.y-self.player.collision.y);
+        // let target_angle = -direction.1.atan2(direction.0)-std::f32::consts::PI/2.0;
 
-        let current_angle = self.player.collision.rotation;
-        let max_rotation = std::f32::consts::PI*2.0 * update_ctx.dt as f32;
+        // let current_angle = self.player.collision.rotation;
+        // let max_rotation = std::f32::consts::PI*2.0 * update_ctx.dt as f32;
 
-        let angle_diff = (target_angle - current_angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        // let angle_diff = (target_angle - current_angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
 
-        self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
+        // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
+
+        let actions = update_ctx.input.actions().to_vec();
+        for action in actions
+        {
+            ACTION_TABLE[action as usize](self, update_ctx);
+        }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
@@ -112,12 +124,7 @@ impl EngineEvent for App
 
         // self.button.update(update_ctx.input);
 
-        self.player.update(update_ctx.input);
-        let actions = update_ctx.input.actions().to_vec();
-        for action in actions
-        {
-            ACTION_TABLE[action as usize](self, update_ctx);
-        }
+        self.player.update(update_ctx.input, update_ctx.dt);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
@@ -134,7 +141,8 @@ impl App
 {
     fn new() -> Self
     {
-        let player = Player::new((640.0, 360.0), 128.0, 128.0);
+        let player = Player::new((640.0, 360.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
+        // player.set_action(event, action);
 
         Self
         {
@@ -145,7 +153,13 @@ impl App
     }
 }
 
+pub fn register_keys(input: &mut Input)
+{
+    input.add_key_binding(Key::KeyA, None, None, Some(Action::RotateLeft));
+    input.add_key_binding(Key::KeyD, None, None, Some(Action::RotateRight));
+}
+
 fn main()
 {
-    pollster::block_on(game_loop(Box::new(App::new()), "Performance", (1280, 720)));
+    pollster::block_on(game_loop(Box::new(App::new()), "Climbing Game", (1280, 720)));
 }

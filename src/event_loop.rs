@@ -7,7 +7,7 @@ pub trait EngineEvent
     // fn setup(&mut self, loader: &mut dyn Loader);
     // fn update(&mut self, input: &Input, dt: f64);
     // fn render(&self, renderer: &mut Renderer);
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader);
+    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader, input: &mut Input);
     fn update(&mut self, update_ctx: &mut UpdateContext);
     fn physics_update(&mut self, update_ctx: &mut UpdateContext);
     fn render(&self, render_ctx: &mut RenderContext);
@@ -57,7 +57,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
     let mut ctx = Context::new((size.width, size.height), false, false);
     {
         let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
-        game.setup(&mut ctx, &mut loader);
+        game.setup(&mut ctx, &mut loader, &mut input); // Input just so I can assign inputs to actions
     }
 
     let mut last_frame_time = std::time::Instant::now();

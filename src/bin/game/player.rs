@@ -9,13 +9,17 @@ pub struct Player
 
     texture_id: usize,
 
+    rotation_speed: f32,
+    max_rotation: f32, // in both directions from 0 degrees (0 being up in my case)
     pub speed: f32,
     pub score: i32,
+
+    actions: [Option<Action>; PlayerEvent::COUNT],
 }
 
 impl Player
 {
-    pub fn new(center: (f32, f32), width: f32, height: f32) -> Self
+    pub fn new(center: (f32, f32), width: f32, height: f32, rotation_speed: f32, max_rotation: f32) -> Self
     {
         // Expects it in local coordinates
         let a = (0.0, -height/2.0); // top point
@@ -29,18 +33,22 @@ impl Player
             width,
             height,
             texture_id: 0,
+            rotation_speed,
+            max_rotation,
             speed: 0.0,
-            score: 0
+            score: 0,
+            actions: [None; PlayerEvent::COUNT]
         }
     }
 
-    pub fn update(&mut self, input: &Input)
+    pub fn set_action(&mut self, event: ButtonEvent, action: Action)
     {
-        let inside = self.collision.contains(input.mouse_position_f32());
-        if inside
-        {
-            println!("Mouse inside Triangle");
-        }
+        self.actions[event as usize] = Some(action)
+    }
+
+    pub fn update(&mut self, input: &Input, dt: f64)
+    {
+
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -62,7 +70,18 @@ impl Player
     // In radians
     pub fn rotate(&mut self, amount: f32)
     {
-        self.collision.rotate(amount);
+        let new_rotation = self.collision.rotation - amount; //- so positive is clockwise
+        self.collision.rotation = new_rotation.clamp(-self.max_rotation, self.max_rotation);
+    }
+
+    pub fn rotate_left(&mut self, dt: f32)
+    {
+        self.rotate(-self.rotation_speed * dt);
+    }
+
+    pub fn rotate_right(&mut self, dt: f32)
+    {
+        self.rotate(self.rotation_speed * dt);
     }
 
     // Would not change collision, so dont do that yet
@@ -72,3 +91,15 @@ impl Player
         self.height = size.1;
     }
 }
+
+#[derive(Copy, Clone)]
+pub enum PlayerEvent
+{
+    Checkpoint,
+    Hit,
+    Fall,
+    Death,
+    None
+}
+
+impl PlayerEvent { pub const COUNT: usize = 5; }
