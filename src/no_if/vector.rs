@@ -34,7 +34,7 @@ impl Vec2
         self.length_squared().sqrt()
     }
 
-    pub fn normalized(self) -> Self
+    pub fn normalize(self) -> Self
     {
         self / self.length()
     }
