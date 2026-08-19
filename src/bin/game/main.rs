@@ -3,7 +3,7 @@ pub mod rope;
 
 use engine::*;
 
-use crate::player::Player;
+use crate::{player::Player, rope::RopePoint};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -28,7 +28,8 @@ struct App
 {
     x: f32,
     y: f32,
-    player: Player
+    player: Player,
+    test_point: RopePoint
 }
 
 impl App
@@ -118,7 +119,8 @@ impl EngineEvent for App
 
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
-        self.player.update(update_ctx.input, update_ctx.dt);
+        // self.player.update(update_ctx.input, update_ctx.dt);
+        self.test_point.update(10.0, update_ctx.dt as f32);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -142,6 +144,7 @@ impl EngineEvent for App
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
         self.player.draw(render_ctx, 1, 0);
+        self.test_point.draw(render_ctx, 1, 0);
 
         render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
     }
@@ -151,14 +154,16 @@ impl App
 {
     fn new() -> Self
     {
-        let player = Player::new(Vec2::new(640.0, 360.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
+        let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
+        let test_point = RopePoint::new(Vec2 { x: 0.0, y: -500.0 });
         // player.set_action(event, action);
 
         Self
         {
             x: 0.0,
             y: 0.0,
-            player
+            player,
+            test_point
         }
     }
 }

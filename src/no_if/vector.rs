@@ -143,6 +143,16 @@ impl MulAssign<f32> for Vec2
     }
 }
 
+impl Mul<Vec2> for f32 // to write 2.0*vec2 instead of only vec2*2.0
+{
+    type Output = Vec2;
+
+    fn mul(self, rhs: Vec2) -> Vec2
+    {
+        rhs * self
+    }
+}
+
 impl Div<f32> for Vec2
 {
     type Output = Self;
@@ -159,6 +169,16 @@ impl DivAssign<f32> for Vec2
     {
         self.x /= rhs;
         self.y /= rhs;
+    }
+}
+
+impl Div<Vec2> for f32
+{
+    type Output = Vec2;
+
+    fn div(self, rhs: Vec2) -> Vec2
+    {
+        Vec2::new(self / rhs.x, self / rhs.y)
     }
 }
 
