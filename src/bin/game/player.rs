@@ -1,4 +1,4 @@
-use engine::*;
+use engine::{no_if::vector::Vec2, *};
 
 pub struct Player
 {
@@ -11,7 +11,7 @@ pub struct Player
 
     rotation_speed: f32,
     max_rotation: f32, // in both directions from 0 degrees (0 being up in my case)
-    velocity: (f32, f32),
+    velocity: Vec2,
     pub speed: f32,
     pub score: i32,
 
@@ -20,13 +20,13 @@ pub struct Player
 
 impl Player
 {
-    pub fn new(center: (f32, f32), width: f32, height: f32, rotation_speed: f32, max_rotation: f32) -> Self
+    pub fn new(center: Vec2, width: f32, height: f32, rotation_speed: f32, max_rotation: f32) -> Self
     {
         // Expects it in local coordinates
-        let a = (0.0, -height/2.0); // top point
-        let b = (width/2.0, height/2.0); // bottom-right
-        let c = (-width/2.0, height/2.0); // bottom-left
-        let collision: Triangle = Triangle::new(center.0, center.1, 0.0, a, b, c);
+        let a = Vec2::new(0.0, -height/2.0); // top point
+        let b = Vec2::new(width/2.0, height/2.0); // bottom-right
+        let c = Vec2::new(-width/2.0, height/2.0); // bottom-left
+        let collision: Triangle = Triangle::new(center, 0.0, a, b, c);
 
         Player
         {
@@ -36,7 +36,7 @@ impl Player
             texture_id: 0,
             rotation_speed,
             max_rotation,
-            velocity: (0.0, 0.0),
+            velocity: Vec2::ZERO,
             speed: 100.0,
             score: 0,
             actions: [None; PlayerEvent::COUNT]
@@ -50,17 +50,16 @@ impl Player
 
     pub fn update(&mut self, input: &Input, dt: f64)
     {
-        let forward = (-self.collision.rotation.sin(), -self.collision.rotation.cos()); // Because my rotation is reversed, otherwise it would be (+, -)
-        self.velocity.0 = forward.0 * self.speed * dt as f32;
-        self.velocity.1 = forward.1 * self.speed * dt as f32;
+        let forward = Vec2::new(-self.collision.rotation.sin(), -self.collision.rotation.cos()); // Because my rotation is reversed, otherwise it would be (+, -)
+        self.velocity = forward * self.speed * dt as f32;
 
         self.collision.change_pos(self.velocity);
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((self.collision.x, self.collision.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
-        render_ctx.renderer.set_camera_pos((self.collision.x, self.collision.y)); // Basic Camera
+        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((self.collision.pos.x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
+        render_ctx.renderer.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
     }
 
     pub fn set_texture(&mut self, texture_id: usize)
@@ -68,10 +67,9 @@ impl Player
         self.texture_id = texture_id;
     }
 
-    pub fn set_pos(&mut self, pos: (f32, f32))
+    pub fn set_pos(&mut self, pos: Vec2)
     {
-        self.collision.x = pos.0;
-        self.collision.y = pos.1;
+        self.collision.pos += pos;
     }
 
     // In radians

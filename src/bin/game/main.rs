@@ -1,4 +1,5 @@
 pub mod player;
+pub mod rope;
 
 use engine::*;
 
@@ -150,7 +151,7 @@ impl App
 {
     fn new() -> Self
     {
-        let player = Player::new((640.0, 360.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
+        let player = Player::new(Vec2::new(640.0, 360.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
         // player.set_action(event, action);
 
         Self
