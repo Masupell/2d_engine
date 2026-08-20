@@ -8,6 +8,7 @@ pub mod shader;
 pub mod text;
 pub mod context;
 pub mod asset_manager;
+pub mod mesh_builder;
 
 pub mod no_if;
 

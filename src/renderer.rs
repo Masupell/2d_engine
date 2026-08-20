@@ -219,7 +219,7 @@ impl Renderer
         id
     }
 
-    pub(crate) fn create_mesh(&mut self, device: &wgpu::Device, data: MeshData) -> usize
+    pub(crate) fn create_mesh(&mut self, device: &wgpu::Device, data: &MeshData) -> usize
     {
         let vertex_size = data.vertices.len() * std::mem::size_of::<Vertex>();
         let index_size = data.indices.len() * std::mem::size_of::<u16>();
@@ -253,7 +253,7 @@ impl Renderer
     }
 
     // Not sure if there is a better way?
-    pub(crate) fn update_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh_id: usize, data: MeshData)
+    pub(crate) fn update_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh_id: usize, data: &MeshData)
     {
         let mesh = &mut self.meshes[mesh_id];
 

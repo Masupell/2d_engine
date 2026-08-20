@@ -147,6 +147,7 @@ pub enum MeshID
 
 
 // CPU side
+#[derive(Clone)]
 pub struct MeshData
 {
     pub vertices: Vec<Vertex>,
