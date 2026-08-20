@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::Shader, texture::{Texture, FilterMode}, utility::{DrawCommand, InstanceData, Material, MaterialType, Mesh, Vertex}};
+use crate::{shader::Shader, texture::{Texture, FilterMode}, utility::{DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, Vertex}};
 
 
 
@@ -101,16 +101,18 @@ impl Renderer
             cache: None
         });
 
+        let vertex_capacity = QUAD_VERTICES.len() * std::mem::size_of::<Vertex>();
+        let index_capacity = QUAD_INDICES.len() * std::mem::size_of::<u16>();
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
-            label: Some("Vertex Buffer"),
+            label: Some("Quad Vertex Buffer"),
             contents: bytemuck::cast_slice(QUAD_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
         {
-            label: Some("Index Buffer"),
+            label: Some("Quad Index Buffer"),
             contents: bytemuck::cast_slice(QUAD_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
@@ -121,6 +123,8 @@ impl Renderer
         {
             vertex_buf,
             index_buf,
+            vertex_capacity,
+            index_capacity,
             index_count
         };
 
@@ -213,6 +217,85 @@ impl Renderer
         let id = self.pipelines.len();
         self.pipelines.push(pipeline);
         id
+    }
+
+    pub(crate) fn create_mesh(&mut self, device: &wgpu::Device, data: MeshData) -> usize
+    {
+        let vertex_size = data.vertices.len() * std::mem::size_of::<Vertex>();
+        let index_size = data.indices.len() * std::mem::size_of::<u16>();
+        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
+        {
+            label: None,
+            contents: bytemuck::cast_slice(&data.vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        });
+
+        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
+        {
+            label: None,
+            contents: bytemuck::cast_slice(&data.indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+        });
+
+        let mesh = Mesh
+        {
+            vertex_buf,
+            index_buf,
+            vertex_capacity: vertex_size,
+            index_capacity: index_size,
+            index_count: data.indices.len() as u32
+        };
+
+        let id = self.meshes.len();
+        self.meshes.push(mesh);
+
+        id
+    }
+
+    // Not sure if there is a better way?
+    pub(crate) fn update_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh_id: usize, data: MeshData)
+    {
+        let mesh = &mut self.meshes[mesh_id];
+
+        let vertex_size = data.vertices.len() * std::mem::size_of::<Vertex>();
+        let index_size = data.indices.len() * std::mem::size_of::<u16>();
+
+        if vertex_size > mesh.vertex_capacity
+        {
+            let new_capacity = vertex_size.next_power_of_two(); // Not final
+            mesh.vertex_buf = device.create_buffer(&wgpu::BufferDescriptor
+            {
+                label: None,
+                size: new_capacity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false
+            });
+            queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(&data.vertices));
+            mesh.vertex_capacity = new_capacity;
+        }
+        else
+        {
+            queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(&data.vertices));
+        }
+
+        if index_size > mesh.index_capacity
+        {
+            let new_capacity = index_size.next_power_of_two();
+            mesh.index_buf = device.create_buffer(&wgpu::BufferDescriptor
+            {
+                label: None,
+                size: new_capacity as u64,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false
+            });
+            queue.write_buffer(&mesh.index_buf, 0, bytemuck::cast_slice(&data.indices));
+            mesh.index_capacity = new_capacity;
+        }
+        else
+        {
+            queue.write_buffer(&mesh.index_buf, 0, bytemuck::cast_slice(&data.indices));
+        }
+        mesh.index_count = data.indices.len() as u32;
     }
 
     pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize

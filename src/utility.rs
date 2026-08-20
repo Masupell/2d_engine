@@ -18,7 +18,7 @@ impl Vertex
             tex_coords: tex_pos
         }
     }
-    
+
     pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
         wgpu::VertexBufferLayout
@@ -70,7 +70,7 @@ pub struct DrawCommand
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct InstanceData 
+pub struct InstanceData
 {
     pub model: [[f32; 4]; 4],
     pub color: [f32; 4],
@@ -79,40 +79,40 @@ pub struct InstanceData
 
 impl InstanceData
 {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> 
+    pub fn desc() -> wgpu::VertexBufferLayout<'static>
     {
-        wgpu::VertexBufferLayout 
+        wgpu::VertexBufferLayout
         {
             array_stride: std::mem::size_of::<InstanceData>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: 
+            attributes:
             &[
-                wgpu::VertexAttribute 
+                wgpu::VertexAttribute
                 {
                     offset: 0,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x4,
                 },
-                wgpu::VertexAttribute 
+                wgpu::VertexAttribute
                 {
                     offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x4,
                 },
-                wgpu::VertexAttribute 
+                wgpu::VertexAttribute
                 {
                     offset: 2 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x4,
                 },
-                wgpu::VertexAttribute 
+                wgpu::VertexAttribute
                 {
                     offset: 3 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 // Color vec4
-                wgpu::VertexAttribute 
+                wgpu::VertexAttribute
                 {
                     offset: 4 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 6,
@@ -134,6 +134,8 @@ pub struct Mesh
 {
     pub vertex_buf: wgpu::Buffer,
     pub index_buf: wgpu::Buffer,
+    pub vertex_capacity: usize,
+    pub index_capacity: usize,
     pub index_count: u32
 }
 
@@ -142,6 +144,38 @@ pub enum MeshID
     QUAD = 0
 }
 
+
+
+// CPU side
+pub struct MeshData
+{
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u16>
+}
+
+impl MeshData
+{
+    pub fn new() -> Self
+    {
+        Self
+        {
+            vertices: Vec::new(),
+            indices: Vec::new()
+        }
+    }
+
+    pub fn add_vertex(&mut self, vertex: Vertex) -> u16
+    {
+        let index = self.vertices.len() as u16;
+        self.vertices.push(vertex);
+        index
+    }
+
+    pub fn add_triangle(&mut self, a: u16, b: u16, c: u16)
+    {
+        self.indices.extend_from_slice(&[a, b, c]);
+    }
+}
 
 
 pub struct Material
@@ -156,12 +190,12 @@ impl Material
 {
     // pub fn new(shader: Arc<Shader>, texture: Option<Arc<Texture>>) -> Self
     // {
-    //     Material 
-    //     { 
+    //     Material
+    //     {
     //         // shader,
     //         // texture
 
-    //     }   
+    //     }
     // }
     pub fn color(color: [f32; 4], id: u8) -> Self
     {
@@ -174,8 +208,8 @@ impl Material
 
     pub fn texture(texture: Arc<wgpu::BindGroup>, id: u8) -> Self
     {
-        Material 
-        { 
+        Material
+        {
             kind: MaterialType::Texture(texture),
             pipeline_id: id
         }
