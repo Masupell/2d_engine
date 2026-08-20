@@ -81,7 +81,7 @@ impl Rope
     {
         for point in self.points.iter()
         {
-            render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((point.pos.x, point.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
+            render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((point.pos.x, point.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
         }
     }
 }
@@ -114,6 +114,6 @@ impl RopePoint
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((self.pos.x, self.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
     }
 }

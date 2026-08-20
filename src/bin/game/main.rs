@@ -29,7 +29,8 @@ struct App
     x: f32,
     y: f32,
     player: Player,
-    rope: Rope
+    rope: Rope,
+    test_id: Option<usize>
 }
 
 impl App
@@ -51,7 +52,8 @@ impl App
 
     fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
     {
-
+        // synchronous loading will freeze the game for a moment
+        self.test_id = Some(ctx.graphics.load_texture("src/image/owl.jpg", FilterMode::Linear, FilterMode::Linear));
     }
 
     fn mouse_left_hold(&mut self, ctx: &mut UpdateContext)
@@ -92,19 +94,19 @@ impl App
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader, input: &mut Input)
+    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
         // ctx.toggle_vsync();
         // loader.load_texture("src/image/owl.jpg");
         // loader.load_texture("src/image/Player.png", FilterMode::Nearest, FilterMode::Nearest);
         // let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
         // self.button.set_texture(button_texture);
-        let player_texture = loader.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
+        let player_texture = graphics.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
         register_keys(input);
-        loader.load_shader(Some("src/shaders/test.wgsl"), None);
-        loader.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
-        loader.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
+        graphics.load_shader(Some("src/shaders/test.wgsl"), None);
+        graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
+        graphics.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -147,7 +149,12 @@ impl EngineEvent for App
         self.player.draw(render_ctx, 1, 0);
         self.rope.draw(render_ctx, 1, 0);
 
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
+
+        if self.test_id.is_some()
+        {
+            render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.player.collision.pos.x, self.player.collision.pos.y), (192.0, 101.0), 0.0), self.test_id.unwrap(), 0, 0);
+        }
     }
 }
 
@@ -164,7 +171,8 @@ impl App
             x: 0.0,
             y: 0.0,
             player,
-            rope
+            rope,
+            test_id: None
         }
     }
 }

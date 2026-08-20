@@ -13,7 +13,7 @@ pub mod mesh_builder;
 pub mod no_if;
 
 pub use event_loop::{EngineEvent, game_loop};
-pub use context::{Context, UpdateContext, RenderContext, Loader};
+pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
 pub use renderer::Renderer;
 pub use input::Input;
 

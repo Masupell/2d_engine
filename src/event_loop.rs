@@ -1,13 +1,13 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{context::{Context, ContextAction, Loader, LoadingContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{context::{Context, ContextAction, GraphicsContext, RenderContext, UpdateContext}, input::Input, state::State};
 
 pub trait EngineEvent
 {
     // fn setup(&mut self, loader: &mut dyn Loader);
     // fn update(&mut self, input: &Input, dt: f64);
     // fn render(&self, renderer: &mut Renderer);
-    fn setup(&mut self, ctx: &mut Context, loader: &mut dyn Loader, input: &mut Input);
+    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input);
     fn update(&mut self, update_ctx: &mut UpdateContext);
     fn physics_update(&mut self, update_ctx: &mut UpdateContext);
     fn render(&self, render_ctx: &mut RenderContext);
@@ -56,8 +56,8 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
 
     let mut ctx = Context::new((size.width, size.height), false, false);
     {
-        let mut loader = LoadingContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
-        game.setup(&mut ctx, &mut loader, &mut input); // Input just so I can assign inputs to actions
+        let mut graphics = GraphicsContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
+        game.setup(&mut ctx, &mut graphics, &mut input); // Input just so I can assign inputs to actions
     }
 
     let mut last_frame_time = std::time::Instant::now();
@@ -102,14 +102,14 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 dt = MAX_FRAME_TIME;
                             }
 
-                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt);
+                            let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                             game.update(&mut update_ctx);
 
                             fixed_accumulator += dt;
                             let fixed_dt = ctx.fixed_dt();
                             while fixed_accumulator >= fixed_dt
                             {
-                                let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt);
+                                let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                                 game.physics_update(&mut fixed_ctx);
                                 fixed_accumulator -= fixed_dt;
                             }
@@ -136,10 +136,14 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 }
                             }
 
-                            match state.render(|renderer|
+                            // match state.render(|renderer|
+                            // {
+                            //     let mut render_ctx = RenderContext::new(renderer, &mut ctx);
+                            //     game.render(&mut render_ctx);
+                            // })
+                            match state.render(&mut ctx, |render_ctx|
                             {
-                                let mut render_ctx = RenderContext::new(renderer, &mut ctx);
-                                game.render(&mut render_ctx);
+                                game.render(render_ctx);
                             })
                             {
                                 Ok(_) => {}

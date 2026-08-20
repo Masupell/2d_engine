@@ -97,83 +97,79 @@ pub struct UpdateContext<'a>
 {
     pub input: &'a mut Input,
     pub dt: f64,
-    pub context: &'a mut Context // For the general stuff
+    pub context: &'a mut Context, // For the general stuff
+    pub graphics: GraphicsContext<'a>
 }
 
 impl<'a> UpdateContext<'a>
 {
-    pub(crate) fn new(input: &'a mut Input, context: &'a mut Context, dt: f64) -> Self
+    pub(crate) fn new(input: &'a mut Input, context: &'a mut Context, dt: f64, renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
     {
         Self
         {
             input,
             dt,
-            context
+            context,
+            graphics: GraphicsContext::new(renderer, device, queue, config)
         }
     }
 }
 
 pub struct RenderContext<'a> // Seperate from UpdateContext because of borrowing and stuff
 {
-    pub renderer: &'a mut Renderer,
-    pub context: &'a mut Context
+    pub context: &'a mut Context,
+    pub graphics: GraphicsContext<'a>
 }
 
 impl<'a> RenderContext<'a>
 {
-    pub(crate) fn new(renderer: &'a mut Renderer, context: &'a mut Context) -> Self
+    pub(crate) fn new(context: &'a mut Context, renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
     {
         Self
         {
-            renderer,
-            context
+            context,
+            graphics: GraphicsContext::new(renderer, device, queue, config)
         }
     }
 }
 
-
-pub trait Loader // Will be replaced by Asset Manager in the Future, or rather, maybe this loader will stay, but will be implemented for it
+pub struct GraphicsContext<'a> // Can load now, at any time, but still not perfect
 {
-    fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize;
-    fn load_char(&mut self, char: char) -> Option<usize>;
-    fn load_text(&mut self, text: &str, size: f32) -> Option<usize>;
-    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize; // Returns pipeline number
+    pub renderer: &'a mut Renderer, //public for now, later should add methods
+    pub(crate) device: &'a wgpu::Device,
+    pub(crate) queue: &'a wgpu::Queue,
+    pub(crate) config: &'a wgpu::SurfaceConfiguration,
 }
 
-pub struct LoadingContext<'a>
-{
-    renderer: &'a mut Renderer,
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-    config: &'a wgpu::SurfaceConfiguration
-}
-
-impl<'a> LoadingContext<'a>
+impl<'a> GraphicsContext<'a>
 {
     pub(crate) fn new(renderer: &'a mut Renderer, device: &'a wgpu::Device, queue: &'a wgpu::Queue, config: &'a wgpu::SurfaceConfiguration) -> Self
     {
-        Self { renderer, device, queue, config }
+        Self
+        {
+            renderer,
+            device,
+            queue,
+            config
+        }
     }
-}
 
-impl<'a> Loader for LoadingContext<'a> // Will be replaced by Asset Manager
-{
-    fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
         self.renderer.load_texture(self.device, self.queue, path, mag_filter, min_filter)
     }
 
-    fn load_char(&mut self, char: char) -> Option<usize>
+    pub fn load_char(&mut self, char: char) -> Option<usize>
     {
         self.renderer.load_char(self.device, self.queue, char)
     }
 
-    fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
+    pub fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
     {
         self.renderer.load_text(self.device, self.queue, text, size)
     }
 
-    fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
+    pub fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
     {
         self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
     }

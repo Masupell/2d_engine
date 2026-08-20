@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::{renderer::Renderer, texture::Texture};
+use crate::{RenderContext, Context, renderer::Renderer, texture::Texture};
 
 pub struct State<'a>
 {
@@ -116,7 +116,7 @@ impl<'a> State<'a>
     #[allow(unused)]
     pub fn update(&mut self) {}
 
-    pub fn render<T>(&mut self, draw: T) -> Result<(), wgpu::SurfaceError> where T: FnOnce(&mut Renderer)
+    pub fn render<T>(&mut self, context: &mut Context, draw: T) -> Result<(), wgpu::SurfaceError> where T: FnOnce(&mut RenderContext)
     {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -126,7 +126,11 @@ impl<'a> State<'a>
             label: Some("Render Encoder"),
         });
 
-        draw(&mut self.renderer);
+        {
+            let mut render_ctx = RenderContext::new(context, &mut self.renderer, &self.device, &self.queue, &self.config);
+            draw(&mut render_ctx);
+        }
+
         self.renderer.upload_instances(&self.device, &self.queue);
         self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
         // self.renderer.begin_pass(&mut encoder, &view);

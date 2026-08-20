@@ -58,8 +58,8 @@ impl Player
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
-        render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((self.collision.pos.x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
-        render_ctx.renderer.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.collision.pos.x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
+        render_ctx.graphics.renderer.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
     }
 
     pub fn set_texture(&mut self, texture_id: usize)

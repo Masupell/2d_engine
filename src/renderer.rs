@@ -28,6 +28,7 @@ pub struct Renderer
     pub(crate) pipelines: Vec<wgpu::RenderPipeline>,
     pub(crate) draw_commands: Vec<DrawCommand>,
     instance_buf: Option<wgpu::Buffer>,
+    instance_capacity: usize,
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
@@ -138,6 +139,7 @@ impl Renderer
             pipelines: vec![pipeline],
             draw_commands: Vec::new(),
             instance_buf: None,
+            instance_capacity: 0,
             meshes,
             window_size,
             virtual_size: window_size,
@@ -476,7 +478,8 @@ impl Renderer
     {
         if self.draw_commands.is_empty()
         {
-            self.instance_buf = None;
+            // self.instance_buf = None;
+            // self.instance_capacity = 0;
             return;
         }
 
@@ -504,19 +507,36 @@ impl Renderer
             }
         }).collect();
 
-        if let Some(ref buf) = self.instance_buf // If it already exists, dont create it again
+        let instance_size = instances.len() * std::mem::size_of::<InstanceData>();
+
+        if instance_size > self.instance_capacity
         {
-            queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
-        }
-        else
-        {
-            self.instance_buf = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor
+            let new_capacity = instance_size.next_power_of_two(); // same as in mesh creation temporary
+
+            self.instance_buf = Some(device.create_buffer(&wgpu::BufferDescriptor
             {
                 label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instances),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+                size: new_capacity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false
             }));
+            self.instance_capacity = new_capacity;
         }
+
+        queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&instances));
+        // if let Some(ref buf) = self.instance_buf // If it already exists, dont create it again
+        // {
+        //     queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
+        // }
+        // else
+        // {
+        //     self.instance_buf = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor
+        //     {
+        //         label: Some("Instance Buffer"),
+        //         contents: bytemuck::cast_slice(&instances),
+        //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        //     }));
+        // }
     }
 
     pub fn set_camera_pos(&mut self, position: (f32, f32))
