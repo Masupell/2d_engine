@@ -37,7 +37,7 @@ impl Rope
             rest_length: segment_length,
             max_length: segment_length+10.0,
             segment_length,
-            mesh_builder: MeshBuilder::new(MeshTopology::TriangleStrip),
+            mesh_builder: MeshBuilder::new(MeshTopology::Triangles),
             mesh_id: None
         }
     }
@@ -60,38 +60,36 @@ impl Rope
 
     fn solve_constraints(&mut self)
     {
+        const CORRECTION_TABLE: [(f32, f32); 2] =
+        [
+            (0.5, 0.5),
+            (0.0, 1.0),
+        ];
+
         for i in 0..self.points.len() - 1
         {
             let delta = self.points[i+1].pos - self.points[i].pos;
             let distance = delta.length();
-            if distance == 0.0 { continue; }
+            if distance == 0.0 { continue; } // if statement
 
             let difference = (distance - self.segment_length) / distance;
             let correction = delta * difference;
 
-            if i == 0
-            {
-                self.points[i+1].pos -= correction
-            }
-            else
-            {
-                self.points[i].pos += correction * 0.5;
-                self.points[i+1].pos -= correction * 0.5;
-            }
+            let table_index = (i == 0) as usize; // ==
+            let (first_factor, second_factor) = CORRECTION_TABLE[table_index];
+
+            self.points[i].pos += correction * first_factor;
+            self.points[i+1].pos -= correction * second_factor;
         }
         self.points[0].pos = self.anchor;
     }
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
     {
-        // for point in self.points.iter()
-        // {
-        //     render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((point.pos.x, point.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
-        // }
-        if let Some(mesh_id) = self.mesh_id
+        self.mesh_id.into_iter().for_each(|mesh_id|
         {
             render_ctx.graphics.renderer.draw_mesh(mesh_id, 0, z_index, shader_id);
-        }
+        });
     }
 
     // Currently just uses device nd queue directly for testing
@@ -102,50 +100,76 @@ impl Rope
         let width = 10.0;
         let half_width = width * 0.5;
 
-        for i in 0..self.points.len()
+        self.build_body(half_width);
+        self.build_cap(0, half_width, true);
+        self.build_cap(self.points.len()-1, half_width, false);
+
+        self.mesh_id = Some(self.mesh_builder.build(renderer, device, queue));
+    }
+
+
+    fn build_body(&mut self, half_width: f32)
+    {
+        for i in 0..self.points.len() - 1
         {
-            let pos = self.points[i].pos;
-
-            let direction = if i == 0
-            {
-                self.points[1].pos - pos
-            }
-            else if i == self.points.len() - 1
-            {
-                pos - self.points[i - 1].pos
-            }
-            else
-            {
-                self.points[i + 1].pos - self.points[i - 1].pos
-            };
-
-            let length = direction.length();
-
-            if length == 0.0
-            {
-                continue;
-            }
-
-            let direction = direction / length;
+            let current = self.points[i].pos;
+            let next = self.points[i + 1].pos;
+            let direction = (next - current).normalize();
             let normal = Vec2::new(-direction.y, direction.x);
 
-            let left = pos + normal * half_width;
-            let right = pos - normal * half_width;
+            let left_current = current + normal * half_width;
+            let right_current = current - normal * half_width;
 
-            self.mesh_builder.add_vertex(
-                VertexPosition::World((left.x, left.y)),
-                (0.0, i as f32)
-            );
+            let left_next = next + normal * half_width;
+            let right_next = next - normal * half_width;
 
-            self.mesh_builder.add_vertex(
-                VertexPosition::World((right.x, right.y)),
-                (1.0, i as f32)
-            );
+            self.add_triangle(left_current, right_current, left_next);
+            self.add_triangle(right_current, right_next, left_next);
         }
+    }
 
-        self.mesh_id = Some(
-            self.mesh_builder.build(renderer, device, queue)
-        );
+    fn build_cap(&mut self, index: usize, radius: f32, start: bool)
+    {
+        const CAP_SEGMENTS: usize = 8;
+
+        let center = self.points[index].pos;
+
+        let previous = index.saturating_sub(1);
+
+        let next = (index + 1).min(self.points.len() - 1);
+
+        let direction = (self.points[next].pos - self.points[previous].pos).normalize();
+
+        const CAP_DIRECTION: [f32; 2] =
+        [
+            1.0,
+            -1.0,
+        ];
+
+        let direction = direction * CAP_DIRECTION[start as usize];
+
+        let normal = Vec2::new(-direction.y, direction.x);
+
+        for i in 0..CAP_SEGMENTS
+        {
+            let t0 = i as f32 / CAP_SEGMENTS as f32;
+            let t1 = (i + 1) as f32 / CAP_SEGMENTS as f32;
+
+            let angle0 = -std::f32::consts::FRAC_PI_2 +  t0 * std::f32::consts::PI;
+            let angle1 = -std::f32::consts::FRAC_PI_2 + t1 * std::f32::consts::PI;
+
+            let p0 = center + direction * angle0.cos() * radius + normal * angle0.sin() * radius;
+            let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
+
+            self.add_triangle(center, p0, p1);
+        }
+    }
+
+    fn add_triangle(&mut self, a: Vec2, b: Vec2, c: Vec2)
+    {
+        self.mesh_builder.add_vertex(VertexPosition::World((a.x, a.y)), (0.0, 0.0));
+        self.mesh_builder.add_vertex(VertexPosition::World((b.x, b.y)), (0.0, 0.0));
+        self.mesh_builder.add_vertex(VertexPosition::World((c.x, c.y)), (0.0, 0.0));
     }
 }
 
@@ -173,10 +197,5 @@ impl RopePoint
         let new_pos = 2.0*self.pos - self.prev_pos + Vec2::new(0.0, gravity) * dt*dt;
         self.prev_pos = self.pos;
         self.pos = new_pos;
-    }
-
-    pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
-    {
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), (25.0, 25.0), 0.0), 0, z_index, shader_id);
     }
 }
