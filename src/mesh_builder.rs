@@ -89,7 +89,7 @@ impl MeshBuilder
         {
             if i % 2 == 0
             {
-                data.add_triangle(i as u16, (i+1) as u16, (i+3) as u16);
+                data.add_triangle(i as u16, (i+1) as u16, (i+2) as u16);
             }
             else
             {
@@ -104,30 +104,26 @@ impl MeshBuilder
         {
             VertexPosition::Screen((x, y)) =>
             {
-                let width = renderer.window_size.0;
-                let height = renderer.window_size.1;
-
-                ((x/width) * 2.0 - 1.0, -((y/height) * 2.0 - 1.0))
+                let to_virtual = (renderer.virtual_size.0 / renderer.window_size.0, renderer.virtual_size.1 / renderer.window_size.1);
+                self.anchor_to_camera(renderer, (x * to_virtual.0, y * to_virtual.1))
             }
             VertexPosition::Virtual((x, y)) =>
             {
-                let width = renderer.virtual_size.0;
-                let height = renderer.virtual_size.1;
-
-                ((x/width) * 2.0 - 1.0, -((y/height) * 2.0 - 1.0))
+                self.anchor_to_camera(renderer, (x, y))
             }
             VertexPosition::World((x, y)) =>
             {
                 (x, y)
-                // let x = x - renderer.camera_pos.0 + renderer.virtual_size.0 / 2.0;
-                // let y = y - renderer.camera_pos.1 + renderer.virtual_size.1 / 2.0;
-
-                // let width = renderer.virtual_size.0;
-                // let height = renderer.virtual_size.1;
-
-                // ((x/width) * 2.0 - 1.0, (y/height) * 2.0)
             }
         }
+    }
+
+    fn anchor_to_camera(&self, renderer: &Renderer, (x, y): (f32, f32)) -> (f32, f32)
+    {
+        (
+            renderer.camera_pos.0 + x - renderer.virtual_size.0 * 0.5,
+            renderer.camera_pos.1 - y + renderer.virtual_size.1 * 0.5
+        )
     }
 }
 
@@ -148,6 +144,6 @@ pub enum MeshTopology
 pub enum VertexPosition
 {
     Screen((f32, f32)), // in actual window pixels
-    Virtual((f32, f32)), // the virtual resolution, basically the resolutin I gave in the beginning
+    Virtual((f32, f32)), // the virtual resolution, basically the resolutin I gave in the beginning, screen_virtual, need to be rebuild every frame currently to stay there
     World((f32, f32)) // in world coordinates (like if the player is at -500), uses virtual size
 }

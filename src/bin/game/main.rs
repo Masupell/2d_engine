@@ -146,10 +146,10 @@ impl EngineEvent for App
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
         self.player.update(update_ctx.input, update_ctx.dt);
-        // self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
-        // self.rope.anchor = self.player.collision.pos;
+        self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
+        self.rope.anchor = self.player.collision.pos;
 
-        // self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
+        self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -173,7 +173,7 @@ impl EngineEvent for App
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
         self.player.draw(render_ctx, 1, 0);
-        // self.rope.draw(render_ctx, 1, 0);
+        self.rope.draw(render_ctx, 1, 0);
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((50.0, -50.0), (100.0, 100.0), 0.0), 2, 0, 0);
