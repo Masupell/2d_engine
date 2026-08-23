@@ -51,18 +51,6 @@ impl Renderer
 
         let shader = Shader::default(device);
 
-
-        let camera_uniform = CameraUniform
-        {
-            view_proj:
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        };
-
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             label: Some("Camera Bind Group Layout"),
