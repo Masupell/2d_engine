@@ -1,4 +1,4 @@
-use crate::{Input, Renderer, texture::FilterMode};
+use crate::{Input, Renderer, texture::FilterMode, utility::PipeLineType};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -8,7 +8,8 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     fullscreen: bool,
     fixed_dt: f64, // fixed dt
     fps: u32,
-    pub(crate) pending_actions: Vec<ContextAction>
+    pub(crate) pending_actions: Vec<ContextAction>,
+    pub(crate) post_process_pipeline: Option<usize>
 }
 
 impl Context
@@ -22,7 +23,8 @@ impl Context
             fullscreen,
             fixed_dt: 1.0 / 60.0,
             fps: 0,
-            pending_actions: Vec::new()
+            pending_actions: Vec::new(),
+            post_process_pipeline: None
         }
     }
 
@@ -84,6 +86,11 @@ impl Context
     {
         self.pending_actions.push(ContextAction::SetTitle(title.into()));
     }
+
+    pub fn set_post_process_pipeline(&mut self, id: usize)
+    {
+        self.post_process_pipeline = Some(id);
+    }
 }
 
 pub enum ContextAction
@@ -136,8 +143,8 @@ impl<'a> RenderContext<'a>
 pub struct GraphicsContext<'a> // Can load now, at any time, but still not perfect
 {
     pub renderer: &'a mut Renderer, //public for now, later should add methods
-    pub(crate) device: &'a wgpu::Device,
-    pub(crate) queue: &'a wgpu::Queue,
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
     pub(crate) config: &'a wgpu::SurfaceConfiguration,
 }
 
@@ -169,8 +176,13 @@ impl<'a> GraphicsContext<'a>
         self.renderer.load_text(self.device, self.queue, text, size)
     }
 
-    pub fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
+    pub fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
     {
-        self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path)
+        self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path, pipeline_type)
+    }
+
+    pub fn set_camera_pos(&mut self, position: (f32, f32))
+    {
+        self.renderer.set_camera_pos(position, self.queue);
     }
 }

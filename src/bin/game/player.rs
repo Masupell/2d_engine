@@ -50,7 +50,7 @@ impl Player
 
     pub fn update(&mut self, input: &Input, dt: f64)
     {
-        let forward = Vec2::new(-self.collision.rotation.sin(), -self.collision.rotation.cos()); // Because my rotation is reversed, otherwise it would be (+, -)
+        let forward = Vec2::new(self.collision.rotation.sin(), -self.collision.rotation.cos());
         self.velocity = forward * self.speed * dt as f32;
 
         self.collision.change_pos(self.velocity);
@@ -59,7 +59,7 @@ impl Player
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.collision.pos.x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
-        render_ctx.graphics.renderer.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
+        render_ctx.graphics.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
     }
 
     pub fn set_texture(&mut self, texture_id: usize)
@@ -75,7 +75,7 @@ impl Player
     // In radians
     pub fn rotate(&mut self, amount: f32)
     {
-        let new_rotation = self.collision.rotation - amount; //- so positive is clockwise
+        let new_rotation = self.collision.rotation + amount;
         self.collision.rotation = new_rotation.clamp(-self.max_rotation, self.max_rotation);
     }
 

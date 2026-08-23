@@ -134,7 +134,10 @@ impl<'a> State<'a>
         self.renderer.upload_instances(&self.device, &self.queue);
         self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
         // self.renderer.begin_pass(&mut encoder, &view);
-        self.renderer.screen_texture(&mut encoder, &view, 2, &self.bind_group); // Manual here for now. remember to remove from here later
+        if let Some(pp_id) = context.post_process_pipeline
+        {
+            self.renderer.screen_texture(&mut encoder, &view, pp_id, &self.bind_group); // Manual here for now. remember to remove from here later
+        }
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

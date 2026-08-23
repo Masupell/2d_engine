@@ -100,22 +100,34 @@ impl MeshBuilder
 
     fn convert_position(&self, renderer: &Renderer, position: VertexPosition) -> (f32, f32)
     {
-        let (x, y, width, height) = match position
+        match position
         {
             VertexPosition::Screen((x, y)) =>
             {
-                (x, y, renderer.window_size.0, renderer.window_size.1)
+                let width = renderer.window_size.0;
+                let height = renderer.window_size.1;
+
+                ((x/width) * 2.0 - 1.0, -((y/height) * 2.0 - 1.0))
             }
             VertexPosition::Virtual((x, y)) =>
             {
-                (x, y, renderer.virtual_size.0, renderer.virtual_size.1)
+                let width = renderer.virtual_size.0;
+                let height = renderer.virtual_size.1;
+
+                ((x/width) * 2.0 - 1.0, -((y/height) * 2.0 - 1.0))
             }
-        };
+            VertexPosition::World((x, y)) =>
+            {
+                (x, y)
+                // let x = x - renderer.camera_pos.0 + renderer.virtual_size.0 / 2.0;
+                // let y = y - renderer.camera_pos.1 + renderer.virtual_size.1 / 2.0;
 
-        let ndc_x = (x/width) * 2.0 - 1.0;
-        let ndc_y = (y/height) * 2.0;
+                // let width = renderer.virtual_size.0;
+                // let height = renderer.virtual_size.1;
 
-        (ndc_x, ndc_y)
+                // ((x/width) * 2.0 - 1.0, (y/height) * 2.0)
+            }
+        }
     }
 }
 
@@ -135,6 +147,7 @@ pub enum MeshTopology
 #[derive(Copy, Clone)]
 pub enum VertexPosition
 {
-    Screen((f32, f32)),
-    Virtual((f32, f32))
+    Screen((f32, f32)), // in actual window pixels
+    Virtual((f32, f32)), // the virtual resolution, basically the resolutin I gave in the beginning
+    World((f32, f32)) // in world coordinates (like if the player is at -500), uses virtual size
 }

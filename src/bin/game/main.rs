@@ -52,8 +52,31 @@ impl App
 
     fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
     {
-        // synchronous loading will freeze the game for a moment
-        self.test_id = Some(ctx.graphics.load_texture("src/image/owl.jpg", FilterMode::Linear, FilterMode::Linear));
+        let mut mesh_builder = MeshBuilder::new(MeshTopology::TriangleStrip);
+
+        mesh_builder.add_vertex(
+            VertexPosition::World((0.0, 0.0)),
+            (0.0, 0.0)
+        );
+
+        mesh_builder.add_vertex(
+            VertexPosition::World((0.0, -100.0)),
+            (0.0, 1.0)
+        );
+        mesh_builder.add_vertex(
+            VertexPosition::World((100.0, -100.0)),
+            (1.0, 1.0)
+        );
+        mesh_builder.add_vertex(
+            VertexPosition::World((100.0, 0.0)),
+            (1.0, 0.0)
+        );
+
+
+
+        self.test_id = Some(
+            mesh_builder.build(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue)
+        );
     }
 
     fn mouse_left_hold(&mut self, ctx: &mut UpdateContext)
@@ -104,8 +127,9 @@ impl EngineEvent for App
         let player_texture = graphics.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
         register_keys(input);
-        graphics.load_shader(Some("src/shaders/test.wgsl"), None);
-        graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"));
+        graphics.load_shader(Some("src/shaders/test.wgsl"), None, PipeLineType::Normal);
+        let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
+        ctx.set_post_process_pipeline(pp_id);
         graphics.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
     }
 
@@ -122,8 +146,10 @@ impl EngineEvent for App
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
         self.player.update(update_ctx.input, update_ctx.dt);
-        self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
-        self.rope.anchor = self.player.collision.pos;
+        // self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
+        // self.rope.anchor = self.player.collision.pos;
+
+        // self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -147,13 +173,14 @@ impl EngineEvent for App
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
         self.player.draw(render_ctx, 1, 0);
-        self.rope.draw(render_ctx, 1, 0);
+        // self.rope.draw(render_ctx, 1, 0);
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
-
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((50.0, -50.0), (100.0, 100.0), 0.0), 2, 0, 0);
         if self.test_id.is_some()
         {
-            render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.player.collision.pos.x, self.player.collision.pos.y), (192.0, 101.0), 0.0), self.test_id.unwrap(), 0, 0);
+            // render_ctx.graphics.renderer.draw_texture(self.test_id.unwrap(), render_ctx.graphics.renderer.matrix((self.player.collision.pos.x, self.player.collision.pos.y), (1000.0, 1000.0), 0.0), 0, 0, 0);
+            render_ctx.graphics.renderer.draw_mesh(self.test_id.unwrap(), 0, 0, 0);
         }
     }
 }

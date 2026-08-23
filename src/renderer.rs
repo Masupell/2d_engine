@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::Shader, texture::{Texture, FilterMode}, utility::{DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, Vertex}};
+use crate::{shader::Shader, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 
@@ -37,7 +37,10 @@ pub struct Renderer
     shader: Shader,
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
-    camera_pos: (f32, f32)
+    pub camera_pos: (f32, f32),
+    camera_buf: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    camera_bind_group_layout: wgpu::BindGroupLayout
 }
 
 impl Renderer
@@ -48,11 +51,61 @@ impl Renderer
 
         let shader = Shader::default(device);
 
+
+        let camera_uniform = CameraUniform
+        {
+            view_proj:
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry
+            {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer
+                {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(std::mem::size_of::<[[f32; 4]; 4]>() as u64).unwrap())//None,
+                },
+                count: None
+            }],
+        });
+
+        let camera_buf = device.create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("Camera Buffer"),
+            size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false
+        });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
+        {
+            label: Some("Camera Bind Group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry
+            {
+                binding: 0,
+                resource: camera_buf.as_entire_binding()
+            }]
+        });
+
+
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Render Pipeline Layout"),
             bind_group_layouts:
             &[
+                &camera_bind_group_layout,
                 &texture_bindgroup_layout
             ],
             push_constant_ranges: &[]
@@ -86,7 +139,7 @@ impl Renderer
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,//Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
                 unclipped_depth: false,
                 conservative: false
@@ -148,11 +201,14 @@ impl Renderer
             shader,
             // diffuse_bind_group
             // texture_bind_groups
-            camera_pos: (0.0, 0.0)
+            camera_pos: (0.0, 0.0),
+            camera_buf,
+            camera_bind_group,
+            camera_bind_group_layout
         }
     }
 
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>) -> usize
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
     {
         if let Some(path) = fragment_path
         {
@@ -163,13 +219,23 @@ impl Renderer
             self.shader.new_vertex(device, path, "vs_main");
         }
 
+        let bind_group_layouts = match pipeline_type
+        {
+            PipeLineType::Normal =>
+            vec![
+                &self.camera_bind_group_layout,
+                &self.texture_bindgroup_layout
+            ],
+            PipeLineType::PostProcess =>
+            vec![
+                &self.texture_bindgroup_layout
+            ]
+        };
+
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Pipeline Layout"),
-            bind_group_layouts:
-            &[
-                &self.texture_bindgroup_layout
-            ],
+            bind_group_layouts: &bind_group_layouts,
             push_constant_ranges: &[]
         });
 
@@ -406,16 +472,17 @@ impl Renderer
                 render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
 
 
+                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
                 // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
                 match &cmd.material.kind
                 {
                     MaterialType::Color(_) =>
                     {
-                        render_pass.set_bind_group(0, self.textures[0].as_ref(), &[]);
+                        render_pass.set_bind_group(1, self.textures[0].as_ref(), &[]);
                     }
                     MaterialType::Texture(texture) =>
                     {
-                        render_pass.set_bind_group(0, texture.as_ref(), &[]);
+                        render_pass.set_bind_group(1, texture.as_ref(), &[]);
                     }
                 }
 
@@ -472,6 +539,25 @@ impl Renderer
     {
         let texture = Arc::clone(&self.textures[texture_id]);
         self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, id)) });
+    }
+
+    // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
+    pub fn draw_mesh(&mut self, mesh_id: usize, texture_id: usize, z_index: u32, shader_id: u8)
+    {
+        let texture = Arc::clone(&self.textures[texture_id]);
+        self.draw_commands.push(DrawCommand
+        {
+            mesh_id,
+            transform: // identity matrix
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ],
+            z_index,
+            material: Arc::new(Material::texture(texture, shader_id))
+        });
     }
 
     pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -539,90 +625,138 @@ impl Renderer
         // }
     }
 
-    pub fn set_camera_pos(&mut self, position: (f32, f32))
+    pub fn set_camera_pos(&mut self, position: (f32, f32), queue: &wgpu::Queue)
     {
         self.camera_pos = position;
+        self.update_camera(queue);
+    }
+
+    fn update_camera(&self, queue: &wgpu::Queue)
+    {
+        let camera = CameraUniform
+        {
+            view_proj: self.camera_matrix()
+        };
+
+        queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&camera));
+    }
+
+    // uses virtual size
+    fn camera_matrix(&self) -> [[f32; 4]; 4]
+    {
+        let width = self.virtual_size.0;
+        let height = self.virtual_size.1;
+
+        let left = self.camera_pos.0 - width * 0.5;
+        let right = self.camera_pos.0 + width * 0.5;
+
+        let top = self.camera_pos.1 - height * 0.5;
+        let bottom = self.camera_pos.1 + height * 0.5;
+
+        [
+            [2.0 / (right - left), 0.0, 0.0, 0.0],
+            [0.0, -2.0 / (bottom - top), 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [-(right + left) / (right - left), (bottom + top) / (bottom - top), 0.0, 1.0]
+        ]
     }
 
     // pos in pixels, size as in 1.0 is default scale, rotation in radians (all for 2D, would work for 3D, but this is 2D)
-    pub fn to_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    {
-        let aspect = self.window_size.0/self.window_size.1;
-        let scale = 1./aspect;
+    // pub fn to_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
+    // {
+    //     let aspect = self.window_size.0/self.window_size.1;
+    //     let scale = 1./aspect;
 
-        let cos = rotation.cos();
-        let sin = rotation.sin();
+    //     let cos = rotation.cos();
+    //     let sin = rotation.sin();
 
-        [
-            [scale*cos*size.0, sin*size.0, 0.0, 0.0],
-            [scale*-sin*size.1, cos*size.1, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
-        ]
-    }
+    //     [
+    //         [scale*cos*size.0, sin*size.0, 0.0, 0.0],
+    //         [scale*-sin*size.1, cos*size.1, 0.0, 0.0],
+    //         [0.0, 0.0, 1.0, 0.0],
+    //         [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
+    //     ]
+    // }
 
     // Size in pixels now too
     // Always stays the same size, even if screen gets resized (so always 100px big for example), so not relative says but static
+    // pub fn pixel_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
+    // {
+    //     let aspect = self.window_size.0/self.window_size.1;
+    //     let scale = 1./aspect;
+
+    //     let cos = rotation.cos();
+    //     let sin = rotation.sin();
+
+    //     let pixel_size = ((size.0/self.window_size.1)*2.0, (size.1/self.window_size.1)*2.0);
+
+    //     [
+    //         [scale*cos*pixel_size.0, sin*pixel_size.0, 0.0, 0.0],
+    //         [scale*-sin*pixel_size.1, cos*pixel_size.1, 0.0, 0.0],
+    //         [0.0, 0.0, 1.0, 0.0],
+    //         [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
+    //     ]
+    // }
     pub fn pixel_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
-        let aspect = self.window_size.0/self.window_size.1;
-        let scale = 1./aspect;
+        let to_virtual = (self.virtual_size.0 / self.window_size.0, self.virtual_size.1 / self.window_size.1);
 
-        let cos = rotation.cos();
-        let sin = rotation.sin();
+        let virtual_pos = (pos.0 * to_virtual.0, pos.1 * to_virtual.1);
+        let virtual_size = (size.0 * to_virtual.0, size.1 * to_virtual.1);
 
-        let pixel_size = ((size.0/self.window_size.1)*2.0, (size.1/self.window_size.1)*2.0);
+        self.ui_matrix(virtual_pos, virtual_size, rotation)
+    }
 
-        [
-            [scale*cos*pixel_size.0, sin*pixel_size.0, 0.0, 0.0],
-            [scale*-sin*pixel_size.1, cos*pixel_size.1, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
-        ]
+    // Always on screen
+    // y opposite to usual (minus = down)
+    pub fn ui_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
+    {
+        let world_pos =
+        (
+            self.camera_pos.0 + pos.0 - self.virtual_size.0 * 0.5,
+            self.camera_pos.1 - pos.1 + self.virtual_size.1 * 0.5 // +, - to have at top-left 0,0
+        );
+
+        self.matrix(world_pos, size, rotation)
     }
 
     // Still draws with pixels, but this time everything gets drawn like it looks with the original screen-size, so resized looks the same (in relation to each other)
     // If using this, when trying to use the windowsize, use virtual_size instead of window_size
     // Because everything here is in relation to the original "virtual" size, not the actual window size
+    // pub fn matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
+    // {
+    //     let aspect = self.window_size.0/self.window_size.1;
+    //     let scale = 1./aspect;
+
+    //     let cos = rotation.cos();
+    //     let sin = rotation.sin();
+
+    //     let scale_x = (size.0/self.virtual_size.1)*2.0;
+    //     let scale_y = (size.1/self.virtual_size.1)*2.0;
+
+    //     [
+    //         [scale*cos*scale_x, sin*scale_x, 0.0, 0.0],
+    //         [scale*-sin*scale_y, cos*scale_y, 0.0, 0.0],
+    //         [0.0, 0.0, 1.0, 0.0],
+    //         [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
+    //     ]
+    // }
     pub fn matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
-        let aspect = self.window_size.0/self.window_size.1;
-        let scale = 1./aspect;
-
         let cos = rotation.cos();
         let sin = rotation.sin();
 
-        let scale_x = (size.0/self.virtual_size.1)*2.0;
-        let scale_y = (size.1/self.virtual_size.1)*2.0;
-
-        let camera_x = pos.0 - self.camera_pos.0 + self.virtual_size.0/2.0;
-        let camera_y = pos.1 - self.camera_pos.1 + self.virtual_size.1/2.0;
-
         [
-            [scale*cos*scale_x, sin*scale_x, 0.0, 0.0],
-            [scale*-sin*scale_y, cos*scale_y, 0.0, 0.0],
+            [cos*size.0, sin*size.0, 0.0, 0.0],
+            [sin*size.1, -cos*size.1, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [(camera_x/self.virtual_size.0)*2.0-1.0, -((camera_y/self.virtual_size.1)*2.0-1.0), 0.0, 1.0] // without camera just pos.0, pos.1 instead
+            [pos.0, pos.1, 0.0, 1.0]
         ]
     }
 
     // Size in relative to the original, not pixels
     pub fn texture_matrix(&self, pos: (f32, f32), scale: (f32, f32), rotation: f32, texture_size: (f32, f32)) -> [[f32; 4]; 4]
     {
-        let aspect = self.window_size.0/self.window_size.1;
-        let scale_fix = 1./aspect;
-
-        let cos = rotation.cos();
-        let sin = rotation.sin();
-
-        let scale_x = (texture_size.0/self.virtual_size.1)*2.0 * scale.0;
-        let scale_y = (texture_size.1/self.virtual_size.1)*2.0 * scale.1;
-
-        [
-            [scale_fix*cos*scale_x, sin*scale_x, 0.0, 0.0],
-            [scale_fix*-sin*scale_y, cos*scale_y, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
-        ]
+        self.matrix(pos, (texture_size.0 * scale.0, texture_size.1 * scale.1), rotation)
     }
 }

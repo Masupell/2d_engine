@@ -11,7 +11,7 @@ struct VertexInput
     @location(7) mode: u32,
 }
 
-struct VertexOutput 
+struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -20,7 +20,7 @@ struct VertexOutput
 };
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput 
+fn vs_main(in: VertexInput) -> VertexOutput
 {
     var out: VertexOutput;
 
@@ -41,7 +41,7 @@ var texture: texture_2d<f32>;
 var texture_sampler: sampler;
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> 
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     let base_color = textureSample(texture, texture_sampler, in.tex_coords);
 

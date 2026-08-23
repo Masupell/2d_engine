@@ -23,3 +23,6 @@ pub use no_if::vector::Vec2;
 pub use no_if::action::Action;
 pub use no_if::shapes::{Rect, Triangle};
 pub use texture::FilterMode;
+pub use utility::MeshData;
+pub use mesh_builder::{MeshBuilder, VertexPosition, MeshTopology};
+pub use utility::PipeLineType;

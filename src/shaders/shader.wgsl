@@ -1,3 +1,8 @@
+struct CameraUniform
+{
+    view_proj: mat4x4<f32>
+};
+
 struct VertexInput
 {
     @location(0) position: vec3<f32>,
@@ -14,7 +19,7 @@ struct VertexInput
     // @location(8) texture_id: u32
 }
 
-struct VertexOutput 
+struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -23,8 +28,11 @@ struct VertexOutput
     // @location(3) texture_id: u32
 };
 
+@group(0) @binding(0)
+var<uniform> camera: CameraUniform;
+
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput 
+fn vs_main(in: VertexInput) -> VertexOutput
 {
     var out: VertexOutput;
 
@@ -35,7 +43,8 @@ fn vs_main(in: VertexInput) -> VertexOutput
         in.model3
     );
 
-    out.clip_position = model * vec4<f32>(in.position, 1.0);
+    let world_pos = model * vec4<f32>(in.position, 1.0);
+    out.clip_position = camera.view_proj * world_pos;
     out.color = in.color;
     out.tex_coords = in.tex_coords;
     out.mode = in.mode;
@@ -44,13 +53,13 @@ fn vs_main(in: VertexInput) -> VertexOutput
 }
 
 
-@group(0) @binding(0)
+@group(1) @binding(0)
 var texture: texture_2d<f32>;
-@group(0) @binding(1)
+@group(1) @binding(1)
 var texture_sampler: sampler;
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> 
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
     // return vec4<f32>(0.3, 0.2, 0.1, 1.0);
     // return in.color;
