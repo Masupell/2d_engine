@@ -107,6 +107,19 @@ impl Rope
         self.mesh_id = Some(self.mesh_builder.build(renderer, device, queue));
     }
 
+    pub fn update_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let width = 10.0;
+        let half_width = width * 0.5;
+
+        self.update_body(half_width);
+        let body_vertex_count = (self.points.len() - 1) * 6;
+        let cap_vertex_count = 8 * 3; // 8 segments, 3 vertices each
+        self.update_cap(0, half_width, true, body_vertex_count);
+        self.update_cap(self.points.len()-1, half_width, false, body_vertex_count + cap_vertex_count);
+
+        self.mesh_builder.update_vertices(renderer, device, queue);
+    }
 
     fn build_body(&mut self, half_width: f32)
     {
@@ -125,6 +138,32 @@ impl Rope
 
             self.add_triangle(left_current, right_current, left_next);
             self.add_triangle(right_current, right_next, left_next);
+        }
+    }
+
+    fn update_body(&mut self, half_width: f32)
+    {
+        for i in 0..self.points.len() - 1
+        {
+            let current = self.points[i].pos;
+            let next = self.points[i + 1].pos;
+            let direction = (next - current).normalize();
+            let normal = Vec2::new(-direction.y, direction.x);
+
+            let left_current = current + normal * half_width;
+            let right_current = current - normal * half_width;
+
+            let left_next = next + normal * half_width;
+            let right_next = next - normal * half_width;
+
+            let base = i * 6;
+
+            self.mesh_builder.set_vertex_position(base, VertexPosition::World((left_current.x, left_current.y)));
+            self.mesh_builder.set_vertex_position(base+1, VertexPosition::World((right_current.x, right_current.y)));
+            self.mesh_builder.set_vertex_position(base+2, VertexPosition::World((left_next.x, left_next.y)));
+            self.mesh_builder.set_vertex_position(base+3, VertexPosition::World((right_current.x, right_current.y)));
+            self.mesh_builder.set_vertex_position(base+4, VertexPosition::World((right_next.x, right_next.y)));
+            self.mesh_builder.set_vertex_position(base+5, VertexPosition::World((left_next.x, left_next.y)));
         }
     }
 
@@ -162,6 +201,46 @@ impl Rope
             let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
 
             self.add_triangle(center, p0, p1);
+        }
+    }
+
+    fn update_cap(&mut self, index: usize, radius: f32, start: bool, vertex_offset: usize)
+    {
+        const CAP_SEGMENTS: usize = 8;
+
+        let center = self.points[index].pos;
+
+        let previous = index.saturating_sub(1);
+
+        let next = (index + 1).min(self.points.len() - 1);
+
+        let direction = (self.points[next].pos - self.points[previous].pos).normalize();
+
+        const CAP_DIRECTION: [f32; 2] =
+        [
+            1.0,
+            -1.0,
+        ];
+
+        let direction = direction * CAP_DIRECTION[start as usize];
+
+        let normal = Vec2::new(-direction.y, direction.x);
+
+        for i in 0..CAP_SEGMENTS
+        {
+            let t0 = i as f32 / CAP_SEGMENTS as f32;
+            let t1 = (i + 1) as f32 / CAP_SEGMENTS as f32;
+
+            let angle0 = -std::f32::consts::FRAC_PI_2 +  t0 * std::f32::consts::PI;
+            let angle1 = -std::f32::consts::FRAC_PI_2 + t1 * std::f32::consts::PI;
+
+            let p0 = center + direction * angle0.cos() * radius + normal * angle0.sin() * radius;
+            let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
+
+            let base = vertex_offset + i * 3;
+            self.mesh_builder.set_vertex_position(base, VertexPosition::World((center.x, center.y)));
+            self.mesh_builder.set_vertex_position(base+1, VertexPosition::World((p0.x, p0.y)));
+            self.mesh_builder.set_vertex_position(base+2, VertexPosition::World((p1.x, p1.y)));
         }
     }
 

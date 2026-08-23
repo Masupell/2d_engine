@@ -29,14 +29,54 @@ impl MeshBuilder
         self.vertices.push(BuilderVertex { position, uv });
     }
 
+    pub fn set_vertex_position(&mut self, index: usize, position: VertexPosition)
+    {
+        self.vertices[index].position = position;
+    }
+
+    pub fn vertex_count(&self) -> usize
+    {
+        self.vertices.len()
+    }
+
     pub fn build(&mut self, renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue) -> usize
+    {
+        let data = self.build_data(renderer);
+        match self.mesh_id
+        {
+            Some(mesh_id) =>
+            {
+                renderer.update_mesh(device, queue, mesh_id, &data);
+                mesh_id
+            }
+            None =>
+            {
+                let mesh_id = renderer.create_mesh(device, &data);
+                self.mesh_id = Some(mesh_id);
+                mesh_id
+            }
+        }
+    }
+
+    pub fn update_vertices(&mut self, renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let mesh_id = self.mesh_id;
+        mesh_id.into_iter().for_each(|mesh_id|
+        {
+            let vertices = self.build_vertices(renderer);
+            renderer.update_mesh_vertices(device, queue, mesh_id, &vertices);
+        });
+    }
+
+    fn build_data(&mut self, renderer: &Renderer) -> MeshData
     {
         let mut data = MeshData::new();
 
-        for vertex in &self.vertices
+        let vertices = self.build_vertices(renderer);
+
+        for vertex in vertices
         {
-            let position = self.convert_position(renderer, vertex.position);
-            data.add_vertex(Vertex::new([position.0, position.1, 0.0], [vertex.uv.0, vertex.uv.1]));
+            data.add_vertex(vertex);
         }
 
         match self.topology
@@ -50,21 +90,17 @@ impl MeshBuilder
                 self.build_triangle_strip_indices(&mut data);
             }
         }
-        let id = match self.mesh_id
+
+        data
+    }
+
+    fn build_vertices(&self, renderer: &Renderer) -> Vec<Vertex>
+    {
+        self.vertices.iter().map(|vertex|
         {
-            Some(mesh_id) =>
-            {
-                renderer.update_mesh(device, queue, mesh_id, &data);
-                mesh_id
-            }
-            None =>
-            {
-                let mesh_id = renderer.create_mesh(device, &data);
-                self.mesh_id = Some(mesh_id);
-                mesh_id
-            }
-        };
-        id
+            let position = self.convert_position(renderer, vertex.position);
+            Vertex::new([position.0, position.1, 0.0], [vertex.uv.0, vertex.uv.1])
+        }).collect()
     }
 
     fn build_triangle_indices(&mut self, data: &mut MeshData)

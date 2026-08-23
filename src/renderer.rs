@@ -354,6 +354,29 @@ impl Renderer
         mesh.index_count = data.indices.len() as u32;
     }
 
+    // to only update position of mesh
+    pub(crate) fn update_mesh_vertices(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh_id: usize, vertices: &[Vertex])
+    {
+        let mesh = &mut self.meshes[mesh_id];
+
+        let vertex_size = vertices.len() * std::mem::size_of::<Vertex>();
+
+        if vertex_size > mesh.vertex_capacity
+        {
+            let new_capacity = vertex_size.next_power_of_two();
+
+            mesh.vertex_buf = device.create_buffer(&wgpu::BufferDescriptor
+            {
+                label: None,
+                size: new_capacity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false
+            });
+            mesh.vertex_capacity = new_capacity;
+        }
+        queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
+    }
+
     pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
         let error = format!("Failed to load texture with path: {}", path);

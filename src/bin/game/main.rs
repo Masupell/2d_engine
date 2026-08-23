@@ -131,6 +131,7 @@ impl EngineEvent for App
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
         ctx.set_post_process_pipeline(pp_id);
         graphics.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
+        self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -146,10 +147,11 @@ impl EngineEvent for App
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
         self.player.update(update_ctx.input, update_ctx.dt);
-        self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
         self.rope.anchor = self.player.collision.pos;
+        self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
 
-        self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
+        // self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
+        self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
