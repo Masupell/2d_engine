@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::{Shader, ShaderModuleHandle}, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{shader::ShaderModuleHandle, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 

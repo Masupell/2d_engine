@@ -6,9 +6,14 @@ struct VertexOutput
     @location(2) mode: u32,
 };
 
-const ROPE_COLOR: vec3<f32>  = vec3<f32>(0.3, 0.16, 0.04);
+const ROPE_COLOR: vec3<f32> = vec3<f32>(0.3, 0.16, 0.04);
 const TWISTS_PER_SEGMENT: f32 = 3.8;
-const STRAND_CONTRAST: f32    = 0.3;
+const STRAND_CONTRAST: f32 = 0.4;
+
+fn hash(p: vec2<f32>) -> f32
+{
+    return fract(sin(dot(p, vec2<f32>(12.9898,78.233))) * 43758.5453); // numbers from glsl random number thing
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
@@ -29,7 +34,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 
     // rope twisting
     let angle = asin(w);
-    let phase = (u * TWISTS_PER_SEGMENT + angle * 0.9) * 6.2831853;
+    let rope_noise = hash(vec2<f32>(floor(u * 8.0), floor(v * 8.0)));
+    let phase = (u * TWISTS_PER_SEGMENT + angle * 0.9 + (rope_noise - 0.5) * 0.5) * 6.2831853;
     let strands = sin(phase) * 0.5 + sin(phase * 2.0 + 1.0) * 0.15;
     let strand_shading = 1.0 + strands * STRAND_CONTRAST;
 
