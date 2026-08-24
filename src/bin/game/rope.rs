@@ -66,14 +66,15 @@ impl Rope
             (0.0, 1.0),
         ];
 
+        const STIFFNESS: f32 = 0.25;
+
         for i in 0..self.points.len() - 1
         {
             let delta = self.points[i+1].pos - self.points[i].pos;
             let distance = delta.length();
-            if distance == 0.0 { continue; } // if statement
 
-            let difference = (distance - self.segment_length) / distance;
-            let correction = delta * difference;
+            let stretch = (distance - self.segment_length).max(0.0);
+            let correction = delta.normalize() * stretch * STIFFNESS;
 
             let table_index = (i == 0) as usize; // ==
             let (first_factor, second_factor) = CORRECTION_TABLE[table_index];
