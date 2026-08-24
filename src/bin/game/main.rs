@@ -128,6 +128,7 @@ impl EngineEvent for App
         self.player.set_texture(player_texture);
         register_keys(input);
         graphics.load_shader(Some("src/shaders/test.wgsl"), None, PipeLineType::Normal);
+        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal); // 2, I believe
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
         ctx.set_post_process_pipeline(pp_id);
         graphics.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
@@ -175,7 +176,7 @@ impl EngineEvent for App
 
         // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
         self.player.draw(render_ctx, 1, 0);
-        self.rope.draw(render_ctx, 1, 0);
+        self.rope.draw(render_ctx, 1, 2);
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((50.0, -50.0), (100.0, 100.0), 0.0), 2, 0, 0);

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::Shader, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{shader::{Shader, ShaderModuleHandle}, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 
@@ -34,7 +34,8 @@ pub struct Renderer
     pub virtual_size: (f32, f32),
     textures: Vec<Arc<wgpu::BindGroup>>,
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
-    shader: Shader,
+    default_vertex: ShaderModuleHandle,
+    default_fragment: ShaderModuleHandle,
     // diffuse_bind_group: wgpu::BindGroup,
     // texture_bind_groups: Vec<wgpu::BindGroup>
     pub camera_pos: (f32, f32),
@@ -49,7 +50,8 @@ impl Renderer
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
-        let shader = Shader::default(device);
+        let default_vertex = ShaderModuleHandle::default_vertex(device);
+        let default_fragment = ShaderModuleHandle::default_fragment(device);
 
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
@@ -105,15 +107,15 @@ impl Renderer
             layout: Some(&layout),
             vertex: wgpu::VertexState
             {
-                module: &shader.vertex_module,
-                entry_point: Some(&shader.vs_entry),
+                module: &default_vertex.module,
+                entry_point: Some(&default_vertex.entry),
                 buffers: &[Vertex::desc(), InstanceData::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default()
             },
             fragment: Some(wgpu::FragmentState
             {
-                module: &shader.fragment_module,
-                entry_point: Some(&shader.fs_entry),
+                module: &default_fragment.module,
+                entry_point: Some(&default_fragment.entry),
                 targets: &[Some(wgpu::ColorTargetState
                 {
                     format: config.format,
@@ -186,7 +188,8 @@ impl Renderer
             virtual_size: window_size,
             textures: vec![default_bindgroup],
             texture_bindgroup_layout,
-            shader,
+            default_vertex,
+            default_fragment,
             // diffuse_bind_group
             // texture_bind_groups
             camera_pos: (0.0, 0.0),
@@ -198,26 +201,22 @@ impl Renderer
 
     pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
     {
-        if let Some(path) = fragment_path
+        let vertex = match vertex_path
         {
-            self.shader.new_fragment(device, path, "fs_main");
-        }
-        if let Some(path) = vertex_path
+            Some(path) => ShaderModuleHandle::from_path(device, path, "vs_main"),
+            None => self.default_vertex.clone() // cheap because arc
+        };
+
+        let fragment = match fragment_path
         {
-            self.shader.new_vertex(device, path, "vs_main");
-        }
+            Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
+            None => self.default_fragment.clone()
+        };
 
         let bind_group_layouts = match pipeline_type
         {
-            PipeLineType::Normal =>
-            vec![
-                &self.camera_bind_group_layout,
-                &self.texture_bindgroup_layout
-            ],
-            PipeLineType::PostProcess =>
-            vec![
-                &self.texture_bindgroup_layout
-            ]
+            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
+            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
         };
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
@@ -233,15 +232,15 @@ impl Renderer
             layout: Some(&layout),
             vertex: wgpu::VertexState
             {
-                module: &self.shader.vertex_module,
-                entry_point: Some(&self.shader.vs_entry),
+                module: &vertex.module,
+                entry_point: Some(&vertex.entry),
                 buffers: &[Vertex::desc(), InstanceData::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default()
             },
             fragment: Some(wgpu::FragmentState
             {
-                module: &self.shader.fragment_module,
-                entry_point: Some(&self.shader.fs_entry),
+                module: &fragment.module,
+                entry_point: Some(&fragment.entry),
                 targets: &[Some(wgpu::ColorTargetState
                 {
                     format: config.format,
@@ -255,7 +254,7 @@ impl Renderer
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,//Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
                 unclipped_depth: false,
                 conservative: false

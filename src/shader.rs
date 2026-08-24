@@ -1,76 +1,37 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
-pub struct Shader
+#[derive(Clone)]
+pub struct ShaderModuleHandle
 {
-    pub vertex_module: wgpu::ShaderModule,
-    pub fragment_module: wgpu::ShaderModule,
-    pub vs_entry: String,
-    pub fs_entry: String
+    pub module: Arc<wgpu::ShaderModule>,
+    pub entry: String
 }
 
-impl Shader
+impl ShaderModuleHandle
 {
-    // pub fn new(device: &wgpu::Device, path: &str, vs_entry: &str, fs_entry: &str) -> Self
-    // {
-    //     let source = fs::read_to_string(path).unwrap();
-    //     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor
-    //     {
-    //         label: Some(path),
-    //         source: wgpu::ShaderSource::Wgsl(source.into()),
-    //     });
-
-    //     Self
-    //     {
-    //         module,
-    //         vs_entry: vs_entry.to_string(),
-    //         fs_entry: fs_entry.to_string()
-    //     }
-    // }
-
-    pub fn default(device: &wgpu::Device) -> Self 
+    fn from_source(device: &wgpu::Device, source: &str, entry: &str) -> Self
     {
-        let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor
         {
-            label: Some("Default Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
+           label: None,
+           source: wgpu::ShaderSource::Wgsl(source.into())
         });
-
-        let fragment_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
-        {
-            label: Some("Default Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
-        });
-
-        Self 
-        { 
-            vertex_module,
-            fragment_module, 
-            vs_entry: "vs_main".into(), 
-            fs_entry: "fs_main".into()
-        }
+        Self { module: Arc::new(module), entry: entry.to_string() }
     }
 
-    pub fn new_fragment(&mut self, device: &wgpu::Device, path: &str, entry: &str)
+    pub fn from_path(device: &wgpu::Device, path: &str, entry: &str) -> Self
     {
-        let source = fs::read_to_string(path).unwrap();
-        let fragment = device.create_shader_module(wgpu::ShaderModuleDescriptor
-        {
-            label: Some("Fragment"),
-            source: wgpu::ShaderSource::Wgsl(source.into())
-        });
-        self.fragment_module = fragment;
-        self.fs_entry = entry.to_string();
+        let source = fs::read_to_string(path).unwrap_or_else(|e| panic!("Failed to read shader '{}': {}", path, e));
+        Self::from_source(device, &source, entry)
     }
 
-    pub fn new_vertex(&mut self, device: &wgpu::Device, path: &str, entry: &str)
+    pub fn default_vertex(device: &wgpu::Device) -> Self
     {
-        let source = fs::read_to_string(path).unwrap();
-        let vertex = device.create_shader_module(wgpu::ShaderModuleDescriptor
-        {
-            label: Some("Vertex"),
-            source: wgpu::ShaderSource::Wgsl(source.into())
-        });
-        self.vertex_module = vertex;
-        self.vs_entry = entry.to_string();
+        Self::from_source(device, include_str!("shaders/shader.wgsl"), "vs_main")
+    }
+
+    pub fn default_fragment(device: &wgpu::Device) -> Self
+    {
+        Self::from_source(device, include_str!("shaders/shader.wgsl"), "fs_main")
     }
 }

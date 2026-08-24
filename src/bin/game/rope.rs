@@ -136,8 +136,11 @@ impl Rope
             let left_next = next + normal * half_width;
             let right_next = next - normal * half_width;
 
-            self.add_triangle(left_current, right_current, left_next);
-            self.add_triangle(right_current, right_next, left_next);
+            let x0 = i as f32;
+            let x1 = (i+1) as f32;
+
+            self.add_triangle(left_current, right_current, left_next, Vec2::new(x0, 0.0), Vec2::new(x0, 1.0), Vec2::new(x1, 0.0));
+            self.add_triangle(right_current, right_next, left_next, Vec2::new(x0, 1.0), Vec2::new(x1, 1.0), Vec2::new(x1, 0.0));
         }
     }
 
@@ -184,6 +187,12 @@ impl Rope
             1.0,
             -1.0,
         ];
+        let uv_x: [f32; 2] =
+        [
+            (self.points.len() - 1) as f32,
+            0.0
+        ];
+        let x = uv_x[start as usize];
 
         let direction = direction * CAP_DIRECTION[start as usize];
 
@@ -200,7 +209,10 @@ impl Rope
             let p0 = center + direction * angle0.cos() * radius + normal * angle0.sin() * radius;
             let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
 
-            self.add_triangle(center, p0, p1);
+            let v0 = 0.5 + (angle0.sin() * 0.5)*CAP_DIRECTION[(1-(start as i32)).abs() as usize];
+            let v1 = 0.5 + (angle1.sin() * 0.5)*CAP_DIRECTION[(1-(start as i32)).abs() as usize];
+
+            self.add_triangle(center, p0, p1, Vec2::new(x, 0.5), Vec2::new(x, v0), Vec2::new(x, v1));
         }
     }
 
@@ -244,11 +256,11 @@ impl Rope
         }
     }
 
-    fn add_triangle(&mut self, a: Vec2, b: Vec2, c: Vec2)
+    fn add_triangle(&mut self, a: Vec2, b: Vec2, c: Vec2, aa: Vec2, bb: Vec2, cc: Vec2)
     {
-        self.mesh_builder.add_vertex(VertexPosition::World((a.x, a.y)), (0.0, 0.0));
-        self.mesh_builder.add_vertex(VertexPosition::World((b.x, b.y)), (0.0, 0.0));
-        self.mesh_builder.add_vertex(VertexPosition::World((c.x, c.y)), (0.0, 0.0));
+        self.mesh_builder.add_vertex(VertexPosition::World((a.x, a.y)), (aa.x, aa.y));
+        self.mesh_builder.add_vertex(VertexPosition::World((b.x, b.y)), (bb.x, bb.y));
+        self.mesh_builder.add_vertex(VertexPosition::World((c.x, c.y)), (cc.x, cc.y));
     }
 }
 
