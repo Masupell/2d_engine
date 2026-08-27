@@ -2,17 +2,15 @@ use engine::*;
 
 pub struct Rope
 {
-    pub points: Vec<RopePoint>,
+    pub segments: Vec<RopeSegment>,
 
-    pub anchor: Vec2,
-
+    pub segment_length: f32,
     pub rest_length: f32,
     pub max_length: f32,
 
-    pub segment_length: f32,
-
-    mesh_builder: MeshBuilder,
-    mesh_id: Option<usize>,
+    width: f32,
+    pub view_buffer: f32,
+    view_bounds: (Vec2, Vec2),
 }
 
 impl Rope
@@ -20,72 +18,198 @@ impl Rope
     pub fn new(top_point: Vec2) -> Self
     {
         let segment_length = 30.0;
-        let mut points = Vec::new();
-
         let angle: f32 = 0.4;
-        for i in 0..=10
-        {
-            let position = top_point + Vec2::new(angle.cos() * i as f32 * segment_length, angle.sin() * i as f32 * segment_length);
-
-            points.push(RopePoint::new(position));
-        }
+        let direction = Vec2::new(angle.cos(), angle.sin());
 
         Rope
         {
-            points,
-            anchor: top_point,
-            rest_length: segment_length,
-            max_length: segment_length+10.0,
+            segments: vec![RopeSegment::new(top_point, direction, segment_length, 10)],
             segment_length,
+            rest_length: segment_length,
+            max_length: segment_length + 10.0,
+            width: 10.0,
+            view_buffer: 200.0,
+            view_bounds: (top_point, top_point),
+        }
+    }
+
+    fn compute_view_bounds(player_pos: Vec2, buffer: f32) -> (Vec2, Vec2)
+    {
+        let half_extent = Vec2::new(1280.0 * 0.5 + buffer, 720.0 * 0.5 + buffer); //1280.0, 720.0 - centered on player
+
+        (player_pos - half_extent, player_pos + half_extent)
+    }
+
+    pub fn update(&mut self, gravity: f32, player_pos: Vec2, dt: f32)
+    {
+        let segment_length = self.segment_length;
+
+        self.view_bounds = Self::compute_view_bounds(player_pos, self.view_buffer);
+        let (view_min, view_max) = self.view_bounds;
+
+        self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update(gravity, player_pos, segment_length, dt));
+    }
+
+    pub fn add_anchor(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
+    {
+        let width = self.width;
+        let segment_length = self.segment_length;
+        let previous = self.segments.last_mut().unwrap();
+
+        let anchor_pos = previous.end_pos();
+        let direction = previous.end_direction(); // previous is better here, then actual player position
+        previous.end_anchor = Some(anchor_pos);
+
+        let mut segment = RopeSegment::new(anchor_pos, direction, segment_length, extra_points);
+        segment.build_mesh(renderer, device, queue, width);
+
+        self.segments.push(segment);
+    }
+
+    // In case I need the anchor positions
+    pub fn anchor_positions(&self) -> impl Iterator<Item = Vec2> + '_
+    {
+        self.segments.iter().map(|segment| segment.anchor_pos)
+    }
+
+    pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
+    {
+        let (view_min, view_max) = self.view_bounds;
+        self.segments.iter().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.draw(render_ctx, z_index, shader_id));
+    }
+
+    // Only builds meshes for newly added segements
+    pub fn build_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let width = self.width;
+        self.segments.iter_mut().filter(|segment| segment.mesh_id.is_none()).for_each(|segment| segment.build_mesh(renderer, device, queue, width));
+    }
+
+    // Only updates positions of segements in view
+    pub fn update_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let width = self.width;
+        let (view_min, view_max) = self.view_bounds;
+
+        self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update_mesh(renderer, device, queue, width));
+    }
+}
+
+pub struct RopeSegment
+{
+    pub points: Vec<RopePoint>,
+    pub anchor_pos: Vec2,
+
+    // None, when following the player, Some(Vec2) when attached to anchor
+    end_anchor: Option<Vec2>,
+
+    mesh_builder: MeshBuilder,
+    mesh_id: Option<usize>,
+}
+
+impl RopeSegment
+{
+    fn new(anchor_pos: Vec2, direction: Vec2, segment_length: f32, extra_points: usize) -> Self
+    {
+        let points = (0..=extra_points).map(|i| RopePoint::new(anchor_pos + direction * (i as f32 * segment_length))).collect();
+
+        Self
+        {
+            points,
+            anchor_pos,
+            end_anchor: None,
             mesh_builder: MeshBuilder::new(MeshTopology::Triangles),
-            mesh_id: None
+            mesh_id: None,
         }
     }
 
-    pub fn update(&mut self, gravity: f32, dt: f32)
+    // Bounding box over entire segment
+    fn bounds(&self) -> (Vec2, Vec2)
     {
-        for i in 1..self.points.len()
-        {
-            self.points[i].update(gravity, dt);
-        }
-
-        for _ in 0..5
-        {
-            self.solve_constraints();
-        }
-
-        self.points[0].pos = self.anchor;
-        self.points[0].prev_pos = self.anchor;
+        self.points.iter().fold(
+            (Vec2::new(f32::INFINITY, f32::INFINITY), Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY)),
+            |(min, max), point|
+            (
+                Vec2::new(min.x.min(point.pos.x), min.y.min(point.pos.y)),
+                Vec2::new(max.x.max(point.pos.x), max.y.max(point.pos.y)),
+            )
+        )
     }
 
-    fn solve_constraints(&mut self)
+    fn in_view(&self, view_min: Vec2, view_max: Vec2) -> bool
     {
-        const CORRECTION_TABLE: [(f32, f32); 2] =
+        let (seg_min, seg_max) = self.bounds();
+
+        let overlap_x = (seg_min.x < view_max.x) & (seg_max.x > view_min.x);
+        let overlap_y = (seg_min.y < view_max.y) & (seg_max.y > view_min.y);
+
+        overlap_x & overlap_y
+    }
+
+    fn end_pos(&self) -> Vec2
+    {
+        self.points.last().unwrap().pos
+    }
+
+    // Need at least one new point when calling
+    fn end_direction(&self) -> Vec2
+    {
+        let last = self.points.len() - 1;
+        let prev = last.saturating_sub(1);
+
+        (self.points[last].pos - self.points[prev].pos).normalize()
+    }
+
+    fn update(&mut self, gravity: f32, player_pos: Vec2, segment_length: f32, dt: f32)
+    {
+        let last = self.points.len() - 1;
+        let tail_target = self.end_anchor.unwrap_or(player_pos);
+
+        self.points.iter_mut().skip(1).for_each(|point| point.update(gravity, dt));
+
+        (0..5).for_each(|_| self.solve_constraints(segment_length));
+
+        self.points[0].pos = self.anchor_pos;
+        self.points[0].prev_pos = self.anchor_pos;
+
+        self.points[last].pos = tail_target;
+        self.points[last].prev_pos = tail_target;
+    }
+
+    fn solve_constraints(&mut self, segment_length: f32)
+    {
+        const CORRECTION_TABLE: [(f32, f32); 4] =
         [
             (0.5, 0.5),
             (0.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0)
         ];
 
         const STIFFNESS: f32 = 0.25;
 
-        for i in 0..self.points.len() - 1
+        let last = self.points.len() - 1;
+
+        for i in 0..last
         {
-            let delta = self.points[i+1].pos - self.points[i].pos;
+            let delta = self.points[i + 1].pos - self.points[i].pos;
             let distance = delta.length();
 
-            let stretch = (distance - self.segment_length).max(0.0);
+            let stretch = (distance - segment_length).max(0.0);
             let correction = delta.normalize() * stretch * STIFFNESS;
 
-            let table_index = (i == 0) as usize; // ==
-            let (first_factor, second_factor) = CORRECTION_TABLE[table_index];
+            let first_fixed = 1 - i.min(1);
+            let second_fixed = 1 - (last - 1 - i).min(1);
+
+            let index = first_fixed + second_fixed * 2;
+            let (first_factor, second_factor) = CORRECTION_TABLE[index];
 
             self.points[i].pos += correction * first_factor;
-            self.points[i+1].pos -= correction * second_factor;
+            self.points[i + 1].pos -= correction * second_factor;
         }
-        self.points[0].pos = self.anchor;
     }
 
-    pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
+    fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
     {
         self.mesh_id.into_iter().for_each(|mesh_id|
         {
@@ -93,31 +217,28 @@ impl Rope
         });
     }
 
-    // Currently just uses device nd queue directly for testing
-    pub fn build_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    fn build_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, width: f32)
     {
         self.mesh_builder.clear();
 
-        let width = 10.0;
         let half_width = width * 0.5;
 
         self.build_body(half_width);
         self.build_cap(0, half_width, true);
-        self.build_cap(self.points.len()-1, half_width, false);
+        self.build_cap(self.points.len() - 1, half_width, false);
 
         self.mesh_id = Some(self.mesh_builder.build(renderer, device, queue));
     }
 
-    pub fn update_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    fn update_mesh(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, width: f32)
     {
-        let width = 10.0;
         let half_width = width * 0.5;
 
         self.update_body(half_width);
         let body_vertex_count = (self.points.len() - 1) * 6;
         let cap_vertex_count = 8 * 3; // 8 segments, 3 vertices each
         self.update_cap(0, half_width, true, body_vertex_count);
-        self.update_cap(self.points.len()-1, half_width, false, body_vertex_count + cap_vertex_count);
+        self.update_cap(self.points.len() - 1, half_width, false, body_vertex_count + cap_vertex_count);
 
         self.mesh_builder.update_vertices(renderer, device, queue);
     }
@@ -138,7 +259,7 @@ impl Rope
             let right_next = next - normal * half_width;
 
             let x0 = i as f32;
-            let x1 = (i+1) as f32;
+            let x1 = (i + 1) as f32;
 
             self.add_triangle(left_current, right_current, left_next, Vec2::new(x0, 0.0), Vec2::new(x0, 1.0), Vec2::new(x1, 0.0));
             self.add_triangle(right_current, right_next, left_next, Vec2::new(x0, 1.0), Vec2::new(x1, 1.0), Vec2::new(x1, 0.0));
@@ -178,7 +299,6 @@ impl Rope
         let center = self.points[index].pos;
 
         let previous = index.saturating_sub(1);
-
         let next = (index + 1).min(self.points.len() - 1);
 
         let direction = (self.points[next].pos - self.points[previous].pos).normalize();
@@ -204,14 +324,14 @@ impl Rope
             let t0 = i as f32 / CAP_SEGMENTS as f32;
             let t1 = (i + 1) as f32 / CAP_SEGMENTS as f32;
 
-            let angle0 = -std::f32::consts::FRAC_PI_2 +  t0 * std::f32::consts::PI;
+            let angle0 = -std::f32::consts::FRAC_PI_2 + t0 * std::f32::consts::PI;
             let angle1 = -std::f32::consts::FRAC_PI_2 + t1 * std::f32::consts::PI;
 
             let p0 = center + direction * angle0.cos() * radius + normal * angle0.sin() * radius;
             let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
 
-            let v0 = 0.5 + (angle0.sin() * 0.5)*CAP_DIRECTION[(1-(start as i32)).abs() as usize];
-            let v1 = 0.5 + (angle1.sin() * 0.5)*CAP_DIRECTION[(1-(start as i32)).abs() as usize];
+            let v0 = 0.5 + (angle0.sin() * 0.5) * CAP_DIRECTION[(1 - (start as i32)).abs() as usize];
+            let v1 = 0.5 + (angle1.sin() * 0.5) * CAP_DIRECTION[(1 - (start as i32)).abs() as usize];
 
             self.add_triangle(center, p0, p1, Vec2::new(x, 0.5), Vec2::new(x, v0), Vec2::new(x, v1));
         }
@@ -224,7 +344,6 @@ impl Rope
         let center = self.points[index].pos;
 
         let previous = index.saturating_sub(1);
-
         let next = (index + 1).min(self.points.len() - 1);
 
         let direction = (self.points[next].pos - self.points[previous].pos).normalize();
@@ -244,7 +363,7 @@ impl Rope
             let t0 = i as f32 / CAP_SEGMENTS as f32;
             let t1 = (i + 1) as f32 / CAP_SEGMENTS as f32;
 
-            let angle0 = -std::f32::consts::FRAC_PI_2 +  t0 * std::f32::consts::PI;
+            let angle0 = -std::f32::consts::FRAC_PI_2 + t0 * std::f32::consts::PI;
             let angle1 = -std::f32::consts::FRAC_PI_2 + t1 * std::f32::consts::PI;
 
             let p0 = center + direction * angle0.cos() * radius + normal * angle0.sin() * radius;
@@ -271,22 +390,16 @@ pub struct RopePoint
     pub prev_pos: Vec2
 }
 
-
 impl RopePoint
 {
     pub fn new(pos: Vec2) -> Self
     {
-        Self
-        {
-            pos,
-            prev_pos: pos
-        }
+        Self { pos, prev_pos: pos }
     }
 
     pub fn update(&mut self, gravity: f32, dt: f32)
     {
-        // move particle
-        let new_pos = 2.0*self.pos - self.prev_pos + Vec2::new(0.0, gravity) * dt*dt;
+        let new_pos = 2.0 * self.pos - self.prev_pos + Vec2::new(0.0, gravity) * dt * dt;
         self.prev_pos = self.pos;
         self.pos = new_pos;
     }

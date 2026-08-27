@@ -52,31 +52,32 @@ impl App
 
     fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
     {
-        let mut mesh_builder = MeshBuilder::new(MeshTopology::TriangleStrip);
+        // let mut mesh_builder = MeshBuilder::new(MeshTopology::TriangleStrip);
 
-        mesh_builder.add_vertex(
-            VertexPosition::World((0.0, 0.0)),
-            (0.0, 0.0)
-        );
+        // mesh_builder.add_vertex(
+        //     VertexPosition::World((0.0, 0.0)),
+        //     (0.0, 0.0)
+        // );
 
-        mesh_builder.add_vertex(
-            VertexPosition::World((0.0, -100.0)),
-            (0.0, 1.0)
-        );
-        mesh_builder.add_vertex(
-            VertexPosition::World((100.0, -100.0)),
-            (1.0, 1.0)
-        );
-        mesh_builder.add_vertex(
-            VertexPosition::World((100.0, 0.0)),
-            (1.0, 0.0)
-        );
+        // mesh_builder.add_vertex(
+        //     VertexPosition::World((0.0, -100.0)),
+        //     (0.0, 1.0)
+        // );
+        // mesh_builder.add_vertex(
+        //     VertexPosition::World((100.0, -100.0)),
+        //     (1.0, 1.0)
+        // );
+        // mesh_builder.add_vertex(
+        //     VertexPosition::World((100.0, 0.0)),
+        //     (1.0, 0.0)
+        // );
 
 
 
-        self.test_id = Some(
-            mesh_builder.build(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue)
-        );
+        // self.test_id = Some(
+        //     mesh_builder.build(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue)
+        // );
+        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 5);
     }
 
     fn mouse_left_hold(&mut self, ctx: &mut UpdateContext)
@@ -148,8 +149,8 @@ impl EngineEvent for App
         // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
 
         self.player.update(update_ctx.input, update_ctx.dt);
-        self.rope.anchor = self.player.collision.pos;
-        self.rope.update(980.0, update_ctx.dt as f32); //980, as 100px = 1m
+        // self.rope.anchor = self.player.collision.pos;
+        self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
 
         // self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
