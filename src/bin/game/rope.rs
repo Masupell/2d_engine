@@ -26,7 +26,7 @@ impl Rope
             segments: vec![RopeSegment::new(top_point, direction, segment_length, 10)],
             segment_length,
             rest_length: segment_length,
-            max_length: segment_length + 10.0,
+            max_length: segment_length + 15.0,
             width: 10.0,
             view_buffer: 200.0,
             view_bounds: (top_point, top_point),
@@ -70,6 +70,15 @@ impl Rope
     pub fn anchor_positions(&self) -> impl Iterator<Item = Vec2> + '_
     {
         self.segments.iter().map(|segment| segment.anchor_pos)
+    }
+
+    // Where the player is currently tethered from + the max stretch length, if everythings straight
+    pub fn current_reach(&self) -> (Vec2, f32)
+    {
+        let active = self.segments.last().unwrap();
+        let max_reach = (active.points.len()-1) as f32 * self.max_length;
+
+        (active.anchor_pos, max_reach)
     }
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)

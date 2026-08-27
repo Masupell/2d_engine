@@ -138,21 +138,10 @@ impl EngineEvent for App
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
-        // let direction = (self.x-self.player.collision.x, self.y-self.player.collision.y);
-        // let target_angle = -direction.1.atan2(direction.0)-std::f32::consts::PI/2.0;
+        let (rope_anchor, rope_max_reach) = self.rope.current_reach();
+        self.player.update(update_ctx.input, update_ctx.dt as f32, rope_anchor, rope_max_reach);
 
-        // let current_angle = self.player.collision.rotation;
-        // let max_rotation = std::f32::consts::PI*2.0 * update_ctx.dt as f32;
-
-        // let angle_diff = (target_angle - current_angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-
-        // self.player.rotate(angle_diff.clamp(-max_rotation, max_rotation));
-
-        self.player.update(update_ctx.input, update_ctx.dt);
-        // self.rope.anchor = self.player.collision.pos;
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
-
-        // self.rope.build_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
