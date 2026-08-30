@@ -22,12 +22,39 @@ impl Rect
         }
     }
 
+    pub fn new_from_center(x: f64, y: f64, width: f64, height: f64) -> Self
+    {
+        let corner_x = x-width/2.0;
+        let corner_y = y-height/2.0;
+
+        Self
+        {
+            x: corner_x,
+            y: corner_y,
+            width,
+            height
+        }
+    }
+
+    pub fn update_from_center_pos(&mut self, new_x: f64, new_y: f64)
+    {
+        let corner_x = new_x-self.width/2.0;
+        let corner_y = new_y-self.height/2.0;
+        self.x = corner_x;
+        self.y = corner_y;
+    }
+
     pub fn contains(&self, point: (f64, f64)) -> bool
     {
         point.0 >= self.x
             && point.0 <= self.x + self.width
             && point.1 >= self.y
             && point.1 <= self.y + self.height
+    }
+
+    pub fn contains_x(&self, x: f64) -> bool
+    {
+        x >= self.x && x <= self.x + self.width
     }
 }
 

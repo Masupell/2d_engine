@@ -2,14 +2,24 @@ use engine::*;
 
 pub struct Wall
 {
-    pub width: f32
+    pub width: f32,
+    bounds: Rect
 }
 
 impl Wall
 {
     pub fn new(width: f32) -> Self
     {
-        Self { width }
+        Self
+        {
+            width,
+            bounds: Rect::new_from_center(0.0, 0.0, width as f64, 0.0)
+        }
+    }
+
+    pub fn contains(&self, pos: Vec2) -> bool
+    {
+        self.bounds.contains_x(pos.x as f64)
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)

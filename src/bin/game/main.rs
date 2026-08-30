@@ -51,7 +51,7 @@ impl App
 
     fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
     {
-        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 10);
+
     }
 
     fn mouse_left_hold(&mut self, _ctx: &mut UpdateContext)
@@ -61,6 +61,19 @@ impl App
 
 
     fn player_place_checkpoint(&mut self, ctx: &mut UpdateContext)
+    {
+        const PLACE_TABLE: [fn(&mut App, &mut UpdateContext); 2] =
+        [
+            App::place_nothing,
+            App::place_anchor
+        ];
+
+        let on_wall = self.wall.contains(self.player.collision.pos) as usize;
+        println!("{}", on_wall);
+        PLACE_TABLE[on_wall](self, ctx);
+    }
+    fn place_nothing(&mut self, _: &mut UpdateContext) {}
+    fn place_anchor(&mut self, ctx: &mut UpdateContext)
     {
         self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 10);
     }
@@ -139,6 +152,7 @@ impl App
 pub fn register_keys(input: &mut Input)
 {
     input.add_key_binding(Key::Space, Some(Action::PlaceCheckPoint), None, None);
+    input.add_mouse_binding(Button::Left, Some(Action::PlaceCheckPoint), None, None);
     input.add_key_binding(Key::KeyF, None, Some(Action::StartFalling), None);
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
