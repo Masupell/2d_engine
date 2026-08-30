@@ -85,6 +85,8 @@ impl EngineEvent for App
         ctx.set_post_process_pipeline(pp_id);
 
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
+
+        graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)

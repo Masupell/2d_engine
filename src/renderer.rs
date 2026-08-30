@@ -41,7 +41,8 @@ pub struct Renderer
     pub camera_pos: (f32, f32),
     camera_buf: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera_bind_group_layout: wgpu::BindGroupLayout
+    camera_bind_group_layout: wgpu::BindGroupLayout,
+    clear_color: wgpu::Color
 }
 
 impl Renderer
@@ -195,7 +196,8 @@ impl Renderer
             camera_pos: (0.0, 0.0),
             camera_buf,
             camera_bind_group,
-            camera_bind_group_layout
+            camera_bind_group_layout,
+            clear_color: wgpu::Color {r: 0.0, g: 0.0, b: 0.0, a: 1.0}
         }
     }
 
@@ -446,13 +448,7 @@ impl Renderer
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(wgpu::Color
-                    {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(self.clear_color),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -633,6 +629,12 @@ impl Renderer
         //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
         //     }));
         // }
+    }
+
+    pub(crate) fn set_clear_color(&mut self, color: [f64; 4])
+    {
+        let clear = wgpu::Color { r: color[0], g: color[1], b: color[2], a: color[3] };
+        self.clear_color = clear;
     }
 
     pub fn set_camera_pos(&mut self, position: (f32, f32), queue: &wgpu::Queue)

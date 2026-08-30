@@ -185,4 +185,9 @@ impl<'a> GraphicsContext<'a>
     {
         self.renderer.set_camera_pos(position, self.queue);
     }
+
+    pub fn set_clear_color(&mut self, color: [f64; 4])
+    {
+        self.renderer.set_clear_color(color);
+    }
 }
