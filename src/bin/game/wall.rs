@@ -17,6 +17,12 @@ impl Wall
         }
     }
 
+    // left and right side of horizontal
+    pub fn get_bounds(&self) -> (f32, f32)
+    {
+        (self.bounds.x as f32, (self.bounds.x+self.bounds.width) as f32)
+    }
+
     pub fn contains(&self, pos: Vec2) -> bool
     {
         self.bounds.contains_x(pos.x as f64)

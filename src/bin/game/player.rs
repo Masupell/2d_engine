@@ -11,7 +11,7 @@ enum MovementState
 
 impl MovementState { const COUNT: usize = 2; }
 
-type StateUpdateFn = fn(&mut Player, f32, Vec2, f32);
+type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32));
 
 const STATE_UPDATE_TABLE: [StateUpdateFn; MovementState::COUNT] =
 [
@@ -82,9 +82,9 @@ impl Player
         self.actions[event as usize] = Some(action)
     }
 
-    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
     {
-        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach);
+        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds);
         self.update_tilt(dt);
         self.move_input = Vec2::ZERO;
     }
@@ -96,7 +96,7 @@ impl Player
         self.collision.rotation += (target_rotation - self.collision.rotation) * catch_up;
     }
 
-    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
     {
         let input_len = self.move_input.length();
         let move_dir = self.move_input * (1.0 / input_len.max(1.0));
@@ -105,9 +105,10 @@ impl Player
         self.collision.change_pos(self.velocity * dt);
 
         self.constrain_to_rope(rope_anchor, rope_max_reach);
+        self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
     }
 
-    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, _: (f32, f32))
     {
         let offset = self.collision.pos - rope_anchor;
         let distance = offset.length();

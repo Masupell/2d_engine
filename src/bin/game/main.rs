@@ -62,15 +62,16 @@ impl App
 
     fn player_place_checkpoint(&mut self, ctx: &mut UpdateContext)
     {
-        const PLACE_TABLE: [fn(&mut App, &mut UpdateContext); 2] =
+        const PLACE_TABLE: [fn(&mut App, &mut UpdateContext); 3] =
         [
+            App::place_nothing,
             App::place_nothing,
             App::place_anchor
         ];
 
         let on_wall = self.wall.contains(self.player.collision.pos) as usize;
-        println!("{}", on_wall);
-        PLACE_TABLE[on_wall](self, ctx);
+        let falling = !self.player.is_falling() as usize; // Later maybe instead of not allowing that, only dont, when player fell to much
+        PLACE_TABLE[on_wall+falling](self, ctx);
     }
     fn place_nothing(&mut self, _: &mut UpdateContext) {}
     fn place_anchor(&mut self, ctx: &mut UpdateContext)
@@ -105,7 +106,7 @@ impl EngineEvent for App
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
-        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach);
+        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds());
 
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
