@@ -202,6 +202,11 @@ impl Input
         self.key_bindings.insert(key, KeyBinding { pressed, released, hold: held });
     }
 
+    pub fn add_mouse_binding(&mut self, button: MouseButton, pressed: Option<Action>, released: Option<Action>, held: Option<Action>)
+    {
+        self.mouse_bindings.insert(button, MouseBinding { pressed, released, hold: held });
+    }
+
     pub(crate) fn add_action(&mut self, action: Action)
     {
         self.actions.push(action);

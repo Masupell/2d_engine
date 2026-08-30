@@ -18,6 +18,7 @@ pub use renderer::Renderer;
 pub use input::Input;
 
 pub use winit::keyboard::KeyCode as Key; // Temporary here
+pub use winit::event::MouseButton as Button; // Temporary here
 pub use no_if::button::*;
 pub use no_if::vector::Vec2;
 pub use no_if::action::Action;
