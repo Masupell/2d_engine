@@ -1,9 +1,10 @@
 pub mod player;
 pub mod rope;
+pub mod wall;
 
 use engine::*;
 
-use crate::{player::Player, rope::{Rope, RopePoint}};
+use crate::{player::Player, rope::Rope, wall::Wall};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -19,11 +20,7 @@ const ACTION_TABLE: [ActionFn; Action::COUNT] =
     App::player_start_falling,
     App::player_move_up,
     App::player_move_left,
-    App::player_move_right,
-    App::print,
-    App::hover,
-    App::unhover,
-    App::released
+    App::player_move_right
 ];
 
 struct App
@@ -32,7 +29,7 @@ struct App
     y: f32,
     player: Player,
     rope: Rope,
-    test_id: Option<usize>
+    wall: Wall
 }
 
 impl App
@@ -42,71 +39,24 @@ impl App
         ctx.context.toggle_fullscreen();
     }
 
-    fn escape(&mut self, ctx: &mut UpdateContext)
+    fn escape(&mut self, _ctx: &mut UpdateContext)
     {
 
     }
 
-    fn mouse_left_pressed(&mut self, ctx: &mut UpdateContext)
+    fn mouse_left_pressed(&mut self, _ctx: &mut UpdateContext)
     {
 
     }
 
     fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
     {
-        // let mut mesh_builder = MeshBuilder::new(MeshTopology::TriangleStrip);
-
-        // mesh_builder.add_vertex(
-        //     VertexPosition::World((0.0, 0.0)),
-        //     (0.0, 0.0)
-        // );
-
-        // mesh_builder.add_vertex(
-        //     VertexPosition::World((0.0, -100.0)),
-        //     (0.0, 1.0)
-        // );
-        // mesh_builder.add_vertex(
-        //     VertexPosition::World((100.0, -100.0)),
-        //     (1.0, 1.0)
-        // );
-        // mesh_builder.add_vertex(
-        //     VertexPosition::World((100.0, 0.0)),
-        //     (1.0, 0.0)
-        // );
-
-
-
-        // self.test_id = Some(
-        //     mesh_builder.build(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue)
-        // );
-        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 5);
+        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 10);
     }
 
-    fn mouse_left_hold(&mut self, ctx: &mut UpdateContext)
+    fn mouse_left_hold(&mut self, _ctx: &mut UpdateContext)
     {
 
-    }
-
-    fn print(&mut self, _ctx: &mut UpdateContext)
-    {
-        println!("Button Click detected")
-    }
-
-    fn hover(&mut self, _ctx: &mut UpdateContext)
-    {
-        println!("Button Hover");
-        // self.button.set_size_centered((220.0, 110.0));
-    }
-
-    fn unhover(&mut self, _ctx: &mut UpdateContext)
-    {
-        println!("Button Leaves Hover");
-        // self.button.set_size_centered((200.0, 100.0));
-    }
-
-    fn released(&mut self, _ctx: &mut UpdateContext)
-    {
-        println!("Button Released")
     }
 
 
@@ -126,19 +76,14 @@ impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
-        // ctx.toggle_vsync();
-        // loader.load_texture("src/image/owl.jpg");
-        // loader.load_texture("src/image/Player.png", FilterMode::Nearest, FilterMode::Nearest);
-        // let button_texture = loader.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
-        // self.button.set_texture(button_texture);
         let player_texture = graphics.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
         register_keys(input);
-        graphics.load_shader(Some("src/shaders/test.wgsl"), None, PipeLineType::Normal);
-        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal); // 2, I believe
+
+        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
         ctx.set_post_process_pipeline(pp_id);
-        graphics.load_texture("src/image/cheetah.jpg", FilterMode::Linear, FilterMode::Linear);
+
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
     }
 
@@ -161,26 +106,13 @@ impl EngineEvent for App
     {
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
-
-        // self.button.update(update_ctx.input);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((render_ctx.renderer.virtual_size.0/2.0, render_ctx.renderer.virtual_size.1/2.0), (1.0, 1.0), 0.0, (1920.0, 1014.0)), 1, 0, 0);
-        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.texture_matrix((self.x, self.y), (0.5, 0.5), 0.0, (1920.0, 1014.0)), 1, 0, 1);
-
-        // render_ctx.renderer.draw_texture(0, render_ctx.renderer.matrix((100.0, 100.0), (200.0, 200.0), 0.0), 1, 0, 0);
+        self.wall.draw(render_ctx, 1, 0);
         self.player.draw(render_ctx, 1, 0);
-        self.rope.draw(render_ctx, 1, 2);
-
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((640.0, -300.0), (1920.0, 1080.0), 0.0), 2, 0, 0);
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((50.0, -50.0), (100.0, 100.0), 0.0), 2, 0, 0);
-        if self.test_id.is_some()
-        {
-            // render_ctx.graphics.renderer.draw_texture(self.test_id.unwrap(), render_ctx.graphics.renderer.matrix((self.player.collision.pos.x, self.player.collision.pos.y), (1000.0, 1000.0), 0.0), 0, 0, 0);
-            render_ctx.graphics.renderer.draw_mesh(self.test_id.unwrap(), 0, 0, 0);
-        }
+        self.rope.draw(render_ctx, 1, 1);
     }
 }
 
@@ -190,7 +122,6 @@ impl App
     {
         let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
-        // player.set_action(event, action);
 
         Self
         {
@@ -198,7 +129,7 @@ impl App
             y: 0.0,
             player,
             rope,
-            test_id: None
+            wall: Wall::new(1280.0*2.0)
         }
     }
 }

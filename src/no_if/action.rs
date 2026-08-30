@@ -17,11 +17,5 @@ pub enum Action
     MoveUp,
     MoveLeft,
     MoveRight,
-
-    // Test
-    Print,
-    Hover,
-    UnHover,
-    Released
 }
-impl Action { pub const COUNT: usize = 14; }
+impl Action { pub const COUNT: usize = 10; }
