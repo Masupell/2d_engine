@@ -12,9 +12,11 @@ pub enum Action
     MouseLeftHold,
 
     //Player
-    RotateLeft,
-    RotateRight,
     PlaceCheckPoint,
+    StartFalling,
+    MoveUp,
+    MoveLeft,
+    MoveRight,
 
     // Test
     Print,
@@ -22,4 +24,4 @@ pub enum Action
     UnHover,
     Released
 }
-impl Action { pub const COUNT: usize = 12; }
+impl Action { pub const COUNT: usize = 14; }

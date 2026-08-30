@@ -15,9 +15,11 @@ const ACTION_TABLE: [ActionFn; Action::COUNT] =
     App::mouse_left_pressed,
     App::mouse_left_released,
     App::mouse_left_hold,
-    App::player_rotate_left,
-    App::player_rotate_right,
     App::player_place_checkpoint,
+    App::player_start_falling,
+    App::player_move_up,
+    App::player_move_left,
+    App::player_move_right,
     App::print,
     App::hover,
     App::unhover,
@@ -107,13 +109,17 @@ impl App
         println!("Button Released")
     }
 
-    fn player_rotate_left(&mut self, ctx: &mut UpdateContext) { self.player.rotate_left(ctx.dt as f32); }
-    fn player_rotate_right(&mut self, ctx: &mut UpdateContext) { self.player.rotate_right(ctx.dt as f32); }
 
-    fn player_place_checkpoint(&mut self, _ctx: &mut UpdateContext)
+    fn player_place_checkpoint(&mut self, ctx: &mut UpdateContext)
     {
-        println!("Checkpoint Placed");
+        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 10);
     }
+
+    fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(); }
+
+    fn player_move_up(&mut self, _ctx: &mut UpdateContext) { self.player.move_up(); }
+    fn player_move_left(&mut self, _ctx: &mut UpdateContext) { self.player.move_left(); }
+    fn player_move_right(&mut self, _ctx: &mut UpdateContext) { self.player.move_right(); }
 }
 
 impl EngineEvent for App
@@ -139,7 +145,7 @@ impl EngineEvent for App
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
-        self.player.update(update_ctx.input, update_ctx.dt as f32, rope_anchor, rope_max_reach);
+        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach);
 
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
@@ -182,7 +188,7 @@ impl App
 {
     fn new() -> Self
     {
-        let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 90.0_f32.to_radians(), 50.0_f32.to_radians());
+        let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
         // player.set_action(event, action);
 
@@ -199,9 +205,11 @@ impl App
 
 pub fn register_keys(input: &mut Input)
 {
-    input.add_key_binding(Key::KeyA, None, None, Some(Action::RotateLeft));
-    input.add_key_binding(Key::KeyD, None, None, Some(Action::RotateRight));
     input.add_key_binding(Key::Space, Some(Action::PlaceCheckPoint), None, None);
+    input.add_key_binding(Key::KeyF, None, Some(Action::StartFalling), None);
+    input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
+    input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
+    input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
 }
 
 fn main()

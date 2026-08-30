@@ -1,20 +1,44 @@
 use engine::{no_if::vector::Vec2, *};
 
+// Climbing: Move up, left and right
+// Falling: Swing using left and right, press up when at bottom, to climb again
+#[derive(Copy, Clone, PartialEq)]
+enum MovementState
+{
+    Climbing,
+    Falling,
+}
+
+impl MovementState { const COUNT: usize = 2; }
+
+type StateUpdateFn = fn(&mut Player, f32, Vec2, f32);
+
+const STATE_UPDATE_TABLE: [StateUpdateFn; MovementState::COUNT] =
+[
+    Player::update_climbing,
+    Player::update_falling,
+];
+
 pub struct Player
 {
     pub collision: Triangle,
-
     width: f32,
     height: f32,
-
     texture_id: usize,
+    max_rotation: f32,
 
-    rotation_speed: f32,
-    max_rotation: f32, // in both directions from 0 degrees (0 being up in my case)
     velocity: Vec2,
-    pub acceleration: f32,
+    move_input: Vec2,
+    state: MovementState,
+    fall_origin: Vec2,
+
+    pub speed: f32,
+    pub swing_thrust: f32,
     pub gravity: f32,
-    pub drag: f32, // 0..1, lower is 'stickier'
+    pub max_survivable_fall: f32,
+    pub tilt_per_velocity: f32,
+    pub tilt_smoothing: f32,
+    pub recovery_tolerance: f32,
 
     pub score: i32,
     actions: [Option<Action>; PlayerEvent::COUNT],
@@ -22,7 +46,7 @@ pub struct Player
 
 impl Player
 {
-    pub fn new(center: Vec2, width: f32, height: f32, rotation_speed: f32, max_rotation: f32) -> Self
+    pub fn new(center: Vec2, width: f32, height: f32, max_rotation: f32) -> Self
     {
         // Expects it in local coordinates
         let a = Vec2::new(0.0, -height/2.0); // top point
@@ -36,12 +60,18 @@ impl Player
             width,
             height,
             texture_id: 0,
-            rotation_speed,
             max_rotation,
             velocity: Vec2::ZERO,
-            acceleration: 1500.0,
+            move_input: Vec2::ZERO,
+            state: MovementState::Climbing,
+            fall_origin: Vec2::ZERO,
+            speed: 300.0,
+            swing_thrust: 900.0,
             gravity: 980.0,
-            drag: 0.15,
+            max_survivable_fall: 600.0,
+            tilt_per_velocity: 0.0025,
+            tilt_smoothing: 0.05,
+            recovery_tolerance: 15.0,
             score: 0,
             actions: [None; PlayerEvent::COUNT]
         }
@@ -52,29 +82,104 @@ impl Player
         self.actions[event as usize] = Some(action)
     }
 
-    pub fn update(&mut self, input: &Input, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
     {
-        let forward = Vec2::new(self.collision.rotation.sin(), -self.collision.rotation.cos());
+        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach);
+        self.update_tilt(dt);
+        self.move_input = Vec2::ZERO;
+    }
 
-        let acceleration = forward * self.acceleration + Vec2::new(0.0, self.gravity);
-        self.velocity += acceleration * dt;
-        self.velocity *= self.drag.powf(dt); // to be frame rate independent
+    fn update_tilt(&mut self, dt: f32)
+    {
+        let target_rotation = (self.velocity.x * self.tilt_per_velocity).clamp(-self.max_rotation, self.max_rotation);
+        let catch_up = 1.0 - self.tilt_smoothing.powf(dt);
+        self.collision.rotation += (target_rotation - self.collision.rotation) * catch_up;
+    }
 
+    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    {
+        let input_len = self.move_input.length();
+        let move_dir = self.move_input * (1.0 / input_len.max(1.0));
+
+        self.velocity = move_dir * self.speed;
         self.collision.change_pos(self.velocity * dt);
+
         self.constrain_to_rope(rope_anchor, rope_max_reach);
     }
 
-    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32)
+    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32)
+    {
+        let offset = self.collision.pos - rope_anchor;
+        let distance = offset.length();
+        let radial_dir = offset * (1.0 / distance.max(0.0001)); // see constrain_to_rope - same zero-offset guard
+        let tangent_dir = Vec2::new(radial_dir.y, -radial_dir.x);
+
+        let caught = (distance > rope_max_reach) as u32 as f32;
+
+        let acceleration = Vec2::new(0.0, self.gravity) + tangent_dir * (self.move_input.x * self.swing_thrust * caught);
+
+        self.velocity += acceleration * dt;
+        // self.velocity *= self.drag.powf(dt);
+        self.collision.change_pos(self.velocity * dt);
+
+        let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach);
+
+        const RECOVERY_TABLE: [MovementState; 2] = [MovementState::Falling, MovementState::Climbing];
+        let at_bottom = slack_deficit > -self.recovery_tolerance;
+        let w_pressed = self.move_input.y < 0.0;
+        let recover = at_bottom & w_pressed;
+
+        self.state = RECOVERY_TABLE[recover as usize];
+    }
+
+    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32) -> f32
     {
         let offset = self.collision.pos - anchor;
         let distance = offset.length();
-        let radial_dir = offset.normalize();
+        let radial_dir = offset * (1.0 / distance.max(0.0001));
 
-        let excess = (distance - max_reach).max(0.0);
+        let slack_deficit = distance - max_reach;
+        let excess = slack_deficit.max(0.0);
         self.collision.change_pos(radial_dir * -excess);
 
+        let beyond_limit = (slack_deficit > 0.0) as u32 as f32;
         let outward_speed = (self.velocity.x * radial_dir.x + self.velocity.y * radial_dir.y).max(0.0);
-        self.velocity -= radial_dir * outward_speed * ((excess > 0.0) as i32) as f32;
+        self.velocity -= radial_dir * outward_speed * beyond_limit;
+
+        slack_deficit
+    }
+
+    pub fn move_up(&mut self)
+    {
+        self.move_input.y -= 1.0;
+    }
+
+    pub fn move_left(&mut self)
+    {
+        self.move_input.x -= 1.0;
+    }
+
+    pub fn move_right(&mut self)
+    {
+        self.move_input.x += 1.0;
+    }
+
+    pub fn start_falling(&mut self)
+    {
+        self.state = MovementState::Falling;
+        self.fall_origin = self.collision.pos;
+        self.velocity = Vec2::ZERO;
+    }
+
+    pub fn is_falling(&self) -> bool
+    {
+        self.state == MovementState::Falling // ==
+    }
+
+    pub fn is_beyond_recovery(&self) -> bool
+    {
+        let fallen = (self.collision.pos - self.fall_origin).length();
+        fallen > self.max_survivable_fall
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -91,23 +196,6 @@ impl Player
     pub fn set_pos(&mut self, pos: Vec2)
     {
         self.collision.pos += pos;
-    }
-
-    // In radians
-    pub fn rotate(&mut self, amount: f32)
-    {
-        let new_rotation = self.collision.rotation + amount;
-        self.collision.rotation = new_rotation.clamp(-self.max_rotation, self.max_rotation);
-    }
-
-    pub fn rotate_left(&mut self, dt: f32)
-    {
-        self.rotate(-self.rotation_speed * dt);
-    }
-
-    pub fn rotate_right(&mut self, dt: f32)
-    {
-        self.rotate(self.rotation_speed * dt);
     }
 
     // Would not change collision, so dont do that yet
