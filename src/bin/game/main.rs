@@ -1,10 +1,11 @@
 pub mod player;
 pub mod rope;
 pub mod wall;
+pub mod collectible;
 
 use engine::*;
 
-use crate::{player::Player, rope::Rope, wall::Wall};
+use crate::{player::Player, rope::Rope, wall::Wall, collectible::{CollectibleManager, CollectibleKind}};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -29,7 +30,8 @@ struct App
     y: f32,
     player: Player,
     rope: Rope,
-    wall: Wall
+    wall: Wall,
+    collectibles: CollectibleManager
 }
 
 impl App
@@ -90,9 +92,17 @@ impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
-        let player_texture = graphics.load_texture("src/image/player.png", FilterMode::Linear, FilterMode::Linear);
-        self.player.set_texture(player_texture);
         register_keys(input);
+
+        let player_texture = graphics.load_texture("src/bin/game/assets/player.png", FilterMode::Linear, FilterMode::Linear);
+        self.player.set_texture(player_texture);
+
+        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
+        self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
+        for _ in 0..10
+        {
+            self.collectibles.spawn_rope_coil(&self.wall, 0.0, 2000.0, 30.0);
+        }
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
@@ -107,6 +117,9 @@ impl EngineEvent for App
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds());
+
+        self.collectibles.update(update_ctx.dt as f32);
+        self.collectibles.check_collection(&mut self.player, 100.0);
 
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
@@ -127,8 +140,9 @@ impl EngineEvent for App
     fn render(&self, render_ctx: &mut RenderContext)
     {
         self.wall.draw(render_ctx, 1, 0);
-        self.player.draw(render_ctx, 1, 0);
-        self.rope.draw(render_ctx, 1, 1);
+        self.collectibles.draw(render_ctx, 2, 0);
+        self.player.draw(render_ctx, 2, 0);
+        self.rope.draw(render_ctx, 2, 1);
     }
 }
 
@@ -138,6 +152,7 @@ impl App
     {
         let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
+        let collectibles = CollectibleManager::new();
 
         Self
         {
@@ -145,7 +160,8 @@ impl App
             y: 0.0,
             player,
             rope,
-            wall: Wall::new(1280.0*2.0)
+            wall: Wall::new(1280.0*2.0),
+            collectibles
         }
     }
 }
