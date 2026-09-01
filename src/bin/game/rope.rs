@@ -23,7 +23,7 @@ impl Rope
 
         Rope
         {
-            segments: vec![RopeSegment::new(top_point, direction, segment_length, 10)],
+            segments: vec![RopeSegment::new(top_point, direction, segment_length, 1)],
             segment_length,
             rest_length: segment_length,
             max_length: segment_length + 15.0,
@@ -79,6 +79,14 @@ impl Rope
         let max_reach = (active.points.len()-1) as f32 * self.max_length;
 
         (active.anchor_pos, max_reach)
+    }
+
+    pub fn grow_active_segment(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let active = self.segments.last_mut().unwrap();
+
+        active.push_point(self.segment_length);
+        active.build_mesh(renderer, device, queue, self.width);
     }
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
@@ -158,6 +166,11 @@ impl RopeSegment
     fn end_pos(&self) -> Vec2
     {
         self.points.last().unwrap().pos
+    }
+
+    fn push_point(&mut self, segment_length: f32)
+    {
+        self.points.push(RopePoint::new(self.end_pos() + self.end_direction() * segment_length));
     }
 
     // Need at least one new point when calling

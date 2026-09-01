@@ -40,6 +40,9 @@ pub struct Player
     pub tilt_smoothing: f32,
     pub recovery_tolerance: f32,
 
+    pub rope_reserve: f32,
+    pub rope_grow_tolerance: f32,
+
     pub score: i32,
     actions: [Option<Action>; PlayerEvent::COUNT],
 }
@@ -72,6 +75,8 @@ impl Player
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
             recovery_tolerance: 15.0,
+            rope_reserve: 1000.0,
+            rope_grow_tolerance: 10.0,
             score: 0,
             actions: [None; PlayerEvent::COUNT]
         }
@@ -80,6 +85,25 @@ impl Player
     pub fn set_action(&mut self, event: ButtonEvent, action: Action)
     {
         self.actions[event as usize] = Some(action)
+    }
+
+    pub fn add_rope_reserve(&mut self, amount: f32)
+    {
+        self.rope_reserve += amount;
+    }
+
+    pub fn try_consume_rope_for_growth(&mut self, anchor: Vec2, max_reach: f32, segment_length: f32) -> bool
+    {
+        let distance = (self.collision.pos - anchor).length();
+
+        let pushing_against_limit = distance > (max_reach - self.rope_grow_tolerance);
+        let is_climbing = !self.is_falling();
+        let has_reserve = self.rope_reserve > segment_length;
+
+        let should_grow = pushing_against_limit & is_climbing & has_reserve;
+
+        self.rope_reserve -= segment_length * (should_grow as u32 as f32);
+        should_grow
     }
 
     pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))

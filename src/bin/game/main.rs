@@ -78,7 +78,7 @@ impl App
     fn place_nothing(&mut self, _: &mut UpdateContext) {}
     fn place_anchor(&mut self, ctx: &mut UpdateContext)
     {
-        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 10);
+        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
     }
 
     fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(); }
@@ -86,6 +86,12 @@ impl App
     fn player_move_up(&mut self, _ctx: &mut UpdateContext) { self.player.move_up(); }
     fn player_move_left(&mut self, _ctx: &mut UpdateContext) { self.player.move_left(); }
     fn player_move_right(&mut self, _ctx: &mut UpdateContext) { self.player.move_right(); }
+
+    fn skip_rope_growth(&mut self, _: &mut UpdateContext) {}
+    fn do_rope_growth(&mut self, ctx: &mut UpdateContext)
+    {
+        self.rope.grow_active_segment(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue);
+    }
 }
 
 impl EngineEvent for App
@@ -101,7 +107,7 @@ impl EngineEvent for App
         self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
         for _ in 0..10
         {
-            self.collectibles.spawn_rope_coil(&self.wall, 0.0, 2000.0, 30.0);
+            self.collectibles.spawn_rope_coil(&self.wall, 0.0, 2000.0, 200.0); // value in cm
         }
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
@@ -120,6 +126,10 @@ impl EngineEvent for App
 
         self.collectibles.update(update_ctx.dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
+
+        const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::skip_rope_growth, App::do_rope_growth];
+        let should_grow = self.player.try_consume_rope_for_growth(rope_anchor, rope_max_reach, self.rope.segment_length);
+        GROWTH_TABLE[should_grow as usize](self, update_ctx);
 
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);

@@ -124,7 +124,7 @@ impl Collectible
 
     fn apply_rope_coil(player: &mut Player, amount: f32)
     {
-
+        player.add_rope_reserve(amount);
     }
 
     fn current_scale(&self) -> f32
