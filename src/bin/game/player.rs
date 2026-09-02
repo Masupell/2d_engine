@@ -143,7 +143,7 @@ impl Player
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
     }
 
-    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, _: (f32, f32))
+    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
     {
         let offset = self.collision.pos - rope_anchor;
         let distance = offset.length();
@@ -163,7 +163,8 @@ impl Player
         const RECOVERY_TABLE: [MovementState; 2] = [MovementState::Falling, MovementState::Climbing];
         let at_bottom = slack_deficit > -self.recovery_tolerance;
         let w_pressed = self.move_input.y < 0.0;
-        let recover = at_bottom & w_pressed;
+        let in_wall = (self.collision.pos.x >= wall_bounds.0) & (self.collision.pos.x <= wall_bounds.1);
+        let recover = at_bottom & w_pressed & in_wall;
 
         self.state = RECOVERY_TABLE[recover as usize];
     }
