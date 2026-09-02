@@ -80,6 +80,7 @@ impl App
     fn place_anchor(&mut self, ctx: &mut UpdateContext)
     {
         self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
+        self.player.score -= 2;
     }
 
     fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(); }
@@ -136,7 +137,7 @@ impl EngineEvent for App
         let should_grow = self.player.try_consume_rope_for_growth(rope_anchor, rope_max_reach, self.rope.segment_length);
         GROWTH_TABLE[should_grow as usize](self, update_ctx);
 
-        self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //980, as 100px = 1m
+        self.rope.update(1960.0, self.player.collision.pos, update_ctx.dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
@@ -162,12 +163,24 @@ impl EngineEvent for App
         // Temporary if, to test
         if let Some(atlas) = &self.font_atlas
         {
-            let score_text = format!("Score: mau mio, hello! How are you?-_- :)Wpql {}", self.player.score);
-            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &score_text, (0.0, 30.0), 5, 0);
+            let score_text = format!("Score: {}", self.player.score);
+            let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
+            let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
+            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &score_text, (5.0, 25.0), 5, 0);
+            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &current_height_text, (5.0, 55.0), 5, 0);
+            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &rope_text, (5.0, 85.0), 5, 0);
         }
+
+        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -100.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
+        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -300.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
+        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -500.0), (200.0, 200.0), 0.0), [0.0, 1.0, 0.0, 1.0], 1, 0);
+        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -700.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
+        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -900.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
     }
 }
 
+
+// 200px = 1m
 impl App
 {
     fn new() -> Self

@@ -44,6 +44,8 @@ pub struct Player
     pub rope_grow_tolerance: f32,
 
     pub score: i32,
+    score_progress: f32,
+    previous_y: f32,
     actions: [Option<Action>; PlayerEvent::COUNT],
 }
 
@@ -68,9 +70,9 @@ impl Player
             move_input: Vec2::ZERO,
             state: MovementState::Climbing,
             fall_origin: Vec2::ZERO,
-            speed: 300.0,
+            speed: 80.0,
             swing_thrust: 900.0,
-            gravity: 980.0,
+            gravity: 1960.0,//980.0,
             max_survivable_fall: 600.0,
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
@@ -78,6 +80,8 @@ impl Player
             rope_reserve: 1000.0,
             rope_grow_tolerance: 10.0,
             score: 0,
+            score_progress: 0.0,
+            previous_y: center.y,
             actions: [None; PlayerEvent::COUNT]
         }
     }
@@ -108,9 +112,16 @@ impl Player
 
     pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
     {
+        self.previous_y = self.collision.pos.y;
         STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds);
         self.update_tilt(dt);
         self.move_input = Vec2::ZERO;
+
+        let upward = (self.previous_y - self.collision.pos.y).max(0.0);
+        self.score_progress += upward;
+        let point = (self.score_progress >= 200.0) as i32;
+        self.score += point;
+        self.score_progress -= 200.0 * point as f32;
     }
 
     fn update_tilt(&mut self, dt: f32)
