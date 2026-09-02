@@ -158,7 +158,7 @@ impl MeshBuilder
     {
         (
             renderer.camera_pos.0 + x - renderer.virtual_size.0 * 0.5,
-            renderer.camera_pos.1 - y + renderer.virtual_size.1 * 0.5
+            renderer.camera_pos.1 + y - renderer.virtual_size.1 * 0.5
         )
     }
 }

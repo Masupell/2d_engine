@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{shader::ShaderModuleHandle, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{MeshBuilder, MeshTopology, VertexPosition, shader::ShaderModuleHandle, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 
@@ -388,6 +388,33 @@ impl Renderer
         id
     }
 
+    pub fn load_font_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_path: &str, charset: &str, size: f32) -> Option<crate::text::FontAtlas>
+    {
+        match crate::text::rasterize_font_atlas(font_path, charset, size)
+        {
+            Ok((bitmap, width, height, glyphs, line_height)) =>
+            {
+                if let Some(image) = image::GrayImage::from_vec(width as u32, height as u32, bitmap.clone())
+                {
+                    image.save("src/image/font_atlas_debug.png").unwrap();
+                }
+
+                let texture = Texture::from_alpha_bitmap(device, queue, &bitmap, width, height, Some("font_atlas")).expect("Failed to create font atlas texture");
+                let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+                let texture_id = self.textures.len();
+                self.textures.push(bindgroup);
+
+                Some(crate::text::FontAtlas { texture_id, glyphs, line_height })
+            }
+            Err(e) =>
+            {
+                println!("Font atlas rasterization failed: {:?}", e);
+                None
+            }
+        }
+    }
+
+
     pub(crate) fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
     {
         if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
@@ -566,6 +593,44 @@ impl Renderer
         });
     }
 
+    // Unoptimized (rebuilds every draw call)
+    // + positioning is slightly off
+    // currently still drawn nuder post-process or higher shader_id.
+    // -> Needs own ui-layer
+    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, atlas: &crate::text::FontAtlas, text: &str, pos: (f32, f32), z_index: u32, shader_id: u8)
+    {
+        let mut mesh_builder = MeshBuilder::new(MeshTopology::Triangles);
+        let mut cursor_x = pos.0;
+
+        for ch in text.chars()
+        {
+            if let Some(glyph) = atlas.glyphs.get(&ch)
+            {
+                if glyph.size[0] > 0.0 && glyph.size[1] > 0.0
+                {
+                    let x0 = cursor_x + glyph.offset[0];
+                    let y0 = pos.1 + glyph.offset[1]; // glyph offset is negative, so pos, has to be a bit more
+                    let x1 = x0 + glyph.size[0];
+                    let y1 = y0 + glyph.size[1];
+
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x0, y0)), (glyph.uv_min[0], glyph.uv_min[1]));
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x0, y1)), (glyph.uv_min[0], glyph.uv_max[1]));
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x1, y1)), (glyph.uv_max[0], glyph.uv_max[1]));
+
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x0, y0)), (glyph.uv_min[0], glyph.uv_min[1]));
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x1, y1)), (glyph.uv_max[0], glyph.uv_max[1]));
+                    mesh_builder.add_vertex(VertexPosition::Virtual((x1, y0)), (glyph.uv_max[0], glyph.uv_min[1]));
+                }
+
+                cursor_x += glyph.advance;
+            }
+        }
+
+        let mesh_id = mesh_builder.build(self, device, queue);
+        self.draw_mesh(mesh_id, atlas.texture_id, z_index, shader_id);
+    }
+
+
     pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
         if self.draw_commands.is_empty()
@@ -719,14 +784,12 @@ impl Renderer
         self.ui_matrix(virtual_pos, virtual_size, rotation)
     }
 
-    // Always on screen
-    // y opposite to usual (minus = down)
     pub fn ui_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
         let world_pos =
         (
             self.camera_pos.0 + pos.0 - self.virtual_size.0 * 0.5,
-            self.camera_pos.1 - pos.1 + self.virtual_size.1 * 0.5 // +, - to have at top-left 0,0
+            self.camera_pos.1 + pos.1 - self.virtual_size.1 * 0.5 // +, - => (0,0) is top-left, -,+ => (0,0) is bottom-left
         );
 
         self.matrix(world_pos, size, rotation)

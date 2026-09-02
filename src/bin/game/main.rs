@@ -31,7 +31,8 @@ struct App
     player: Player,
     rope: Rope,
     wall: Wall,
-    collectibles: CollectibleManager
+    collectibles: CollectibleManager,
+    font_atlas: Option<crate::text::FontAtlas>
 }
 
 impl App
@@ -117,6 +118,10 @@ impl EngineEvent for App
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
+
+        let charset: Vec<char> = (' '..='~').collect();
+        let charset: String = charset.into_iter().collect();
+        self.font_atlas = graphics.renderer.load_font_atlas(graphics.device, graphics.queue, "src/image/Montserrat-Bold.ttf", &charset, 32.0)
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -153,6 +158,13 @@ impl EngineEvent for App
         self.collectibles.draw(render_ctx, 2, 0);
         self.player.draw(render_ctx, 2, 0);
         self.rope.draw(render_ctx, 2, 1);
+
+        // Temporary if, to test
+        if let Some(atlas) = &self.font_atlas
+        {
+            let score_text = format!("Score: mau mio, hello! How are you?-_- :)Wpql {}", self.player.score);
+            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &score_text, (0.0, 30.0), 5, 0);
+        }
     }
 }
 
@@ -171,7 +183,8 @@ impl App
             player,
             rope,
             wall: Wall::new(1280.0*2.0),
-            collectibles
+            collectibles,
+            font_atlas: None
         }
     }
 }
