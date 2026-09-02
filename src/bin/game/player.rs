@@ -96,7 +96,7 @@ impl Player
         self.rope_reserve += amount;
     }
 
-    pub fn try_consume_rope_for_growth(&mut self, anchor: Vec2, max_reach: f32, segment_length: f32) -> bool
+    pub fn try_consume_rope_for_growth(&mut self, anchor: Vec2, max_reach: f32, segment_length: f32) -> (bool, f32)
     {
         let distance = (self.collision.pos - anchor).length();
 
@@ -106,8 +106,8 @@ impl Player
 
         let should_grow = pushing_against_limit & is_climbing & has_reserve;
 
-        self.rope_reserve -= segment_length * (should_grow as u32 as f32);
-        should_grow
+        // self.rope_reserve -= segment_length * (should_grow as u32 as f32);
+        (should_grow, segment_length * (should_grow as u32 as f32))
     }
 
     pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))

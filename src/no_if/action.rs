@@ -17,5 +17,8 @@ pub enum Action
     MoveUp,
     MoveLeft,
     MoveRight,
+
+    ToggleRopeExtending
+    // ToggleAnchorFalling
 }
-impl Action { pub const COUNT: usize = 10; }
+impl Action { pub const COUNT: usize = 11; }
