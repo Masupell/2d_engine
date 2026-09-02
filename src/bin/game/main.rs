@@ -112,6 +112,9 @@ impl EngineEvent for App
             self.collectibles.spawn_rope_coil(&self.wall, 0.0, 2000.0, 200.0); // value in cm
         }
 
+        let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
+        self.wall.set_border_right_texture(wall_border_texture);
+
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
         ctx.set_post_process_pipeline(pp_id);
@@ -137,7 +140,7 @@ impl EngineEvent for App
         let should_grow = self.player.try_consume_rope_for_growth(rope_anchor, rope_max_reach, self.rope.segment_length);
         GROWTH_TABLE[should_grow as usize](self, update_ctx);
 
-        self.rope.update(1960.0, self.player.collision.pos, update_ctx.dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
+        self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         let actions = update_ctx.input.actions().to_vec();
