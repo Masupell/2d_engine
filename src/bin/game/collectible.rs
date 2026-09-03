@@ -185,15 +185,15 @@ impl CollectibleManager
         self.texture_ids[kind as usize] = texture_id;
     }
 
-    pub fn update(&mut self, wall: &Wall, player_y: f32, spread: f32, dt: f32)
+    pub fn update(&mut self, wall: &Wall, player_pos: Vec2, spread: f32, dt: f32)
     {
         self.pool.iter_mut().for_each(|c| c.update(dt));
 
-        self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & (c.pos.y > player_y + DESPAWN_MARGIN)).for_each(|c| c.deactivate());
+        self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & (c.pos.y > player_pos.y + DESPAWN_MARGIN)).for_each(|c| c.deactivate());
 
         let deficit = 10_usize.saturating_sub(self.active_amount());
 
-        (0..deficit).for_each(|_| self.spawn_rope_coil(wall, player_y, spread, 200.0));
+        (0..deficit).for_each(|_| self.spawn_rope_coil(wall, player_pos, 853.0, spread, 200.0));
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -222,14 +222,15 @@ impl CollectibleManager
     }
 
     // Very basic spawning
-    pub fn spawn_rope_coil(&mut self, wall: &Wall, player_y: f32, spread: f32, value: f32)
+    pub fn spawn_rope_coil(&mut self, wall: &Wall, player_pos: Vec2, std_dev: f32, spread: f32, value: f32)
     {
         let bounds = wall.get_bounds();
         let margin = 40.0;
         let mut rng = rand::rng();
 
-        let x = rng.random_range((bounds.0 + margin)..(bounds.1 - margin)) as f32;
-        let y = player_y - rng.random_range(0.0_f32..spread) - 500.0; // -500, so it spawns above screen
+        let raw_x = sample_gaussian(&mut rng, player_pos.x, std_dev);
+        let x = raw_x.clamp(bounds.0 + margin, bounds.1 - margin);//rng.random_range((bounds.0 + margin)..(bounds.1 - margin)) as f32;
+        let y = player_pos.y - rng.random_range(0.0_f32..spread) - 500.0; // -500, so it spawns above screen
 
         self.spawn(CollectibleKind::RopeCoil, Vec2::new(x, y), value);
     }
@@ -243,4 +244,16 @@ impl CollectibleManager
     {
         self.pool.iter().filter(|c| c.state == CollectibleState::Idle).count()
     }
+}
+
+// Box-muller transform
+// std_dev/standard-deviation in the same units as the man (so not from 0 to 1)
+fn sample_gaussian(rng: &mut impl Rng, mean: f32, std_dev: f32) -> f32
+{
+    let u1: f32 = rng.random_range(f32::MIN_POSITIVE..1.0);
+    let u2: f32 = rng.random_range(0.0..1.0);
+
+    let z0 = (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos();
+
+    mean + std_dev * z0
 }

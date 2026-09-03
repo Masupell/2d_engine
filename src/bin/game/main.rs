@@ -116,7 +116,7 @@ impl EngineEvent for App
         self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
         for _ in 0..10
         {
-            self.collectibles.spawn_rope_coil(&self.wall, 0.0, 2000.0, 200.0); // value in cm
+            self.collectibles.spawn_rope_coil(&self.wall, self.player.collision.pos, 853.0, 2000.0, 200.0); // value in cm
         }
 
         let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
@@ -139,7 +139,7 @@ impl EngineEvent for App
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds());
 
-        self.collectibles.update(&self.wall, self.player.collision.pos.y, 800.0, update_ctx.dt as f32);
+        self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, update_ctx.dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
 
         const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext, f32); 2] = [App::skip_rope_growth, App::do_rope_growth];
