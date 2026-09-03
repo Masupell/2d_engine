@@ -19,17 +19,28 @@ impl MeshBuilder
         }
     }
 
+    pub fn with_mesh_id(topology: MeshTopology, mesh_id: usize) -> Self
+    {
+        Self
+        {
+            vertices: Vec::new(),
+            mesh_id: Some(mesh_id),
+            topology
+        }
+    }
+
+
     pub fn clear(&mut self)
     {
         self.vertices.clear();
     }
 
-    pub fn add_vertex(&mut self, position: VertexPosition, uv: (f32, f32))
+    pub fn add_vertex(&mut self, position: (f32, f32), uv: (f32, f32))
     {
         self.vertices.push(BuilderVertex { position, uv });
     }
 
-    pub fn set_vertex_position(&mut self, index: usize, position: VertexPosition)
+    pub fn set_vertex_position(&mut self, index: usize, position: (f32, f32))
     {
         self.vertices[index].position = position;
     }
@@ -41,7 +52,7 @@ impl MeshBuilder
 
     pub fn build(&mut self, renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue) -> usize
     {
-        let data = self.build_data(renderer);
+        let data = self.build_data();
         match self.mesh_id
         {
             Some(mesh_id) =>
@@ -63,16 +74,16 @@ impl MeshBuilder
         let mesh_id = self.mesh_id;
         mesh_id.into_iter().for_each(|mesh_id|
         {
-            let vertices = self.build_vertices(renderer);
+            let vertices = self.build_vertices();
             renderer.update_mesh_vertices(device, queue, mesh_id, &vertices);
         });
     }
 
-    fn build_data(&mut self, renderer: &Renderer) -> MeshData
+    fn build_data(&mut self) -> MeshData
     {
         let mut data = MeshData::new();
 
-        let vertices = self.build_vertices(renderer);
+        let vertices = self.build_vertices();
 
         for vertex in vertices
         {
@@ -94,12 +105,11 @@ impl MeshBuilder
         data
     }
 
-    fn build_vertices(&self, renderer: &Renderer) -> Vec<Vertex>
+    fn build_vertices(&self) -> Vec<Vertex>
     {
         self.vertices.iter().map(|vertex|
         {
-            let position = self.convert_position(renderer, vertex.position);
-            Vertex::new([position.0, position.1, 0.0], [vertex.uv.0, vertex.uv.1])
+            Vertex::new([vertex.position.0, vertex.position.1, 0.0], [vertex.uv.0, vertex.uv.1])
         }).collect()
     }
 
@@ -134,39 +144,39 @@ impl MeshBuilder
         }
     }
 
-    fn convert_position(&self, renderer: &Renderer, position: VertexPosition) -> (f32, f32)
-    {
-        match position
-        {
-            VertexPosition::Screen((x, y)) =>
-            {
-                let to_virtual = (renderer.virtual_size.0 / renderer.window_size.0, renderer.virtual_size.1 / renderer.window_size.1);
-                self.anchor_to_camera(renderer, (x * to_virtual.0, y * to_virtual.1))
-            }
-            VertexPosition::Virtual((x, y)) =>
-            {
-                self.anchor_to_camera(renderer, (x, y))
-            }
-            VertexPosition::World((x, y)) =>
-            {
-                (x, y)
-            }
-        }
-    }
+    // fn convert_position(&self, renderer: &Renderer, position: VertexPosition) -> (f32, f32)
+    // {
+    //     match position
+    //     {
+    //         VertexPosition::Screen((x, y)) =>
+    //         {
+    //             let to_virtual = (renderer.virtual_size.0 / renderer.window_size.0, renderer.virtual_size.1 / renderer.window_size.1);
+    //             self.anchor_to_camera(renderer, (x * to_virtual.0, y * to_virtual.1))
+    //         }
+    //         VertexPosition::Virtual((x, y)) =>
+    //         {
+    //             self.anchor_to_camera(renderer, (x, y))
+    //         }
+    //         VertexPosition::World((x, y)) =>
+    //         {
+    //             (x, y)
+    //         }
+    //     }
+    // }
 
-    fn anchor_to_camera(&self, renderer: &Renderer, (x, y): (f32, f32)) -> (f32, f32)
-    {
-        (
-            renderer.camera_pos.0 + x - renderer.virtual_size.0 * 0.5,
-            renderer.camera_pos.1 + y - renderer.virtual_size.1 * 0.5
-        )
-    }
+    // fn anchor_to_camera(&self, renderer: &Renderer, (x, y): (f32, f32)) -> (f32, f32)
+    // {
+    //     (
+    //         renderer.camera_pos.0 + x - renderer.virtual_size.0 * 0.5,
+    //         renderer.camera_pos.1 + y - renderer.virtual_size.1 * 0.5
+    //     )
+    // }
 }
 
 #[derive(Copy, Clone)]
 struct BuilderVertex
 {
-    position: VertexPosition,
+    position: (f32, f32),
     uv: (f32, f32)
 }
 
@@ -176,10 +186,10 @@ pub enum MeshTopology
     TriangleStrip
 }
 
-#[derive(Copy, Clone)]
-pub enum VertexPosition
-{
-    Screen((f32, f32)), // in actual window pixels
-    Virtual((f32, f32)), // the virtual resolution, basically the resolutin I gave in the beginning, screen_virtual, need to be rebuild every frame currently to stay there
-    World((f32, f32)) // in world coordinates (like if the player is at -500), uses virtual size
-}
+// #[derive(Copy, Clone)]
+// pub enum VertexPosition
+// {
+//     Screen((f32, f32)), // in actual window pixels
+//     Virtual((f32, f32)), // the virtual resolution, basically the resolutin I gave in the beginning, screen_virtual, need to be rebuild every frame currently to stay there
+//     World((f32, f32)) // in world coordinates (like if the player is at -500), uses virtual size
+// }

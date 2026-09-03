@@ -33,7 +33,6 @@ struct App
     rope: Rope,
     wall: Wall,
     collectibles: CollectibleManager,
-    font_atlas: Option<crate::text::FontAtlas>,
     rope_extending: bool,
     rope_extending_toggle: no_if::button::Button
 }
@@ -133,10 +132,6 @@ impl EngineEvent for App
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
-
-        let charset: Vec<char> = (' '..='~').collect();
-        let charset: String = charset.into_iter().collect();
-        self.font_atlas = graphics.renderer.load_font_atlas(graphics.device, graphics.queue, "src/image/Montserrat-Bold.ttf", &charset, 32.0)
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -177,16 +172,12 @@ impl EngineEvent for App
         self.player.draw(render_ctx, 2, 0);
         self.rope.draw(render_ctx, 2, 1);
 
-        // Temporary if, to test
-        if let Some(atlas) = &self.font_atlas
-        {
-            let score_text = format!("Score: {}", self.player.score);
-            let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
-            let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
-            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &score_text, (5.0, 25.0), 5, 0);
-            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &current_height_text, (5.0, 55.0), 5, 0);
-            render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, atlas, &rope_text, (5.0, 85.0), 5, 0);
-        }
+        let score_text = format!("Score: {}", self.player.score);
+        let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
+        let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 32.0), 1.0, [1.0, 0.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 64.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 98.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
 
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -100.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -300.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
@@ -207,7 +198,7 @@ impl App
         let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
         let collectibles = CollectibleManager::new();
-        let mut rope_extending_toggle = no_if::button::Button::new(Rect::new(5.0, 100.0, 100.0, 50.0));
+        let mut rope_extending_toggle = no_if::button::Button::new(Rect::new(10.0, 120.0, 100.0, 50.0));
         rope_extending_toggle.set_action(ButtonEvent::Click, Action::ToggleRopeExtending);
 
         Self
@@ -218,7 +209,6 @@ impl App
             rope,
             wall: Wall::new(1280.0*2.0),
             collectibles,
-            font_atlas: None,
             rope_extending: true,
             rope_extending_toggle
         }

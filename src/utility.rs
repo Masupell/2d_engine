@@ -54,8 +54,8 @@ pub enum DrawType
 
 pub enum MaterialType
 {
-    Texture(Arc<wgpu::BindGroup>),
-    Color([f32; 4])
+    Color([f32; 4]),
+    Texture(std::sync::Arc<wgpu::BindGroup>, Option<[f32; 4]>)
 }
 
 // #[derive(Copy, Clone)]
@@ -211,8 +211,17 @@ impl Material
     {
         Material
         {
-            kind: MaterialType::Texture(texture),
+            kind: MaterialType::Texture(texture, None),
             pipeline_id: id
+        }
+    }
+
+    pub fn tinted_texture(texture: Arc<wgpu::BindGroup>, tint: [f32; 4], pipeline_id: u8) -> Self
+    {
+        Material
+        {
+            kind: MaterialType::Texture(texture, Some(tint)),
+            pipeline_id
         }
     }
 }

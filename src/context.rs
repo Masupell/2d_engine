@@ -190,4 +190,14 @@ impl<'a> GraphicsContext<'a>
     {
         self.renderer.set_clear_color(color);
     }
+
+    pub fn set_default_font(&mut self, font_path: &str, size: f32)
+    {
+        self.renderer.set_default_font(self.device, self.queue, font_path, size);
+    }
+
+    pub fn add_font(&mut self, font_path: &str, size: f32) -> usize
+    {
+        self.renderer.add_font(self.device, self.queue, font_path, size)
+    }
 }

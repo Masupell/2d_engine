@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use anyhow::{Ok, anyhow};
@@ -205,6 +205,75 @@ pub fn rasterize_static_text(font_path: &str, text: &str, text_scale: f32) -> st
 
     Ok((atlas, total_width, total_height))
 }
+
+
+pub(crate) struct TextCache
+{
+    entries: HashMap<(usize, String), usize>,
+    order: VecDeque<(usize, String)>,
+    free_mesh_ids: Vec<usize>,
+    capacity: usize,
+}
+
+impl TextCache
+{
+    pub fn new(capacity: usize) -> Self
+    {
+        Self { entries: HashMap::new(), order: VecDeque::new(), free_mesh_ids: Vec::new(), capacity }
+    }
+
+    pub fn get(&self, font_id: usize, text: &str) -> Option<usize>
+    {
+        self.entries.get(&(font_id, text.to_string())).copied()
+    }
+
+    pub fn reserve_slot(&mut self) -> Option<usize>
+    {
+        self.free_mesh_ids.pop()
+    }
+
+    pub fn insert(&mut self, font_id: usize, text: String, mesh_id: usize)
+    {
+        let key = (font_id, text);
+        self.entries.insert(key.clone(), mesh_id);
+        self.order.push_back(key);
+
+        if self.order.len() > self.capacity
+        {
+            if let Some(oldest) = self.order.pop_front()
+            {
+                if let Some(evicted_mesh_id) = self.entries.remove(&oldest)
+                {
+                    self.free_mesh_ids.push(evicted_mesh_id);
+                }
+            }
+        }
+    }
+
+    // ONly used, when changing the default font, all text would be using the wrong meshes if not
+    pub fn invalidate_font(&mut self, font_id: usize)
+    {
+        let mut retained = VecDeque::new();
+
+        while let Some(key) = self.order.pop_front()
+        {
+            if key.0 == font_id
+            {
+                if let Some(mesh_id) = self.entries.remove(&key)
+                {
+                    self.free_mesh_ids.push(mesh_id);
+                }
+            }
+            else
+            {
+                retained.push_back(key);
+            }
+        }
+
+        self.order = retained;
+    }
+}
+
 
 
 // For Preloading Fonts, good when often used and not changed, like in game-engines

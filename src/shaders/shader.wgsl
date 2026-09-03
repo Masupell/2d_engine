@@ -64,6 +64,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     // return vec4<f32>(0.3, 0.2, 0.1, 1.0);
     // return in.color;
     let tex_color = textureSample(texture, texture_sampler, in.tex_coords);
-    let final_color = select(in.color, tex_color, in.mode == 1u);
+    let final_color = select(in.color, tex_color * in.color, in.mode == 1u);
     return final_color;
 }

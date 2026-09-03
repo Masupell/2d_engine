@@ -305,12 +305,12 @@ impl RopeSegment
 
             let base = i * 6;
 
-            self.mesh_builder.set_vertex_position(base, VertexPosition::World((left_current.x, left_current.y)));
-            self.mesh_builder.set_vertex_position(base+1, VertexPosition::World((right_current.x, right_current.y)));
-            self.mesh_builder.set_vertex_position(base+2, VertexPosition::World((left_next.x, left_next.y)));
-            self.mesh_builder.set_vertex_position(base+3, VertexPosition::World((right_current.x, right_current.y)));
-            self.mesh_builder.set_vertex_position(base+4, VertexPosition::World((right_next.x, right_next.y)));
-            self.mesh_builder.set_vertex_position(base+5, VertexPosition::World((left_next.x, left_next.y)));
+            self.mesh_builder.set_vertex_position(base, (left_current.x, left_current.y));
+            self.mesh_builder.set_vertex_position(base+1, (right_current.x, right_current.y));
+            self.mesh_builder.set_vertex_position(base+2, (left_next.x, left_next.y));
+            self.mesh_builder.set_vertex_position(base+3, (right_current.x, right_current.y));
+            self.mesh_builder.set_vertex_position(base+4, (right_next.x, right_next.y));
+            self.mesh_builder.set_vertex_position(base+5, (left_next.x, left_next.y));
         }
     }
 
@@ -392,17 +392,17 @@ impl RopeSegment
             let p1 = center + direction * angle1.cos() * radius + normal * angle1.sin() * radius;
 
             let base = vertex_offset + i * 3;
-            self.mesh_builder.set_vertex_position(base, VertexPosition::World((center.x, center.y)));
-            self.mesh_builder.set_vertex_position(base+1, VertexPosition::World((p0.x, p0.y)));
-            self.mesh_builder.set_vertex_position(base+2, VertexPosition::World((p1.x, p1.y)));
+            self.mesh_builder.set_vertex_position(base, (center.x, center.y));
+            self.mesh_builder.set_vertex_position(base+1, (p0.x, p0.y));
+            self.mesh_builder.set_vertex_position(base+2, (p1.x, p1.y));
         }
     }
 
     fn add_triangle(&mut self, a: Vec2, b: Vec2, c: Vec2, aa: Vec2, bb: Vec2, cc: Vec2)
     {
-        self.mesh_builder.add_vertex(VertexPosition::World((a.x, a.y)), (aa.x, aa.y));
-        self.mesh_builder.add_vertex(VertexPosition::World((b.x, b.y)), (bb.x, bb.y));
-        self.mesh_builder.add_vertex(VertexPosition::World((c.x, c.y)), (cc.x, cc.y));
+        self.mesh_builder.add_vertex((a.x, a.y), (aa.x, aa.y));
+        self.mesh_builder.add_vertex((b.x, b.y), (bb.x, bb.y));
+        self.mesh_builder.add_vertex((c.x, c.y), (cc.x, cc.y));
     }
 }
 
