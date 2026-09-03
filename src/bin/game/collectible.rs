@@ -11,6 +11,8 @@ const COLLECT_DURATION: f32 = 0.35;
 const COLLECT_POP: f32 = 0.6; // small size increase when collecting
 const BASE_SIZE: f32 = 110.0;
 
+const DESPAWN_MARGIN: f32 = 1000.0;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum CollectibleKind
 {
@@ -91,6 +93,11 @@ impl Collectible
         self.state = CollectibleState::Idle;
         self.idle_phase = 0.0;
         self.collect_timer = 0.0;
+    }
+
+    fn deactivate(&mut self)
+    {
+        self.state = CollectibleState::Inactive;
     }
 
     fn update(&mut self, dt: f32)
@@ -178,9 +185,15 @@ impl CollectibleManager
         self.texture_ids[kind as usize] = texture_id;
     }
 
-    pub fn update(&mut self, dt: f32)
+    pub fn update(&mut self, wall: &Wall, player_y: f32, spread: f32, dt: f32)
     {
         self.pool.iter_mut().for_each(|c| c.update(dt));
+
+        self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & (c.pos.y > player_y + DESPAWN_MARGIN)).for_each(|c| c.deactivate());
+
+        let deficit = 10_usize.saturating_sub(self.active_amount());
+
+        (0..deficit).for_each(|_| self.spawn_rope_coil(wall, player_y, spread, 200.0));
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -209,14 +222,14 @@ impl CollectibleManager
     }
 
     // Very basic spawning
-    pub fn spawn_rope_coil(&mut self, wall: &Wall, near_y: f32, spread: f32, value: f32)
+    pub fn spawn_rope_coil(&mut self, wall: &Wall, player_y: f32, spread: f32, value: f32)
     {
         let bounds = wall.get_bounds();
         let margin = 40.0;
         let mut rng = rand::rng();
 
         let x = rng.random_range((bounds.0 + margin)..(bounds.1 - margin)) as f32;
-        let y = near_y - rng.random_range(0.0_f32..spread);
+        let y = player_y - rng.random_range(0.0_f32..spread) - 500.0; // -500, so it spawns above screen
 
         self.spawn(CollectibleKind::RopeCoil, Vec2::new(x, y), value);
     }
@@ -224,5 +237,10 @@ impl CollectibleManager
     pub fn amount(&self) -> usize
     {
         self.pool.len()
+    }
+
+    pub fn active_amount(&self) -> usize
+    {
+        self.pool.iter().filter(|c| c.state == CollectibleState::Idle).count()
     }
 }

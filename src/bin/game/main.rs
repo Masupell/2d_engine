@@ -139,7 +139,7 @@ impl EngineEvent for App
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds());
 
-        self.collectibles.update(update_ctx.dt as f32);
+        self.collectibles.update(&self.wall, self.player.collision.pos.y, 800.0, update_ctx.dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
 
         const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext, f32); 2] = [App::skip_rope_growth, App::do_rope_growth];
