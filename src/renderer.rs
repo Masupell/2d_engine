@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture}, utility::{CameraUniform, DrawCommand, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 
@@ -476,8 +476,14 @@ impl Renderer
         }
     }
 
-    pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView)
+    pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layer: DrawLayer)
     {
+        let load_op = match layer
+        {
+            DrawLayer::World => wgpu::LoadOp::Clear(self.clear_color),
+            DrawLayer::UI => wgpu::LoadOp::Load
+        };
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: Some("Render Pass"),
@@ -487,7 +493,7 @@ impl Renderer
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(self.clear_color),
+                    load: load_op,
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -496,8 +502,6 @@ impl Renderer
             timestamp_writes: None,
         });
 
-        // render_pass.set_pipeline(&self.pipelines[0]);
-
         if let Some(ref instance_buf) = self.instance_buf
         {
             render_pass.set_vertex_buffer(1, instance_buf.slice(..));
@@ -505,6 +509,11 @@ impl Renderer
 
             for (instance_id, cmd) in self.draw_commands.iter().enumerate()
             {
+                if cmd.layer != layer
+                {
+                    continue;
+                }
+
                 if Some(cmd.material.pipeline_id) != current_pipeline
                 {
                     current_pipeline = Some(cmd.material.pipeline_id);
@@ -548,13 +557,7 @@ impl Renderer
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: wgpu::LoadOp::Clear(wgpu::Color
-                    {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(self.clear_color),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -577,42 +580,54 @@ impl Renderer
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Color(color), */z_index, material: Arc::new(Material::color(color, id)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::World });
+    }
+
+    pub fn draw_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
+    {
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::UI });
     }
 
     pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
         let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::World });
+    }
+
+    pub fn draw_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
+    {
+        let texture = Arc::clone(&self.textures[texture_id]);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::UI });
     }
 
     pub fn draw_tinted_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
     {
         let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::World });
+    }
+
+    pub fn draw_tinted_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
+    {
+        let texture = Arc::clone(&self.textures[texture_id]);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::UI });
     }
 
     // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
     pub fn draw_mesh(&mut self, mesh_id: usize, texture_id: usize, z_index: u32, shader_id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand
-        {
-            mesh_id,
-            transform: // identity matrix
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0]
-            ],
-            z_index,
-            material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id))
-        });
+        const IDENTITY: [[f32; 4]; 4] =
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ];
+
+        self.draw_mesh_transformed(mesh_id, texture_id, IDENTITY, None, DrawLayer::World, z_index, shader_id);
     }
 
     // Same as normal draw_mesh, but with tint and transform, meant only for local space, not world space (text for example)
-    pub fn draw_mesh_transformed(&mut self, mesh_id: usize, texture_id: usize, transform: [[f32; 4]; 4], tint: Option<[f32; 4]>, z_index: u32, shader_id: u8)
+    pub fn draw_mesh_transformed(&mut self, mesh_id: usize, texture_id: usize, transform: [[f32; 4]; 4], tint: Option<[f32; 4]>, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let texture = Arc::clone(&self.textures[texture_id]);
         let material = match tint
@@ -621,7 +636,7 @@ impl Renderer
             None => Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id),
         };
 
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material), layer });
     }
 
     pub(crate) fn build_text_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str) -> usize
@@ -671,14 +686,12 @@ impl Renderer
 
 
     // + positioning is slightly off
-    // currently still drawn nuder post-process or higher shader_id.
-    // -> Needs own ui-layer
-    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, z_index: u32, shader_id: u8)
+    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        self.draw_text_with_font(device, queue, 0, text, pos, scale, color, space, z_index, shader_id);
+        self.draw_text_with_font(device, queue, 0, text, pos, scale, color, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_with_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, z_index: u32, shader_id: u8)
+    pub fn draw_text_with_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let texture_id = self.fonts[font_id].texture_id;
         let mesh_id = self.build_text_mesh(device, queue, font_id, text);
@@ -689,7 +702,7 @@ impl Renderer
             CoordSpace::Screen => self.ui_matrix(pos, (scale, scale), 0.0),
         };
 
-        self.draw_mesh_transformed(mesh_id, texture_id, transform, Some(color), z_index, shader_id);
+        self.draw_mesh_transformed(mesh_id, texture_id, transform, Some(color), layer, z_index, shader_id);
     }
 
 
@@ -898,14 +911,6 @@ impl Renderer
         self.matrix(pos, (texture_size.0 * scale.0, texture_size.1 * scale.1), rotation)
     }
 }
-
-
-pub enum CoordSpace
-{
-    World,
-    Screen, // Virtual, dont really use normal screen size for drawing, so thats fine for now
-}
-
 
 fn default_charset() -> String
 {

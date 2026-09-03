@@ -3,7 +3,7 @@ pub mod rope;
 pub mod wall;
 pub mod collectible;
 
-use engine::*;
+use engine::{utility::DrawLayer, *};
 
 use crate::{player::Player, rope::Rope, wall::Wall, collectible::{CollectibleManager, CollectibleKind}};
 // use rand::Rng;
@@ -175,9 +175,9 @@ impl EngineEvent for App
         let score_text = format!("Score: {}", self.player.score);
         let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
         let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 32.0), 1.0, [1.0, 0.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 64.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 98.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 32.0), 1.0, [1.0, 0.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 64.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 98.0), 1.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
 
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -100.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -300.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);

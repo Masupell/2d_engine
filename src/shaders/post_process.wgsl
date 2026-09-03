@@ -48,8 +48,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let uv = in.tex_coords;
     let uv_centered = uv - vec2<f32>(0.5, 0.5);
     let dist = length(uv_centered);
-    let vignette = smoothstep(0.1, 0.8, dist);
-    let final_color = base_color * (1.0 - vignette * 0.8);
+    let vignette = smoothstep(0.1, 0.78, dist);
 
-    return final_color;
+    let vignette_color = vec3<f32>(0.0, 0.0, 0.0);
+    let final_rgb = mix(base_color.rgb, vignette_color, vignette);//base_color * (1.0 - vignette * 0.8);
+
+    return vec4<f32>(final_rgb, base_color.a);
 }

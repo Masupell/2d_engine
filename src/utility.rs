@@ -65,7 +65,8 @@ pub struct DrawCommand
     pub transform: [[f32; 4]; 4], // 4x4 model matrix
     // pub kind: DrawType,
     pub z_index: u32,
-    pub material: Arc<Material>
+    pub material: Arc<Material>,
+    pub layer: DrawLayer
 }
 
 #[repr(C)]
@@ -230,4 +231,18 @@ pub enum PipeLineType
 {
     Normal, // takes camera layout
     PostProcess // does not
+}
+
+
+pub enum CoordSpace
+{
+    World,
+    Screen, // Virtual, dont really use normal screen size for drawing, so thats fine for now
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum DrawLayer
+{
+    World, // Affected by post-processing step
+    UI // Drawn after
 }

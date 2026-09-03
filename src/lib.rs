@@ -14,7 +14,7 @@ pub mod no_if;
 
 pub use event_loop::{EngineEvent, game_loop};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
-pub use renderer::{Renderer, CoordSpace};
+pub use renderer::Renderer;
 pub use input::Input;
 
 pub use winit::keyboard::KeyCode as Key; // Temporary here
@@ -24,6 +24,6 @@ pub use no_if::vector::Vec2;
 pub use no_if::action::Action;
 pub use no_if::shapes::{Rect, Triangle};
 pub use texture::FilterMode;
-pub use utility::MeshData;
+pub use utility::{MeshData, CoordSpace};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;

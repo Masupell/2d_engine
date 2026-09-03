@@ -68,7 +68,7 @@ impl Button
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
     {
         let center = ((self.rect.x + self.rect.width/2.0) as f32, (self.rect.y + self.rect.height/2.0) as f32);
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix(center, (self.rect.width as f32, self.rect.height as f32), 0.0), self.texture_id, z_index, shader_id);
+        render_ctx.graphics.renderer.draw_texture_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (self.rect.width as f32, self.rect.height as f32), 0.0), self.texture_id, z_index, shader_id);
     }
 
     fn handle_hover_event(&mut self, event: ButtonEvent)

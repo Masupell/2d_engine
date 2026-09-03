@@ -9,7 +9,7 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     fixed_dt: f64, // fixed dt
     fps: u32,
     pub(crate) pending_actions: Vec<ContextAction>,
-    pub(crate) post_process_pipeline: Option<usize>
+    pub(crate) post_process_pipelines: Vec<usize>
 }
 
 impl Context
@@ -24,7 +24,7 @@ impl Context
             fixed_dt: 1.0 / 60.0,
             fps: 0,
             pending_actions: Vec::new(),
-            post_process_pipeline: None
+            post_process_pipelines: Vec::new()
         }
     }
 
@@ -87,9 +87,20 @@ impl Context
         self.pending_actions.push(ContextAction::SetTitle(title.into()));
     }
 
+    // For only one
     pub fn set_post_process_pipeline(&mut self, id: usize)
     {
-        self.post_process_pipeline = Some(id);
+        self.post_process_pipelines = vec![id];
+    }
+
+    pub fn add_post_process_pipeline(&mut self, id: usize)
+    {
+        self.post_process_pipelines.push(id);
+    }
+
+    pub fn clear_post_process_pipelines(&mut self)
+    {
+        self.post_process_pipelines.clear();
     }
 }
 
