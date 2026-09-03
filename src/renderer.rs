@@ -583,7 +583,13 @@ impl Renderer
     pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
         let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, id)) });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, /*kind: DrawType::Texture(texture_id), */z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)) });
+    }
+
+    pub fn draw_tinted_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
+    {
+        let texture = Arc::clone(&self.textures[texture_id]);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)) });
     }
 
     // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
@@ -601,7 +607,7 @@ impl Renderer
                 [0.0, 0.0, 0.0, 1.0]
             ],
             z_index,
-            material: Arc::new(Material::texture(texture, shader_id))
+            material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id))
         });
     }
 
@@ -611,8 +617,8 @@ impl Renderer
         let texture = Arc::clone(&self.textures[texture_id]);
         let material = match tint
         {
-            Some(tint) => Material::tinted_texture(texture, tint, shader_id),
-            None => Material::texture(texture, shader_id),
+            Some(tint) => Material::texture(texture, tint, shader_id),
+            None => Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id),
         };
 
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material) });
@@ -714,7 +720,7 @@ impl Renderer
                 MaterialType::Texture(_, tint) => InstanceData
                 {
                     model: cmd.transform,
-                    color: tint.unwrap_or([1.0, 1.0, 1.0, 1.0]),
+                    color: tint,
                     mode: 1
                 },
 
