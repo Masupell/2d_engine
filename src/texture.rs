@@ -109,7 +109,7 @@ impl Texture
     }
 
     // Right now pretty much almost the exact same code as from_image, but to lazy to combine into one right now
-    pub fn from_alpha_bitmap(device: &wgpu::Device, queue: &wgpu::Queue, bitmap: &[u8], width: usize, height: usize, label: Option<&str>) -> Result<Self>
+    pub fn from_alpha_bitmap(device: &wgpu::Device, queue: &wgpu::Queue, bitmap: &[u8], width: usize, height: usize, mag_filter: FilterMode, min_filter: FilterMode, label: Option<&str>) -> Result<Self>
     {
         let mut rgba =  Vec::with_capacity(width * height * 4);
         for &alpha in bitmap
@@ -161,8 +161,8 @@ impl Texture
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: mag_filter.into_wgpu(),
+            min_filter: min_filter.into_wgpu(),
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });

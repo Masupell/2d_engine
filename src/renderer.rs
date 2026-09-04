@@ -21,7 +21,7 @@ pub const QUAD_INDICES: &[u16] =
 ];
 
 const DEFAULT_FONT_PATH: &str = "src/image/Montserrat-Bold.ttf"; // Gotta change the location later
-const DEFAULT_FONT_SIZE: f32 = 48.0;
+const DEFAULT_FONT_SIZE: f32 = 128.0; // Size for now, later add multiple sizes and it chooses from it, or better a 'MSDF' (creating a signed distance field, and reconstruct it when needed)
 const TEXT_CACHE_CAPACITY: usize = 64;
 
 
@@ -402,14 +402,32 @@ impl Renderer
 
     fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Vec<Arc<wgpu::BindGroup>>, font_path: &str, charset: &str, size: f32) -> FontAtlas
     {
-        let (bitmap, width, height, glyphs, line_height) = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));
+        let rasterized = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));
 
-        let texture = Texture::from_alpha_bitmap(device, queue, &bitmap, width, height, Some(font_path)).expect("Failed to create font atlas texture");
+        // let output = image::GrayImage::from_vec(rasterized.width as u32, rasterized.height as u32, rasterized.bitmap.to_vec());
+        // match output
+        // {
+        //     Some(image) =>
+        //     {
+        //         image.save(path).unwrap();
+        //     }
+        //     None => println!("Could not create Image")
+        // }
+
+        let texture = Texture::from_alpha_bitmap(device, queue, &rasterized.bitmap, rasterized.width, rasterized.height, FilterMode::Linear, FilterMode::Linear, Some(font_path)).expect("Failed to create font atlas texture");
         let bindgroup = Arc::new(texture.bind_group(device, texture_bindgroup_layout));
         let texture_id = textures.len();
         textures.push(bindgroup);
 
-        FontAtlas { texture_id, glyphs, line_height }
+        FontAtlas
+        {
+            texture_id,
+            glyphs: rasterized.glyphs,
+            line_height: rasterized.line_height,
+            ascent: rasterized.ascent,
+            native_size: size,
+            cap_height: rasterized.cap_height
+        }
     }
 
     // changes default font
@@ -431,7 +449,7 @@ impl Renderer
     {
         if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
         {
-            let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, Some("char")).expect("Failed to create Texture");
+            let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("char")).expect("Failed to create Texture");
             let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
             let id = self.textures.len();
             self.textures.push(bindgroup);
@@ -462,7 +480,7 @@ impl Renderer
                 // output.save("engine/src/image/text_texture.png").unwrap();
                 //
 
-                let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, Some("text")).expect("Failed to create Texture");
+                let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("text")).expect("Failed to create Texture");
                 let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
                 let id = self.textures.len();
                 self.textures.push(bindgroup);
@@ -509,10 +527,7 @@ impl Renderer
 
             for (instance_id, cmd) in self.draw_commands.iter().enumerate()
             {
-                if cmd.layer != layer
-                {
-                    continue;
-                }
+                if cmd.layer != layer { continue; }
 
                 if Some(cmd.material.pipeline_id) != current_pipeline
                 {
@@ -653,30 +668,38 @@ impl Renderer
             Some(id) => MeshBuilder::with_mesh_id(MeshTopology::Triangles, id),
             None => MeshBuilder::new(MeshTopology::Triangles)
         };
-        let mut cursor_x = 0.0;
 
-        for ch in text.chars()
+        let line_height = self.fonts[font_id].line_height;
+        let mut cursor_y = 0.0;
+
+        for line in text.lines()
         {
-            if let Some(glyph) = self.fonts[font_id].glyphs.get(&ch)
+            let mut cursor_x = 0.0;
+
+            for ch in line.chars()
             {
-                if glyph.size[0] > 0.0 && glyph.size[1] > 0.0
+                if let Some(glyph) = self.fonts[font_id].glyphs.get(&ch)
                 {
-                    let x0 = cursor_x + glyph.offset[0];
-                    let x1 = x0 + glyph.size[0];
-                    let y_top = -glyph.offset[1];
-                    let y_bottom = -(glyph.offset[1] + glyph.size[1]);
+                    if glyph.size[0] > 0.0 && glyph.size[1] > 0.0
+                    {
+                        let x0 = cursor_x + glyph.offset[0];
+                        let x1 = x0 + glyph.size[0];
+                        let y_top = cursor_y - glyph.offset[1];
+                        let y_bottom = cursor_y - (glyph.offset[1] + glyph.size[1]);
 
-                    mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
-                    mesh_builder.add_vertex((x0, y_bottom), (glyph.uv_min[0], glyph.uv_max[1]));
-                    mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
+                        mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
+                        mesh_builder.add_vertex((x0, y_bottom), (glyph.uv_min[0], glyph.uv_max[1]));
+                        mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
 
-                    mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
-                    mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
-                    mesh_builder.add_vertex((x1, y_top), (glyph.uv_max[0], glyph.uv_min[1]));
+                        mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
+                        mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
+                        mesh_builder.add_vertex((x1, y_top), (glyph.uv_max[0], glyph.uv_min[1]));
+                    }
+
+                    cursor_x += glyph.advance;
                 }
-
-                cursor_x += glyph.advance;
             }
+            cursor_y -= line_height;
         }
 
         let mesh_id = mesh_builder.build(self, device, queue);
@@ -684,27 +707,76 @@ impl Renderer
         mesh_id
     }
 
-
-    // + positioning is slightly off
-    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn text_bounds(&self, text: &str, pos: (f32, f32), height_px: f32) -> ((f32, f32), f32, f32)
     {
-        self.draw_text_with_font(device, queue, 0, text, pos, scale, color, space, layer, z_index, shader_id);
+        self.text_bounds_with_font(0, text, pos, height_px)
     }
 
-    pub fn draw_text_with_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), scale: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn text_bounds_with_font(&self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32) -> ((f32, f32), f32, f32)
     {
-        let texture_id = self.fonts[font_id].texture_id;
+        let atlas = &self.fonts[font_id];
+        let scale = height_px / atlas.native_size;
+
+        let width = self.measure_text_width_with_font(font_id, text, height_px);
+
+        let line_count = text.lines().count().max(1);
+        let scaled_line_height = atlas.line_height * scale;
+        let height = height_px + (line_count - 1) as f32 * scaled_line_height;
+
+        (pos, width, height)
+    }
+
+    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        self.draw_text_with_font(device, queue, 0, text, pos, height_px, color, space, layer, z_index, shader_id);
+    }
+
+    pub fn draw_text_with_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        let atlas = &self.fonts[font_id];
+        let scale = height_px / atlas.native_size;
+        let texture_id = atlas.texture_id;
+        let ascent = atlas.ascent;
+
         let mesh_id = self.build_text_mesh(device, queue, font_id, text);
+
+        let baseline_pos = (pos.0, pos.1 + ascent * scale);
 
         let transform = match space
         {
-            CoordSpace::World => self.matrix(pos, (scale, scale), 0.0),
-            CoordSpace::Screen => self.ui_matrix(pos, (scale, scale), 0.0),
+            CoordSpace::World => self.matrix(baseline_pos, (scale, scale), 0.0),
+            CoordSpace::Screen => self.ui_matrix(baseline_pos, (scale, scale), 0.0),
         };
 
         self.draw_mesh_transformed(mesh_id, texture_id, transform, Some(color), layer, z_index, shader_id);
     }
 
+    pub fn draw_text_centered(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        self.draw_text_with_font_centered(device, queue, 0, text, center, height_px, color, space, layer, z_index, shader_id);
+    }
+
+    pub fn draw_text_with_font_centered(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        let width = self.measure_text_width_with_font(font_id, text, height_px);
+        let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
+
+        self.draw_text_with_font(device, queue, font_id, text, top_left, height_px, color, space, layer, z_index, shader_id);
+    }
+
+    pub fn measure_text_width(&self, text: &str, height_px: f32) -> f32
+    {
+        self.measure_text_width_with_font(0, text, height_px)
+    }
+
+    pub fn measure_text_width_with_font(&self, font_id: usize, text: &str, height_px: f32) -> f32
+    {
+        let atlas = &self.fonts[font_id];
+        let scale = height_px / atlas.native_size;
+
+        let width = text.lines().map(|line| line.chars().filter_map(|ch| atlas.glyphs.get(&ch)).map(|glyph| glyph.advance).sum::<f32>()).fold(0.0_f32, f32::max);
+        width * scale
+    }
 
     pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {

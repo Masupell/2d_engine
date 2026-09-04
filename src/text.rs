@@ -282,10 +282,24 @@ pub struct FontAtlas
 {
     pub texture_id: usize,
     pub glyphs: HashMap<char, Glyph>,
-    pub line_height: f32
+    pub line_height: f32,
+    pub ascent: f32, // distance from baseline to highest glyphs top
+    pub native_size: f32, // size text got rasterized
+    pub cap_height: f32,
 }
 
-pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::result::Result<(Vec<u8>, usize, usize, HashMap<char, Glyph>, f32), anyhow::Error>
+pub struct RasterizedFont
+{
+    pub bitmap: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+    pub glyphs: HashMap<char, Glyph>,
+    pub line_height: f32,
+    pub ascent: f32,
+    pub cap_height: f32
+}
+
+pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::result::Result<RasterizedFont, anyhow::Error>
 {
     let font_data = std::fs::read(font_path)?;
     let font = FontArc::try_from_vec(font_data)?;
@@ -305,6 +319,7 @@ pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::r
     let mut rasterized: Vec<(char, RasterizedGlyph)> = Vec::new();
     let mut cell_width: usize = 1;
     let mut cell_height: usize = 1;
+    let mut cap_height: f32 = size;
 
     for ch in charset.chars()
     {
@@ -319,6 +334,11 @@ pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::r
                 let bounds = outline.px_bounds();
                 let width = bounds.width().ceil().max(1.0) as usize;
                 let height = bounds.height().ceil().max(1.0) as usize;
+
+                if ch == 'M'
+                {
+                    cap_height = bounds.height();
+                }
 
                 let mut bitmap = vec![0u8; width * height];
                 outline.draw(|x, y, coverage|
@@ -386,8 +406,10 @@ pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::r
     }
 
     let line_height = scaled_font.height() + scaled_font.line_gap();
+    let ascent = scaled_font.ascent();
 
-    Ok((atlas, atlas_width, atlas_height, glyphs, line_height))
+    // Ok((atlas, atlas_width, atlas_height, glyphs, line_height))
+    Ok(RasterizedFont { bitmap: atlas, width: atlas_width, height: atlas_height, glyphs, line_height, ascent, cap_height })
 }
 
 // impl FontAtlas
