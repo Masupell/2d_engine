@@ -11,6 +11,8 @@ pub struct Rope
     width: f32,
     pub view_buffer: f32,
     view_bounds: (Vec2, Vec2),
+
+    pub max_active_points: usize,
 }
 
 impl Rope
@@ -30,6 +32,7 @@ impl Rope
             width: 10.0,
             view_buffer: 200.0,
             view_bounds: (top_point, top_point),
+            max_active_points: 25,
         }
     }
 
@@ -50,7 +53,7 @@ impl Rope
         self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update(gravity, player_pos, segment_length, dt));
     }
 
-    pub fn add_anchor(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
+    fn split_at_current_end(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
     {
         let width = self.width;
         let segment_length = self.segment_length;
@@ -61,9 +64,18 @@ impl Rope
         previous.end_anchor = Some(anchor_pos);
 
         let mut segment = RopeSegment::new(anchor_pos, direction, segment_length, extra_points);
+
+        let reused_id = renderer.reserve_mesh_slot();
+        reused_id.into_iter().for_each(|id| segment.use_reused_mesh_slot(id));
+
         segment.build_mesh(renderer, device, queue, width);
 
         self.segments.push(segment);
+    }
+
+    pub fn add_anchor(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
+    {
+        self.split_at_current_end(renderer, device, queue, extra_points);
     }
 
     // In case I need the anchor positions
@@ -81,14 +93,76 @@ impl Rope
         (active.anchor_pos, max_reach)
     }
 
+    fn no_op_after_growth(&mut self, _renderer: &mut crate::Renderer, _device: &wgpu::Device, _queue: &wgpu::Queue, _split_index: usize) {}
+    fn split_after_growth(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, split_index: usize)
+    {
+        let width = self.width;
+        let active = self.segments.last_mut().unwrap();
+
+        let mut new_segment = active.split_off_front(split_index);
+        active.build_mesh(renderer, device, queue, width);
+
+        let reused_id = renderer.reserve_mesh_slot();
+        reused_id.into_iter().for_each(|id| new_segment.use_reused_mesh_slot(id));
+
+        new_segment.build_mesh(renderer, device, queue, width);
+
+        self.segments.push(new_segment);
+    }
+
     pub fn grow_active_segment(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
     {
         let segment_length = self.segment_length;
         let width = self.width;
+        let max_active_points = self.max_active_points;
+        let (view_min, view_max) = self.view_bounds;
+
         let active = self.segments.last_mut().unwrap();
 
         active.push_point(segment_length);
         active.build_mesh(renderer, device, queue, width);
+
+        let too_long = active.points.len() > max_active_points;
+        let split_index = active.find_offscreen_split_index(view_min, view_max);
+
+        let should_split = too_long & split_index.is_some();
+
+        const AFTER_GROWTH_TABLE: [fn(&mut Rope, &mut crate::Renderer, &wgpu::Device, &wgpu::Queue, usize); 2] =
+        [
+            Rope::no_op_after_growth,
+            Rope::split_after_growth,
+        ];
+
+        AFTER_GROWTH_TABLE[should_split as usize](self, renderer, device, queue, split_index.unwrap_or(0));
+    }
+
+    // Removes anchors that got placed for optimization, keeps player-placed ones
+    pub fn reclaim_visible_splits(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        let (view_min, view_max) = self.view_bounds;
+        let width = self.width;
+
+        let merge_index = self.segments.iter().position(|segment| segment.auto_split & RopeSegment::point_in_view(segment.anchor_pos, view_min, view_max));
+
+        merge_index.into_iter().for_each(|i|
+        {
+            self.merge_with_previous(i, renderer);
+            self.segments[i - 1].build_mesh(renderer, device, queue, width);
+        });
+    }
+
+    fn merge_with_previous(&mut self, index: usize, renderer: &mut crate::Renderer)
+    {
+        let removed = self.segments.remove(index);
+
+        removed.mesh_id.into_iter().for_each(|id| renderer.free_mesh(id));
+
+        let previous = &mut self.segments[index - 1];
+
+        previous.points.pop();
+        previous.points.extend(removed.points);
+
+        previous.end_anchor = removed.end_anchor;
     }
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
@@ -122,6 +196,9 @@ pub struct RopeSegment
     // None, when following the player, Some(Vec2) when attached to anchor
     end_anchor: Option<Vec2>,
 
+    // If it is a segment, created by player or auto-created
+    auto_split: bool,
+
     mesh_builder: MeshBuilder,
     mesh_id: Option<usize>,
 }
@@ -137,9 +214,49 @@ impl RopeSegment
             points,
             anchor_pos,
             end_anchor: None,
+            auto_split: false,
             mesh_builder: MeshBuilder::new(MeshTopology::Triangles),
             mesh_id: None,
         }
+    }
+
+    fn use_reused_mesh_slot(&mut self, mesh_id: usize)
+    {
+        self.mesh_builder = MeshBuilder::with_mesh_id(MeshTopology::Triangles, mesh_id);
+    }
+
+    fn split_off_front(&mut self, split_index: usize) -> RopeSegment
+    {
+        let split_pos = self.points[split_index].pos;
+
+        let tail_points = self.points.split_off(split_index);
+        self.points.push(RopePoint::new(split_pos));
+
+        self.end_anchor = Some(split_pos);
+
+        RopeSegment
+        {
+            points: tail_points,
+            anchor_pos: split_pos,
+            end_anchor: None,
+            auto_split: true,
+            mesh_builder: MeshBuilder::new(MeshTopology::Triangles),
+            mesh_id: None,
+        }
+    }
+
+    fn point_in_view(pos: Vec2, view_min: Vec2, view_max: Vec2) -> bool
+    {
+        let in_x = (pos.x > view_min.x) & (pos.x < view_max.x);
+        let in_y = (pos.y > view_min.y) & (pos.y < view_max.y);
+
+        in_x & in_y
+    }
+
+    // Searches from player point down, to the anchor thats no longer in view
+    fn find_offscreen_split_index(&self, view_min: Vec2, view_max: Vec2) -> Option<usize>
+    {
+        self.points.iter().enumerate().filter(|(_, point)| !Self::point_in_view(point.pos, view_min, view_max)).map(|(i, _)| i).last()
     }
 
     // Bounding box over entire segment

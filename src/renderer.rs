@@ -47,7 +47,9 @@ pub struct Renderer
     camera_bind_group_layout: wgpu::BindGroupLayout,
     clear_color: wgpu::Color,
     pub(crate) fonts: Vec<crate::text::FontAtlas>,
-    text_cache: TextCache
+    text_cache: TextCache,
+    // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
+    free_mesh_ids: Vec<usize>
 }
 
 impl Renderer
@@ -208,7 +210,8 @@ impl Renderer
             camera_bind_group_layout,
             clear_color: wgpu::Color {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
             fonts: vec![default_font],
-            text_cache: TextCache::new(TEXT_CACHE_CAPACITY)
+            text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
+            free_mesh_ids: Vec::new()
         }
     }
 
@@ -285,6 +288,20 @@ impl Renderer
         let id = self.pipelines.len();
         self.pipelines.push(pipeline);
         id
+    }
+
+    // Marks a mesh slot available for reuse
+    // DOes not free underlying gpy buffer immidiately though
+    // Instead, next thing that call 'reserve_mesh_slot', gets that id back and can overwrite it
+    pub fn free_mesh(&mut self, mesh_id: usize)
+    {
+        self.free_mesh_ids.push(mesh_id);
+    }
+
+    // If available can use MeshBuilder::with_mesh_id, otherwise just ::new
+    pub fn reserve_mesh_slot(&mut self) -> Option<usize>
+    {
+        self.free_mesh_ids.pop()
     }
 
     pub(crate) fn create_mesh(&mut self, device: &wgpu::Device, data: &MeshData) -> usize

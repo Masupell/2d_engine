@@ -148,6 +148,7 @@ impl EngineEvent for App
         GROWTH_TABLE[should_grow as usize](self, update_ctx, difference);
 
         self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
+        self.rope.reclaim_visible_splits(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         self.rope_extending_toggle.update(update_ctx.input);
