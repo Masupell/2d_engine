@@ -83,10 +83,12 @@ impl Rope
 
     pub fn grow_active_segment(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue)
     {
+        let segment_length = self.segment_length;
+        let width = self.width;
         let active = self.segments.last_mut().unwrap();
 
-        active.push_point(self.segment_length);
-        active.build_mesh(renderer, device, queue, self.width);
+        active.push_point(segment_length);
+        active.build_mesh(renderer, device, queue, width);
     }
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
@@ -189,7 +191,8 @@ impl RopeSegment
 
         self.points.iter_mut().skip(1).for_each(|point| point.update(gravity, dt));
 
-        (0..5).for_each(|_| self.solve_constraints(segment_length));
+        let iterations = self.points.len().clamp(5, 20);
+        (0..iterations).for_each(|i| SOLVE_PASS_TABLE[i % 2](self, segment_length));
 
         self.points[0].pos = self.anchor_pos;
         self.points[0].prev_pos = self.anchor_pos;
@@ -198,7 +201,7 @@ impl RopeSegment
         self.points[last].prev_pos = tail_target;
     }
 
-    fn solve_constraints(&mut self, segment_length: f32)
+    fn solve_pair(&mut self, i: usize, last: usize, segment_length: f32)
     {
         const CORRECTION_TABLE: [(f32, f32); 4] =
         [
@@ -210,24 +213,39 @@ impl RopeSegment
 
         const STIFFNESS: f32 = 0.25;
 
+        let delta = self.points[i + 1].pos - self.points[i].pos;
+        let distance = delta.length();
+
+        let stretch = (distance - segment_length).max(0.0);
+        let correction = delta.normalize() * stretch * STIFFNESS;
+
+        let first_fixed = 1 - i.min(1);
+        let second_fixed = 1 - (last - 1 - i).min(1);
+
+        let index = first_fixed + second_fixed * 2;
+        let (first_factor, second_factor) = CORRECTION_TABLE[index];
+
+        self.points[i].pos += correction * first_factor;
+        self.points[i + 1].pos -= correction * second_factor;
+    }
+
+    fn solve_forward(&mut self, segment_length: f32)
+    {
         let last = self.points.len() - 1;
 
         for i in 0..last
         {
-            let delta = self.points[i + 1].pos - self.points[i].pos;
-            let distance = delta.length();
+            self.solve_pair(i, last, segment_length);
+        }
+    }
 
-            let stretch = (distance - segment_length).max(0.0);
-            let correction = delta.normalize() * stretch * STIFFNESS;
+    fn solve_backward(&mut self, segment_length: f32)
+    {
+        let last = self.points.len() - 1;
 
-            let first_fixed = 1 - i.min(1);
-            let second_fixed = 1 - (last - 1 - i).min(1);
-
-            let index = first_fixed + second_fixed * 2;
-            let (first_factor, second_factor) = CORRECTION_TABLE[index];
-
-            self.points[i].pos += correction * first_factor;
-            self.points[i + 1].pos -= correction * second_factor;
+        for i in (0..last).rev()
+        {
+            self.solve_pair(i, last, segment_length);
         }
     }
 
@@ -405,6 +423,14 @@ impl RopeSegment
         self.mesh_builder.add_vertex((c.x, c.y), (cc.x, cc.y));
     }
 }
+
+type SolvePassFn = fn(&mut RopeSegment, f32);
+
+const SOLVE_PASS_TABLE: [SolvePassFn; 2] =
+[
+    RopeSegment::solve_forward,
+    RopeSegment::solve_backward,
+];
 
 pub struct RopePoint
 {
