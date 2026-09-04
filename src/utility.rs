@@ -66,8 +66,13 @@ pub struct DrawCommand
     // pub kind: DrawType,
     pub z_index: u32,
     pub material: Arc<Material>,
-    pub layer: DrawLayer
+    pub layer: DrawLayer,
+    // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
+    // meshes with baked in uv, should leave this at default
+    pub uv_rect: [f32; 4]
 }
+
+pub const FULL_UV_RECT: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -75,7 +80,8 @@ pub struct InstanceData
 {
     pub model: [[f32; 4]; 4],
     pub color: [f32; 4],
-    pub mode: u32 //0 = color, 1 = texture
+    pub mode: u32, //0 = color, 1 = texture
+    pub uv_rect: [f32; 4]
 }
 
 impl InstanceData
@@ -121,9 +127,15 @@ impl InstanceData
                 },
                 wgpu::VertexAttribute //mode
                 {
-                    offset: 5 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    offset: 5 * std::mem::size_of::<[u32; 4]>() as wgpu::BufferAddress,
                     shader_location: 7,
                     format: wgpu::VertexFormat::Uint32
+                },
+                wgpu::VertexAttribute
+                {
+                    offset: 5 * std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress + std::mem::size_of::<u32>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4
                 }
             ],
         }

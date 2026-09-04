@@ -16,7 +16,7 @@ struct VertexInput
     @location(6) color: vec4<f32>,
 
     @location(7) mode: u32,
-    // @location(8) texture_id: u32
+    @location(8) uv_rect: vec4<f32>
 }
 
 struct VertexOutput
@@ -25,7 +25,6 @@ struct VertexOutput
     @location(0) color: vec4<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) mode: u32,
-    // @location(3) texture_id: u32
 };
 
 @group(0) @binding(0)
@@ -46,9 +45,8 @@ fn vs_main(in: VertexInput) -> VertexOutput
     let world_pos = model * vec4<f32>(in.position, 1.0);
     out.clip_position = camera.view_proj * world_pos;
     out.color = in.color;
-    out.tex_coords = in.tex_coords;
+    out.tex_coords = in.uv_rect.xy + in.tex_coords * in.uv_rect.zw;
     out.mode = in.mode;
-    // out.texture_id = in.texture_id;
     return out;
 }
 
@@ -61,8 +59,6 @@ var texture_sampler: sampler;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    // return vec4<f32>(0.3, 0.2, 0.1, 1.0);
-    // return in.color;
     let tex_color = textureSample(texture, texture_sampler, in.tex_coords);
     let final_color = select(in.color, tex_color * in.color, in.mode == 1u);
     return final_color;

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use image::GenericImageView;
 use anyhow::*;
 
@@ -20,13 +22,19 @@ impl FilterMode
     }
 }
 
+// Quick struct, to serve as step towards final texture struct
+pub struct TextureEntry
+{
+    pub bind_group: Arc<wgpu::BindGroup>,
+    pub size: (f32, f32)
+}
+
 // Right now, it is just used as a hlper, that returns things, but I need to change it, so that it does everything texture related
 pub struct Texture
 {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-    pub bind_group: Option<wgpu::BindGroup> // Does never actually store any bind)group here (it's always None), so should remove it
+    pub sampler: wgpu::Sampler
 }
 
 impl Texture
@@ -105,7 +113,7 @@ impl Texture
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler, bind_group: None })
+        Ok(Self { texture, view, sampler })
     }
 
     // Right now pretty much almost the exact same code as from_image, but to lazy to combine into one right now
@@ -167,7 +175,7 @@ impl Texture
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler, bind_group: None })
+        Ok(Self { texture, view, sampler })
     }
 
     // Needs Surface Format, as it is for the output, 'from_image' does not, as it is an input
@@ -204,7 +212,7 @@ impl Texture
             ..Default::default()
         });
 
-        Self { texture, view, sampler, bind_group: None }
+        Self { texture, view, sampler }
     }
 
 

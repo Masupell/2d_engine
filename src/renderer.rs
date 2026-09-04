@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, FULL_UV_RECT, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
 
 
 
@@ -35,7 +35,7 @@ pub struct Renderer
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
-    textures: Vec<Arc<wgpu::BindGroup>>,
+    textures: Vec<TextureEntry>,
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
     default_vertex: ShaderModuleHandle,
     default_fragment: ShaderModuleHandle,
@@ -183,7 +183,7 @@ impl Renderer
         let default_texture = Texture::white(device, queue, FilterMode::Linear, FilterMode::Linear).unwrap();
         let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
 
-        let mut textures = vec![default_bindgroup];
+        let mut textures = vec![TextureEntry { bind_group: default_bindgroup, size: (1.0, 1.0) }];
 
         let default_font = Self::build_font_atlas(device, queue, &texture_bindgroup_layout, &mut textures, DEFAULT_FONT_PATH, &default_charset(), DEFAULT_FONT_SIZE);
 
@@ -393,14 +393,15 @@ impl Renderer
     {
         let error = format!("Failed to load texture with path: {}", path);
         let texture = Texture::new(device, queue, path, mag_filter, min_filter).expect(&error);
-        let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+        let extent = texture.texture.size();
+        let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
         let id = self.textures.len();
-        self.textures.push(bindgroup);
+        self.textures.push(TextureEntry { bind_group, size: (extent.width as f32, extent.height as f32) });
         id
     }
 
 
-    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Vec<Arc<wgpu::BindGroup>>, font_path: &str, charset: &str, size: f32) -> FontAtlas
+    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Vec<TextureEntry>, font_path: &str, charset: &str, size: f32) -> FontAtlas
     {
         let rasterized = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));
 
@@ -415,9 +416,9 @@ impl Renderer
         // }
 
         let texture = Texture::from_alpha_bitmap(device, queue, &rasterized.bitmap, rasterized.width, rasterized.height, FilterMode::Linear, FilterMode::Linear, Some(font_path)).expect("Failed to create font atlas texture");
-        let bindgroup = Arc::new(texture.bind_group(device, texture_bindgroup_layout));
+        let bind_group = Arc::new(texture.bind_group(device, texture_bindgroup_layout));
         let texture_id = textures.len();
-        textures.push(bindgroup);
+        textures.push(TextureEntry { bind_group, size: (rasterized.width as f32, rasterized.height as f32) });
 
         FontAtlas
         {
@@ -450,9 +451,9 @@ impl Renderer
         if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
         {
             let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("char")).expect("Failed to create Texture");
-            let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+            let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
             let id = self.textures.len();
-            self.textures.push(bindgroup);
+            self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
             Some(id)
         }
         else
@@ -481,9 +482,9 @@ impl Renderer
                 //
 
                 let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("text")).expect("Failed to create Texture");
-                let bindgroup = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+                let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
                 let id = self.textures.len();
-                self.textures.push(bindgroup);
+                self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
                 Some(id)
             }
             Err(e) =>
@@ -547,7 +548,7 @@ impl Renderer
                 {
                     MaterialType::Color(_) =>
                     {
-                        render_pass.set_bind_group(1, self.textures[0].as_ref(), &[]);
+                        render_pass.set_bind_group(1, self.textures[0].bind_group.as_ref(), &[]);
                     }
                     MaterialType::Texture(texture, _) =>
                     {
@@ -595,37 +596,65 @@ impl Renderer
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::World });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
     }
 
     pub fn draw_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::UI });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
     }
 
     pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::World });
+        let texture = Arc::clone(&self.textures[texture_id].bind_group);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
     }
 
     pub fn draw_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::UI });
+        let texture = Arc::clone(&self.textures[texture_id].bind_group);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
     }
 
     pub fn draw_tinted_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::World });
+        let texture = Arc::clone(&self.textures[texture_id].bind_group);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
     }
 
     pub fn draw_tinted_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::UI });
+        let texture = Arc::clone(&self.textures[texture_id].bind_group);
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
     }
+
+    pub fn draw_texture_atlas(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), z_index: u32, shader_id: u8)
+    {
+        self.draw_texture_atlas_layer(mesh_id, transform, texture_id, rect_pos, rect_size, DrawLayer::World, z_index, shader_id);
+    }
+
+    pub fn draw_texture_atlas_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), z_index: u32, shader_id: u8)
+    {
+        self.draw_texture_atlas_layer(mesh_id, transform, texture_id, rect_pos, rect_size, DrawLayer::UI, z_index, shader_id);
+    }
+
+    fn draw_texture_atlas_layer(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        let entry = &self.textures[texture_id];
+        let texture_size = entry.size;
+        let texture = Arc::clone(&entry.bind_group);
+
+        let uv_rect =
+        [
+            rect_pos.0 / texture_size.0,
+            rect_pos.1 / texture_size.1,
+            rect_size.0 / texture_size.0,
+            rect_size.1 / texture_size.1,
+        ];
+
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id)), layer, uv_rect });
+    }
+
 
     // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
     pub fn draw_mesh(&mut self, mesh_id: usize, texture_id: usize, z_index: u32, shader_id: u8)
@@ -644,14 +673,14 @@ impl Renderer
     // Same as normal draw_mesh, but with tint and transform, meant only for local space, not world space (text for example)
     pub fn draw_mesh_transformed(&mut self, mesh_id: usize, texture_id: usize, transform: [[f32; 4]; 4], tint: Option<[f32; 4]>, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id]);
+        let texture = Arc::clone(&self.textures[texture_id].bind_group);
         let material = match tint
         {
             Some(tint) => Material::texture(texture, tint, shader_id),
             None => Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id),
         };
 
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material), layer });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material), layer, uv_rect: FULL_UV_RECT });
     }
 
     pub(crate) fn build_text_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str) -> usize
@@ -800,13 +829,15 @@ impl Renderer
                 {
                     model: cmd.transform,
                     color: color,
-                    mode: 0
+                    mode: 0,
+                    uv_rect: cmd.uv_rect
                 },
                 MaterialType::Texture(_, tint) => InstanceData
                 {
                     model: cmd.transform,
                     color: tint,
-                    mode: 1
+                    mode: 1,
+                    uv_rect: cmd.uv_rect
                 },
 
             }

@@ -34,7 +34,8 @@ struct App
     wall: Wall,
     collectibles: CollectibleManager,
     rope_extending: bool,
-    rope_extending_toggle: no_if::button::Button
+    rope_extending_toggle: no_if::button::Button,
+    test_id: usize
 }
 
 impl App
@@ -132,6 +133,9 @@ impl EngineEvent for App
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
+
+        // Test
+        self.test_id = graphics.load_texture("src/image/font_atlas_debug.png", FilterMode::Linear, FilterMode::Linear);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -192,6 +196,9 @@ impl EngineEvent for App
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -900.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
 
         self.rope_extending_toggle.draw(render_ctx, 5, 0);
+
+        //Texture atlas test
+        render_ctx.graphics.renderer.draw_texture_atlas_ui(0, render_ctx.graphics.renderer.ui_matrix((1280.0/2.0, 720.0/2.0), (333.0, 315.0), 0.0), self.test_id, (111.0*5.0, 105.0*4.0+1.0), (82.0, 73.0), 4, 0);
     }
 }
 
@@ -216,7 +223,8 @@ impl App
             wall: Wall::new(1280.0*2.0),
             collectibles,
             rope_extending: true,
-            rope_extending_toggle
+            rope_extending_toggle,
+            test_id: 0
         }
     }
 }
