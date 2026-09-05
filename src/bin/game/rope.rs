@@ -13,6 +13,9 @@ pub struct Rope
     view_bounds: (Vec2, Vec2),
 
     pub max_active_points: usize,
+    pub min_anchor_spacing: f32,
+    // from 0..1, closer to 0 is slower, how fast the anchor moves
+    pub straighten_smoothing: f32,
 }
 
 impl Rope
@@ -33,6 +36,8 @@ impl Rope
             view_buffer: 200.0,
             view_bounds: (top_point, top_point),
             max_active_points: 25,
+            min_anchor_spacing: 5.0,
+            straighten_smoothing: 0.05,
         }
     }
 
@@ -50,10 +55,50 @@ impl Rope
         self.view_bounds = Self::compute_view_bounds(player_pos, self.view_buffer);
         let (view_min, view_max) = self.view_bounds;
 
+        self.ease_auto_anchors(player_pos, dt);
         self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update(gravity, player_pos, segment_length, dt));
     }
 
-    fn split_at_current_end(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
+    // Moves the aut-placed anchors every frame slightly, so that it looks correctly positioned
+    fn ease_auto_anchors(&mut self, player_pos: Vec2, dt: f32)
+    {
+        let real_index = self.segments.iter().rposition(|s| !s.auto_split).unwrap_or(0);
+        let real_anchor_pos = self.segments[real_index].anchor_pos;
+        let offset = player_pos - real_anchor_pos;
+
+        const MIN_DISTANCE: f32 = 1.0;
+        let is_degenerate = (offset.length() < MIN_DISTANCE) as usize;
+
+        const EASE_TABLE: [fn(&mut Rope, usize, Vec2, Vec2, f32); 2] = [Rope::do_ease_auto_anchors, Rope::skip_ease_auto_anchors];
+        EASE_TABLE[is_degenerate](self, real_index, real_anchor_pos, offset, dt);
+    }
+
+    fn skip_ease_auto_anchors(&mut self, _real_index: usize, _real_anchor_pos: Vec2, _offset: Vec2, _dt: f32) {}
+    fn do_ease_auto_anchors(&mut self, real_index: usize, real_anchor_pos: Vec2, offset: Vec2, dt: f32)
+    {
+        let direction = offset.normalize();
+        let segment_length = self.segment_length;
+        let factor = self.straighten_smoothing.powf(dt);
+
+        let mut cumulative_length = (self.segments[real_index].points.len() - 1) as f32 * segment_length;
+
+        ((real_index + 1)..self.segments.len()).for_each(|i|
+        {
+            let target_anchor_pos = real_anchor_pos + direction * cumulative_length;
+            let eased_anchor_pos = target_anchor_pos + (self.segments[i].anchor_pos - target_anchor_pos) * factor;
+            let delta = eased_anchor_pos - self.segments[i].anchor_pos;
+
+            self.segments[i].anchor_pos = eased_anchor_pos;
+            self.segments[i].shift_points(delta);
+
+            self.segments[i - 1].end_anchor = Some(eased_anchor_pos);
+
+            cumulative_length += (self.segments[i].points.len() - 1) as f32 * segment_length;
+        });
+    }
+
+    fn skip_add_anchor(&mut self, _renderer: &mut crate::Renderer, _device: &wgpu::Device, _queue: &wgpu::Queue, _extra_points: usize) -> bool { false }
+    fn split_at_current_end(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize) -> bool
     {
         let width = self.width;
         let segment_length = self.segment_length;
@@ -71,11 +116,23 @@ impl Rope
         segment.build_mesh(renderer, device, queue, width);
 
         self.segments.push(segment);
+
+        true
     }
 
-    pub fn add_anchor(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize)
+    pub fn add_anchor(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, extra_points: usize) -> bool
     {
-        self.split_at_current_end(renderer, device, queue, extra_points);
+        let previous = self.segments.last().unwrap();
+        let distance = (previous.end_pos() - previous.anchor_pos).length();
+        let too_close = (distance < self.min_anchor_spacing) as usize;
+
+        const ANCHOR_TABLE: [fn(&mut Rope, &mut crate::Renderer, &wgpu::Device, &wgpu::Queue, usize) -> bool; 2] =
+        [
+            Rope::split_at_current_end,
+            Rope::skip_add_anchor,
+        ];
+
+        ANCHOR_TABLE[too_close](self, renderer, device, queue, extra_points)
     }
 
     // In case I need the anchor positions
@@ -218,6 +275,16 @@ impl RopeSegment
             mesh_builder: MeshBuilder::new(MeshTopology::Triangles),
             mesh_id: None,
         }
+    }
+
+    // Moves every point, for the aut-anchor postioning
+    fn shift_points(&mut self, delta: Vec2)
+    {
+        self.points.iter_mut().for_each(|point|
+        {
+            point.pos += delta;
+            point.prev_pos += delta;
+        });
     }
 
     fn use_reused_mesh_slot(&mut self, mesh_id: usize)

@@ -54,7 +54,7 @@ impl App
 
     }
 
-    fn mouse_left_released(&mut self, ctx: &mut UpdateContext)
+    fn mouse_left_released(&mut self, _ctx: &mut UpdateContext)
     {
 
     }
@@ -80,8 +80,8 @@ impl App
     fn place_nothing(&mut self, _: &mut UpdateContext) {}
     fn place_anchor(&mut self, ctx: &mut UpdateContext)
     {
-        self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
-        self.player.score -= 2;
+        let add_anchor = self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
+        self.player.score -= 2 * add_anchor as i32;
     }
 
     fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(); }
