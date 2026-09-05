@@ -24,6 +24,6 @@ pub use no_if::vector::Vec2;
 pub use no_if::action::Action;
 pub use no_if::shapes::{Rect, Triangle};
 pub use texture::FilterMode;
-pub use utility::{MeshData, CoordSpace};
+pub use utility::{MeshData, CoordSpace, UniformType, UniformValue};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;

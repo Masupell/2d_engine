@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -257,4 +257,94 @@ pub enum DrawLayer
 {
     World, // Affected by post-processing step
     UI // Drawn after
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UniformType
+{
+    Float,
+    Vec2,
+    Vec3,
+    Vec4,
+    Int,
+    UInt,
+    Mat4
+}
+
+impl UniformType
+{
+    pub fn size(&self) -> usize
+    {
+        match self
+        {
+            UniformType::Float | UniformType::Int | UniformType::UInt => 4,
+            UniformType::Vec2 => 8,
+            UniformType::Vec3 => 12,
+            UniformType::Vec4 => 16,
+            UniformType::Mat4 => 64
+        }
+    }
+
+    pub fn align(&self) -> usize
+    {
+        match self
+        {
+            UniformType::Float | UniformType::Int | UniformType::UInt => 4,
+            UniformType::Vec2 => 8,
+            UniformType::Vec3 | UniformType::Vec4 => 16,
+            UniformType::Mat4 => 16
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UniformValue
+{
+    Float(f32),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+    Int(i32),
+    UInt(u32),
+    Mat4([[f32; 4]; 4])
+}
+
+impl UniformValue
+{
+    pub fn kind(&self) -> UniformType
+    {
+        match self
+        {
+            UniformValue::Float(_) => UniformType::Float,
+            UniformValue::Vec2(_) => UniformType::Vec2,
+            UniformValue::Vec3(_) => UniformType::Vec3,
+            UniformValue::Vec4(_) => UniformType::Vec4,
+            UniformValue::Int(_) => UniformType::Int,
+            UniformValue::UInt(_) => UniformType::UInt,
+            UniformValue::Mat4(_) => UniformType::Mat4,
+        }
+    }
+
+    pub fn write_into(&self, bytes: &mut [u8])
+    {
+        match self
+        {
+            UniformValue::Float(v) => bytes.copy_from_slice(&v.to_le_bytes()),
+            UniformValue::Int(v) => bytes.copy_from_slice(&v.to_le_bytes()),
+            UniformValue::UInt(v) => bytes.copy_from_slice(&v.to_le_bytes()),
+            UniformValue::Vec2(v) => bytes.copy_from_slice(bytemuck::cast_slice(v)),
+            UniformValue::Vec3(v) => bytes.copy_from_slice(bytemuck::cast_slice(v)),
+            UniformValue::Vec4(v) => bytes.copy_from_slice(bytemuck::cast_slice(v)),
+            UniformValue::Mat4(v) => bytes.copy_from_slice(bytemuck::cast_slice(v)),
+        }
+    }
+}
+
+pub struct PipelineUniforms
+{
+    pub buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+    pub group_index: u32, // where the bind_group is, 2 for normal pipeline, 1 for post-process pipeline
+    pub offsets: HashMap<String, (usize, UniformType)>
 }

@@ -6,6 +6,8 @@ struct VertexOutput
     @location(2) mode: u32,
 };
 
+@group(2) @binding(0) var<uniform> uniform_color: vec3<f32>; // To test uniforms
+
 const ROPE_COLOR: vec3<f32> = vec3<f32>(0.3, 0.16, 0.04);
 const TWISTS_PER_SEGMENT: f32 = 3.8;
 const STRAND_CONTRAST: f32 = 0.4;
@@ -40,6 +42,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let strand_shading = 1.0 + strands * STRAND_CONTRAST;
 
     var color = ROPE_COLOR * shading * strand_shading + vec3<f32>(specular);
+    color = mix(color, uniform_color, 0.3);
     let rim = smoothstep(0.55, 1.0, abs(w));
     color *= mix(1.0, 0.8, rim);
 

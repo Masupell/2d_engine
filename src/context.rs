@@ -1,4 +1,4 @@
-use crate::{Input, Renderer, texture::FilterMode, utility::PipeLineType};
+use crate::{Input, Renderer, UniformValue, texture::FilterMode, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -190,6 +190,16 @@ impl<'a> GraphicsContext<'a>
     pub fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
     {
         self.renderer.add_pipeline(self.device, self.config, fragment_path, vertex_path, pipeline_type)
+    }
+
+    pub fn load_shader_with_uniform(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    {
+        self.renderer.add_pipeline_with_uniforms(self.device, self.queue, self.config, fragment_path, vertex_path, pipeline_type, uniforms)
+    }
+
+    pub fn set_uniform(&mut self, name: &str, value: UniformValue)
+    {
+        self.renderer.set_uniform(self.queue, name, value);
     }
 
     pub fn set_camera_pos(&mut self, position: (f32, f32))

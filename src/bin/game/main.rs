@@ -34,7 +34,8 @@ struct App
     wall: Wall,
     collectibles: CollectibleManager,
     rope_extending: bool,
-    rope_extending_toggle: no_if::button::Button
+    rope_extending_toggle: no_if::button::Button,
+    hue: f32,
 }
 
 impl App
@@ -125,7 +126,8 @@ impl EngineEvent for App
         let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
         self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
 
-        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        // graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        graphics.load_shader_with_uniform(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal, &[("color", UniformType::Vec3)]);
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
         ctx.set_post_process_pipeline(pp_id);
 
@@ -164,6 +166,10 @@ impl EngineEvent for App
     {
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
+
+        self.hue = (self.hue + update_ctx.dt as f32 * 0.5) % 1.0;
+        let color = hsv_to_rgb(self.hue, 1.0, 1.0);
+        update_ctx.graphics.set_uniform("color", UniformValue::Vec3(color));
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
@@ -197,6 +203,28 @@ impl EngineEvent for App
 }
 
 
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3]
+{
+    let h = h * 6.0;
+    let i = h.floor() as i32;
+    let f = h - i as f32;
+
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+
+    match i % 6
+    {
+        0 => [v, t, p],
+        1 => [q, v, p],
+        2 => [p, v, t],
+        3 => [p, q, v],
+        4 => [t, p, v],
+        _ => [v, p, q],
+    }
+}
+
+
 // 200px = 1m
 impl App
 {
@@ -217,7 +245,8 @@ impl App
             wall: Wall::new(1280.0*2.0),
             collectibles,
             rope_extending: true,
-            rope_extending_toggle
+            rope_extending_toggle,
+            hue: 0.0
         }
     }
 }

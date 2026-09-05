@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, FULL_UV_RECT, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, Vertex}};
+use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, FULL_UV_RECT, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 
 
@@ -49,7 +49,10 @@ pub struct Renderer
     pub(crate) fonts: Vec<crate::text::FontAtlas>,
     text_cache: TextCache,
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
-    free_mesh_ids: Vec<usize>
+    free_mesh_ids: Vec<usize>,
+    // Same size as 'pipelines', just None for any that have no Uniforms
+    pipeline_uniforms: Vec<Option<PipelineUniforms>>,
+    uniform_values: HashMap<String, UniformValue>
 }
 
 impl Renderer
@@ -211,7 +214,9 @@ impl Renderer
             clear_color: wgpu::Color {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
             fonts: vec![default_font],
             text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
-            free_mesh_ids: Vec::new()
+            free_mesh_ids: Vec::new(),
+            pipeline_uniforms: vec![None],
+            uniform_values: HashMap::new()
         }
     }
 
@@ -287,7 +292,187 @@ impl Renderer
         });
         let id = self.pipelines.len();
         self.pipelines.push(pipeline);
+        self.pipeline_uniforms.push(None);
         id
+    }
+
+    // Two lists ('pipeline' and 'pipeline_uniforms') must be the same for it to work
+    // algined by wgsls uniform rules
+    fn compute_uniform_layout(uniforms: &[(&str, UniformType)]) -> (HashMap<String, (usize, UniformType)>, usize)
+    {
+        let mut offsets = HashMap::new();
+        let mut cursor = 0_usize;
+
+        for (name, kind) in uniforms
+        {
+            let align = kind.align();
+            cursor = (cursor + align - 1) / align*align;
+            offsets.insert(name.to_string(), (cursor, *kind));
+            cursor += kind.size();
+        }
+
+        // Rounds buffer up to 16 bytes
+        let total_size = (((cursor+15)/16)*16).max(16);
+
+        (offsets, total_size)
+    }
+
+    // Same as 'add_pipeline', but with uniforms
+    // An example usage:
+    // struct CustomUniforms { time: f32, color: vec4<f32> };
+    // @group(2) @binding(0) var<uniform> custom: CustomUniforms;
+    // In rust:
+    // renderer.add_pipeline_with_uniforms(device, queue, config, Some(path), None, PipeLineType::Normal, &[("time", UniformType::Float), ("color", UniformType::Mat4)]);
+    // Has to have the same order in rust as in the shader
+    // Names technically dont have to match
+    // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
+    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    {
+        let vertex = match vertex_path
+        {
+            Some(path) => ShaderModuleHandle::from_path(device, path, "vs_main"),
+            None => self.default_vertex.clone()
+        };
+
+        let fragment = match fragment_path
+        {
+            Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
+            None => self.default_fragment.clone()
+        };
+
+        let mut bind_group_layouts = match pipeline_type
+        {
+            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
+            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
+        };
+
+        let group_index = bind_group_layouts.len() as u32;
+
+        let (offsets, buffer_size) = Self::compute_uniform_layout(uniforms);
+
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            label: Some("Custom Uniform Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry
+            {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer
+                {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None
+                },
+                count: None
+            }],
+        });
+
+        bind_group_layouts.push(&uniform_bind_group_layout);
+
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some("Pipeline Layout"),
+            bind_group_layouts: &bind_group_layouts,
+            push_constant_ranges: &[]
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        {
+            label: Some("Render Pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState
+            {
+                module: &vertex.module,
+                entry_point: Some(&vertex.entry),
+                buffers: &[Vertex::desc(), InstanceData::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            },
+            fragment: Some(wgpu::FragmentState
+            {
+                module: &fragment.module,
+                entry_point: Some(&fragment.entry),
+                targets: &[Some(wgpu::ColorTargetState
+                {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            }),
+            primitive: wgpu::PrimitiveState
+            {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false
+            },
+            multiview: None,
+            cache: None
+        });
+
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor
+        {
+            label: Some("Custom Uniform Buffer"),
+            size: buffer_size as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false
+        });
+
+        // If any uniforms got set before this pipeline exists for some reason, otherwise buffers will be initialized with the default
+        for (name, (offset, _)) in &offsets
+        {
+            if let Some(value) = self.uniform_values.get(name)
+            {
+                Self::write_uniform(&buffer, queue, *offset, value);
+            }
+        }
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
+        {
+            label: Some("Custom Uniform Bind Group"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }]
+        });
+
+        let id = self.pipelines.len();
+        self.pipelines.push(pipeline);
+        self.pipeline_uniforms.push(Some(PipelineUniforms { buffer, bind_group, group_index, offsets }));
+        id
+    }
+
+    fn write_uniform(buffer: &wgpu::Buffer, queue: &wgpu::Queue, offset: usize, value: &UniformValue)
+    {
+        let mut bytes = [0u8; 64]; // 64 for the biggest unifrom type (mat4)
+        let size = value.kind().size();
+        value.write_into(&mut bytes[..size]);
+        queue.write_buffer(buffer, offset as u64, &bytes[..size]);
+    }
+
+    // sets uniform for all shaders that have this uniform
+    // value has to match the one when the pipeline got created
+    // Small problem, when two shaders have the same name, but different value, as that will not work right now
+    pub(crate) fn set_uniform(&mut self, queue: &wgpu::Queue, name: &str, value: UniformValue)
+    {
+        self.uniform_values.insert(name.to_string(), value);
+
+        for pipeline_uniforms in self.pipeline_uniforms.iter().flatten()
+        {
+            if let Some(&(offset, expected_kind)) = pipeline_uniforms.offsets.get(name)
+            {
+                debug_assert_eq!(value.kind(), expected_kind, "set_uniform(\"{name}\"): value doesn't match the value that was declared for this pipeline");
+                Self::write_uniform(&pipeline_uniforms.buffer, queue, offset, &value);
+            }
+        }
     }
 
     // Marks a mesh slot available for reuse
@@ -573,6 +758,10 @@ impl Renderer
                     }
                 }
 
+                if let Some(pipeline_uniform) = &self.pipeline_uniforms[cmd.material.pipeline_id as usize]
+                {
+                    render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
+                }
 
                 render_pass.draw_indexed(0..mesh.index_count, 0, instance_id as u32..instance_id as u32 + 1);
             }
@@ -607,6 +796,11 @@ impl Renderer
         render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
 
         render_pass.set_bind_group(0, texture, &[]);
+
+        if let Some(pipeline_uniform) = &self.pipeline_uniforms[pipeline_id]
+        {
+            render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
+        }
 
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
