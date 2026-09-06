@@ -25,6 +25,7 @@ struct VertexOutput
     @location(0) color: vec4<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) mode: u32,
+    @location(3) world_pos: vec3<f32>
 };
 
 @group(0) @binding(0)
@@ -47,6 +48,7 @@ fn vs_main(in: VertexInput) -> VertexOutput
     out.color = in.color;
     out.tex_coords = in.uv_rect.xy + in.tex_coords * in.uv_rect.zw;
     out.mode = in.mode;
+    out.world_pos = world_pos.xyz;
     return out;
 }
 
