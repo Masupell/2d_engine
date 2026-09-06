@@ -67,4 +67,9 @@ impl Wall
 
         render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, camera.1), (self.width, 864.0), 0.0), [0.47, 0.45, 0.4, 1.0], z_index, self.rock_shader);
     }
+
+    pub fn get_current_shader_id(&self) -> usize
+    {
+        self.rock_shader as usize
+    }
 }

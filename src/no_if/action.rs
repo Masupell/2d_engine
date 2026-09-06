@@ -11,6 +11,8 @@ pub enum Action
     MouseLeftReleased,
     MouseLeftHold,
 
+    ToggleWallShader,
+
     //Player
     PlaceCheckPoint,
     StartFalling,
@@ -21,4 +23,4 @@ pub enum Action
     ToggleRopeExtending
     // ToggleAnchorFalling
 }
-impl Action { pub const COUNT: usize = 11; }
+impl Action { pub const COUNT: usize = 12; }

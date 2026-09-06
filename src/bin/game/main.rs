@@ -17,6 +17,7 @@ const ACTION_TABLE: [ActionFn; Action::COUNT] =
     App::mouse_left_pressed,
     App::mouse_left_released,
     App::mouse_left_hold,
+    App::toggle_wall_shader,
     App::player_place_checkpoint,
     App::player_start_falling,
     App::player_move_up,
@@ -34,7 +35,8 @@ struct App
     wall: Wall,
     collectibles: CollectibleManager,
     rope_extending: bool,
-    rope_extending_toggle: no_if::button::Button
+    rope_extending_toggle: no_if::button::Button,
+    current_wall_shader: usize
 }
 
 impl App
@@ -101,6 +103,43 @@ impl App
     {
         self.rope_extending = !self.rope_extending;
     }
+
+    fn toggle_wall_shader(&mut self, ctx: &mut UpdateContext)
+    {
+        self.current_wall_shader = (self.current_wall_shader + 1) % 3;
+
+        const LOAD_SHADER: [fn(&mut App, &mut UpdateContext); 3] =
+        [
+            App::wall_shader_cracks,
+            App::wall_shader_bands,
+            App::wall_shader_fast
+        ];
+
+        LOAD_SHADER[self.current_wall_shader](self, ctx);
+    }
+
+    fn wall_shader_cracks(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
+        ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
+        ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
+        ctx.graphics.set_uniform("crack_density", UniformValue::Float(0.1));
+    }
+
+    fn wall_shader_bands(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
+        ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
+        ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
+    }
+
+    fn wall_shader_fast(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
+    }
 }
 
 impl EngineEvent for App
@@ -126,7 +165,7 @@ impl EngineEvent for App
         self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
-        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)]);
+        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
         graphics.set_uniform("band_height", UniformValue::Float(200.0));
         graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
@@ -223,7 +262,8 @@ impl App
             wall: Wall::new(1280.0*2.0),
             collectibles,
             rope_extending: true,
-            rope_extending_toggle
+            rope_extending_toggle,
+            current_wall_shader: 0
         }
     }
 }
@@ -236,6 +276,7 @@ pub fn register_keys(input: &mut Input)
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
+    input.add_key_binding(Key::Tab, Some(Action::ToggleWallShader), None, None);
 }
 
 fn main()

@@ -197,6 +197,11 @@ impl<'a> GraphicsContext<'a>
         self.renderer.add_pipeline_with_uniforms(self.device, self.queue, self.config, fragment_path, vertex_path, pipeline_type, uniforms)
     }
 
+    pub fn replace_shader_with_uniforms(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    {
+        self.renderer.replace_pipeline_with_uniforms(self.device, self.queue, self.config, fragment_path, vertex_path, pipeline_type, uniforms, pipeline_id);
+    }
+
     pub fn set_uniform(&mut self, name: &str, value: UniformValue)
     {
         self.renderer.set_uniform(self.queue, name, value);
