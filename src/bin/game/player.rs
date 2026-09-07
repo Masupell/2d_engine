@@ -134,17 +134,14 @@ impl Player
 
     fn resolve_solid_collision(&mut self, rect_pos: Vec2, rect_size: (f32, f32))
     {
-        let mut temp = 0;
         self.collision.triangle_rect_mtv(rect_pos, rect_size).into_iter().for_each(|mtv|
         {
-            println!("  {temp}");
             self.collision.change_pos(mtv);
 
             let push_dir = mtv * (1.0 / mtv.length().max(0.0001));
             let speed_along_push = self.velocity.dot(push_dir);
             let inward_amount = (-speed_along_push).max(0.0);
             self.velocity += push_dir * inward_amount;
-            temp += 1;
         });
     }
 
@@ -161,13 +158,7 @@ impl Player
         self.constrain_to_rope(rope_anchor, rope_max_reach);
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
 
-        let collision_start = std::time::Instant::now();
         nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
-        let collision_time = collision_start.elapsed().as_micros();
-        if collision_time > 20
-        {
-            println!("Collision Time: {collision_time}");
-        }
     }
 
     fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])

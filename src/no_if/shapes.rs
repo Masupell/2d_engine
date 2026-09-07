@@ -69,7 +69,9 @@ pub struct Triangle
     // local space vertices
     pub a: Vec2,
     pub b: Vec2,
-    pub c: Vec2
+    pub c: Vec2,
+
+    tri_radius: f32
 }
 
 impl Triangle
@@ -82,7 +84,8 @@ impl Triangle
             rotation,
             a,
             b,
-            c
+            c,
+            tri_radius: a.length().max(b.length()).max(c.length())
         }
     }
 
@@ -129,6 +132,11 @@ impl Triangle
     // Only for overlapping a reactngle with no rotation, so just the basic rect
     pub fn triangle_rect_mtv(&self, rect_pos: Vec2, rect_size: (f32, f32)) -> Option<Vec2>
     {
+        let rect_radius = (rect_size.0 * 0.5).hypot(rect_size.1 * 0.5);
+
+        if (self.pos - rect_pos).length() > self.tri_radius + rect_radius { return None; } // if here, to skip calculations. Will leave it for now
+
+
         let tri = [self.world_point(self.a), self.world_point(self.b), self.world_point(self.c)]; // so it is in world_pos
 
         let half = (rect_size.0 * 0.5, rect_size.1 * 0.5);
