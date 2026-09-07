@@ -124,4 +124,63 @@ impl Triangle
     {
         self.rotation = (self.rotation + amount).rem_euclid(std::f32::consts::TAU); // Technically dont need wraping, but still
     }
+
+    // mtv: Minimum-translation-vector
+    // Only for overlapping a reactngle with no rotation, so just the basic rect
+    pub fn triangle_rect_mtv(&self, rect_pos: Vec2, rect_size: (f32, f32)) -> Option<Vec2>
+    {
+        let tri = [self.world_point(self.a), self.world_point(self.b), self.world_point(self.c)]; // so it is in world_pos
+
+        let half = (rect_size.0 * 0.5, rect_size.1 * 0.5);
+        let rect =
+        [
+            Vec2::new(rect_pos.x - half.0, rect_pos.y - half.1),
+            Vec2::new(rect_pos.x + half.0, rect_pos.y - half.1),
+            Vec2::new(rect_pos.x + half.0, rect_pos.y + half.1),
+            Vec2::new(rect_pos.x - half.0, rect_pos.y + half.1),
+        ];
+
+        let edge_normal = |p0: Vec2, p1: Vec2|
+        {
+            let edge = p1 - p0;
+            Vec2::new(-edge.y, edge.x).normalize()
+        };
+
+        let axes =
+        [
+            edge_normal(tri[0], tri[1]),
+            edge_normal(tri[1], tri[2]),
+            edge_normal(tri[2], tri[0]),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 1.0),
+        ];
+
+        let center_dir = self.pos - rect_pos;
+
+        axes.iter().map(|&axis|
+        {
+            let (tri_min, tri_max) = Self::project_min_max_tri(&tri, axis);
+            let (rect_min, rect_max) = Self::project_min_max_rect(&rect, axis);
+            let overlap = tri_max.min(rect_max) - tri_min.max(rect_min);
+            let sign = (center_dir.dot(axis) > 0.0) as i32 as f32 * 2.0 - 1.0;
+            (overlap, axis * sign)
+        }).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap()).filter(|(overlap, _)| *overlap > 0.0).map(|(overlap, axis)| axis * overlap)
+    }
+
+    fn project_min_max_tri(points: &[Vec2; 3], axis: Vec2) -> (f32, f32)
+    {
+        let p0 = points[0].dot(axis);
+        let p1 = points[1].dot(axis);
+        let p2 = points[2].dot(axis);
+        (p0.min(p1).min(p2), p0.max(p1).max(p2))
+    }
+
+    fn project_min_max_rect(points: &[Vec2; 4], axis: Vec2) -> (f32, f32)
+    {
+        let p0 = points[0].dot(axis);
+        let p1 = points[1].dot(axis);
+        let p2 = points[2].dot(axis);
+        let p3 = points[3].dot(axis);
+        (p0.min(p1).min(p2).min(p3), p0.max(p1).max(p2).max(p3))
+    }
 }

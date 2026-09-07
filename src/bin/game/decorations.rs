@@ -5,16 +5,10 @@ use rand::Rng;
 
 use crate::wall::Wall;
 
-// Hysteresis added on top of distance_from_player before a decoration
-// behind the player gets recycled - see maintain(). A normal bit of drift
-// right at the boundary doesn't immediately despawn something still worth
-// having around.
-const DESPAWN_BUFFER: f32 = 100.0;
-
 const MIN_SCALE: f32 = 0.8;
 const MAX_SCALE: f32 = 1.3;
 
-const CELL_SIZE: f32 = 200.0;
+const CELL_SIZE: f32 = 60.0;
 
 // Max amount it tries to spawn without overlapping
 const MAX_SPAWN_ATTEMPTS: usize = 6;
@@ -75,12 +69,6 @@ pub struct DecorationSpawner
     pool: Vec<Decoration>,
     texture_id: usize,
     variants: Vec<Variant>,
-    // Cell coord -> indices into `pool`, covering every active decoration
-    // (not just solid ones) - used both for spawn-time overlap avoidance
-    // and, filtered by .solid, for the player collision query. Rebuilt
-    // once per maintain() call from the current active set (after
-    // despawning, before spawning), then kept in sync incrementally as
-    // spawn_random adds new ones within that same call.
     grid: HashMap<(i32, i32), Vec<usize>>,
 }
 

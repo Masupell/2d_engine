@@ -190,7 +190,8 @@ impl EngineEvent for App
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
-        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds());
+        let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
+        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds(), &nearby);
 
         self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, update_ctx.dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);

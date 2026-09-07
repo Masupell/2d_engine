@@ -11,7 +11,7 @@ enum MovementState
 
 impl MovementState { const COUNT: usize = 2; }
 
-type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32));
+type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32), &[(Vec2, (f32, f32))]);
 
 const STATE_UPDATE_TABLE: [StateUpdateFn; MovementState::COUNT] =
 [
@@ -111,9 +111,9 @@ impl Player
         (should_grow, segment_length * (should_grow as u32 as f32))
     }
 
-    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
+    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
-        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds);
+        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds, nearby_solids);
         self.update_tilt(dt);
         self.move_input = Vec2::ZERO;
 
@@ -132,7 +132,23 @@ impl Player
         self.collision.rotation += (target_rotation - self.collision.rotation) * catch_up;
     }
 
-    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
+    fn resolve_solid_collision(&mut self, rect_pos: Vec2, rect_size: (f32, f32))
+    {
+        let mut temp = 0;
+        self.collision.triangle_rect_mtv(rect_pos, rect_size).into_iter().for_each(|mtv|
+        {
+            println!("  {temp}");
+            self.collision.change_pos(mtv);
+
+            let push_dir = mtv * (1.0 / mtv.length().max(0.0001));
+            let speed_along_push = self.velocity.dot(push_dir);
+            let inward_amount = (-speed_along_push).max(0.0);
+            self.velocity += push_dir * inward_amount;
+            temp += 1;
+        });
+    }
+
+    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
         let input_len = self.move_input.length();
         let move_dir = self.move_input * (1.0 / input_len.max(1.0));
@@ -144,9 +160,17 @@ impl Player
 
         self.constrain_to_rope(rope_anchor, rope_max_reach);
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
+
+        let collision_start = std::time::Instant::now();
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
+        let collision_time = collision_start.elapsed().as_micros();
+        if collision_time > 20
+        {
+            println!("Collision Time: {collision_time}");
+        }
     }
 
-    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32))
+    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
         let offset = self.collision.pos - rope_anchor;
         let distance = offset.length();
@@ -165,6 +189,8 @@ impl Player
         self.collision.change_pos(self.velocity * dt);
 
         let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach);
+
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
 
         const RECOVERY_TABLE: [MovementState; 2] = [MovementState::Falling, MovementState::Climbing];
         let at_bottom = slack_deficit > -self.recovery_tolerance;
