@@ -28,6 +28,7 @@ pub struct Player
     max_rotation: f32,
 
     velocity: Vec2,
+    last_direction_y: f32,
     move_input: Vec2,
     state: MovementState,
     fall_origin: Vec2,
@@ -67,6 +68,7 @@ impl Player
             texture_id: 0,
             max_rotation,
             velocity: Vec2::ZERO,
+            last_direction_y: -1.0,
             move_input: Vec2::ZERO,
             state: MovementState::Climbing,
             fall_origin: Vec2::ZERO,
@@ -106,7 +108,6 @@ impl Player
 
         let should_grow = pushing_against_limit & is_climbing & has_reserve;
 
-        // self.rope_reserve -= segment_length * (should_grow as u32 as f32);
         (should_grow, segment_length * (should_grow as u32 as f32))
     }
 
@@ -137,6 +138,8 @@ impl Player
         let move_dir = self.move_input * (1.0 / input_len.max(1.0));
 
         self.velocity = move_dir * self.speed;
+        let pressed_up = (self.move_input.y < 0.0) as i32 as f32;
+        self.last_direction_y = -pressed_up + self.last_direction_y * (1.0 - pressed_up);
         self.collision.change_pos(self.velocity * dt);
 
         self.constrain_to_rope(rope_anchor, rope_max_reach);
@@ -156,6 +159,9 @@ impl Player
 
         self.velocity += acceleration * dt;
         // self.velocity *= self.drag.powf(dt);
+        let falling_down = (self.velocity.y > 0.0) as i32 as f32;
+        let falling_up = (self.velocity.y < 0.0) as i32 as f32;
+        self.last_direction_y = falling_down - falling_up;
         self.collision.change_pos(self.velocity * dt);
 
         let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach);
@@ -211,6 +217,11 @@ impl Player
     pub fn is_falling(&self) -> bool
     {
         self.state == MovementState::Falling // ==
+    }
+
+    pub fn direction_y(&self) -> f32
+    {
+        self.last_direction_y
     }
 
     pub fn is_beyond_recovery(&self) -> bool

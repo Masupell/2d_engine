@@ -2,10 +2,11 @@ pub mod player;
 pub mod rope;
 pub mod wall;
 pub mod collectible;
+pub mod decorations;
 
 use engine::{utility::DrawLayer, *};
 
-use crate::{player::Player, rope::Rope, wall::Wall, collectible::{CollectibleManager, CollectibleKind}};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, player::Player, rope::Rope, wall::Wall};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -36,7 +37,8 @@ struct App
     collectibles: CollectibleManager,
     rope_extending: bool,
     rope_extending_toggle: no_if::button::Button,
-    current_wall_shader: usize
+    current_wall_shader: usize,
+    decorations: DecorationSpawner
 }
 
 impl App
@@ -164,12 +166,17 @@ impl EngineEvent for App
         let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
         self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
 
+        let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
+        self.decorations.set_texture(decorations_texture);
+        self.decorations.add_variant((0.0, 0.0), (128.0, 128.0), 40.0, true); // rock
+        self.decorations.add_variant((256.0, 0.0), (222.0, 159.0), 40.0, false); // grass 1
+        self.decorations.add_variant((0.0, 256.0), (329.0, 159.0), 40.0, false); // grass 2
+
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
-        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)]);
+        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
         graphics.set_uniform("band_height", UniformValue::Float(200.0));
         graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
-        graphics.set_uniform("crack_density", UniformValue::Float(0.1));
         self.wall.set_rock_shader(rock_shader as u8);
 
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
@@ -197,6 +204,8 @@ impl EngineEvent for App
         self.rope.reclaim_visible_splits(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
+        self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
+
         self.rope_extending_toggle.update(update_ctx.input);
 
         let actions = update_ctx.input.actions().to_vec();
@@ -216,8 +225,8 @@ impl EngineEvent for App
     {
         self.wall.draw(render_ctx, 1);
         self.collectibles.draw(render_ctx, 2, 0);
-        self.player.draw(render_ctx, 2, 0);
-        self.rope.draw(render_ctx, 2, 1);
+        self.player.draw(render_ctx, 3, 0);
+        self.rope.draw(render_ctx, 3, 1);
 
         let score_text = format!("Score: {}", self.player.score);
         let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
@@ -232,13 +241,9 @@ impl EngineEvent for App
         let center = (top_left.0 + width * 0.5, top_left.1 + height * 0.5);
         render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 1.0, 1.0], 4, 0);
 
-        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -100.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
-        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -300.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
-        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -500.0), (200.0, 200.0), 0.0), [0.0, 1.0, 0.0, 1.0], 1, 0);
-        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -700.0), (200.0, 200.0), 0.0), [0.0, 0.0, 1.0, 1.0], 1, 0);
-        render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.matrix((0.0, -900.0), (200.0, 200.0), 0.0), [1.0, 0.0, 0.0, 1.0], 1, 0);
-
         self.rope_extending_toggle.draw(render_ctx, 5, 0);
+
+        self.decorations.draw(render_ctx, 2, 0);
     }
 }
 
@@ -263,7 +268,8 @@ impl App
             collectibles,
             rope_extending: true,
             rope_extending_toggle,
-            current_wall_shader: 0
+            current_wall_shader: 1,
+            decorations: DecorationSpawner::new()
         }
     }
 }
