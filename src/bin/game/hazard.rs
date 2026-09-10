@@ -154,7 +154,7 @@ impl Hazard
     }
 }
 
-fn warning_pos_fall_from_top(hazard_pos: Vec2, highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_fall_from_top(hazard_pos: Vec2, highest_y: f32, _camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
     Vec2::new(hazard_pos.x, highest_y - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)//camera.1 - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)

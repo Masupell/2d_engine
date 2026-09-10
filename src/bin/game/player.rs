@@ -31,15 +31,15 @@ pub struct Player
     last_direction_y: f32,
     move_input: Vec2,
     state: MovementState,
-    fall_origin: Vec2,
 
     pub speed: f32,
     pub swing_thrust: f32,
     pub gravity: f32,
-    pub max_survivable_fall: f32,
+    pub max_survivable_deceleration: f32,
     pub tilt_per_velocity: f32,
     pub tilt_smoothing: f32,
     pub recovery_tolerance: f32,
+    pub last_deceleration: f32,
 
     pub rope_reserve: f32,
     pub rope_grow_tolerance: f32,
@@ -71,14 +71,14 @@ impl Player
             last_direction_y: -1.0,
             move_input: Vec2::ZERO,
             state: MovementState::Climbing,
-            fall_origin: Vec2::ZERO,
             speed: 80.0,
             swing_thrust: 900.0,
             gravity: 1960.0,//980.0,
-            max_survivable_fall: 600.0,
+            max_survivable_deceleration: 1960.0*30.0, //30g
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
             recovery_tolerance: 15.0,
+            last_deceleration: 0.0,
             rope_reserve: 1000.0,
             rope_grow_tolerance: 10.0,
             score: 0,
@@ -155,7 +155,7 @@ impl Player
         self.last_direction_y = -pressed_up + self.last_direction_y * (1.0 - pressed_up);
         self.collision.change_pos(self.velocity * dt);
 
-        self.constrain_to_rope(rope_anchor, rope_max_reach);
+        self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
 
         nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
@@ -179,7 +179,7 @@ impl Player
         self.last_direction_y = falling_down - falling_up;
         self.collision.change_pos(self.velocity * dt);
 
-        let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach);
+        let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
 
         nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
 
@@ -192,7 +192,7 @@ impl Player
         self.state = RECOVERY_TABLE[recover as usize];
     }
 
-    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32) -> f32
+    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32, dt: f32) -> f32
     {
         let offset = self.collision.pos - anchor;
         let distance = offset.length();
@@ -204,7 +204,9 @@ impl Player
 
         let beyond_limit = (slack_deficit > 0.0) as u32 as f32;
         let outward_speed = (self.velocity.x * radial_dir.x + self.velocity.y * radial_dir.y).max(0.0);
-        self.velocity -= radial_dir * outward_speed * beyond_limit;
+        let removed_speed = outward_speed * beyond_limit;
+        self.velocity -= radial_dir * removed_speed;
+        self.last_deceleration = removed_speed / dt.max(0.0001);
 
         slack_deficit
     }
@@ -227,7 +229,6 @@ impl Player
     pub fn start_falling(&mut self)
     {
         self.state = MovementState::Falling;
-        self.fall_origin = self.collision.pos;
         self.velocity = Vec2::ZERO;
     }
 
@@ -243,8 +244,7 @@ impl Player
 
     pub fn is_beyond_recovery(&self) -> bool
     {
-        let fallen = (self.collision.pos - self.fall_origin).length();
-        fallen > self.max_survivable_fall
+        self.last_deceleration > self.max_survivable_deceleration
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)

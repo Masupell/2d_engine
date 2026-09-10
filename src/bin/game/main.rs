@@ -218,6 +218,11 @@ impl EngineEvent for App
 
         self.rope_extending_toggle.update(update_ctx.input);
 
+        if self.player.is_beyond_recovery()
+        {
+            println!("Dead, deceleration: {}", self.player.last_deceleration);
+        }
+
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
         {
