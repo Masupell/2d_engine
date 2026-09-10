@@ -6,14 +6,14 @@ use rand::Rng;
 use crate::wall::Wall;
 
 #[derive(Copy, Clone)]
-enum HazardState
+pub enum HazardState
 {
     Inactive,
     Warning,
     Active,
+    Tumbling // only tumbling for now
 }
-
-impl HazardState { const COUNT: usize = 3; }
+impl HazardState { const COUNT: usize = 4; }
 
 #[derive(Copy, Clone)]
 pub enum HazardMovement
@@ -22,7 +22,6 @@ pub enum HazardMovement
     ShootFromLeft,
     ShootFromRight,
 }
-
 impl HazardMovement { const COUNT: usize = 3; }
 
 #[derive(Copy, Clone)]
@@ -35,6 +34,7 @@ struct HazardKind
     gravity: f32,
     warning_duration: f32,
     hit_radius: f32,
+    on_hit: HazardState
 }
 
 struct Hazard
@@ -45,6 +45,9 @@ struct Hazard
     velocity: Vec2,
     warning_progress: f32,
     highest_y: f32,
+    hit: bool,
+    rotation: f32,
+    angular_velocity: f32
 }
 
 impl Hazard
@@ -58,7 +61,10 @@ impl Hazard
             pos: Vec2::ZERO,
             velocity: Vec2::ZERO,
             warning_progress: 0.0,
-            highest_y: 0.0
+            highest_y: 0.0,
+            hit: false,
+            rotation: 0.0,
+            angular_velocity: 0.0
         }
     }
 
@@ -69,6 +75,7 @@ impl Hazard
             Hazard::update_inactive,
             Hazard::update_warning,
             Hazard::update_active,
+            Hazard::update_tumbling
         ];
 
         UPDATE_TABLE[self.state as usize](self, kind, camera_pos, dt);
@@ -88,7 +95,6 @@ impl Hazard
     }
 
     fn keep_warning(&mut self) {}
-
     fn activate(&mut self)
     {
         self.state = HazardState::Active;
@@ -100,6 +106,14 @@ impl Hazard
         self.pos += self.velocity * dt;
     }
 
+    // Only one kind of after hit right now
+    fn update_tumbling(&mut self, kind: &HazardKind, _camera_pos: (f32, f32), dt: f32)
+    {
+        self.velocity.y += kind.gravity * dt;
+        self.pos += self.velocity * dt;
+        self.rotation += self.angular_velocity * dt;
+    }
+
     fn draw(&self, render_ctx: &mut RenderContext, normal_tex_id: usize, warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
     {
         const DRAW_TABLE: [fn(&Hazard, &mut RenderContext, usize, usize, &HazardKind, u32, u8); HazardState::COUNT] =
@@ -107,6 +121,7 @@ impl Hazard
             Hazard::draw_nothing,
             Hazard::draw_warning,
             Hazard::draw_active,
+            Hazard::draw_tumbling
         ];
 
         DRAW_TABLE[self.state as usize](self, render_ctx, normal_tex_id, warning_tex_id, kind, z_index, shader_id);
@@ -151,6 +166,15 @@ impl Hazard
         let rotation = self.velocity.y.atan2(self.velocity.x);
 
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, rotation), normal_tex_id, rect_pos, rect_size, z_index, shader_id);
+    }
+
+    fn draw_tumbling(&self, render_ctx: &mut RenderContext, normal_tex_id: usize, _warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
+    {
+        let (rect_pos, rect_size) = kind.active_rect;
+        let aspect = rect_size.0 / rect_size.1;
+        let size = (kind.draw_height * aspect, kind.draw_height);
+
+        render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, self.rotation), normal_tex_id, rect_pos, rect_size, z_index, shader_id);
     }
 }
 
@@ -235,7 +259,7 @@ impl HazardSpawner
         self.warning_texture_id = texture_id;
     }
 
-    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32) -> usize
+    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState) -> usize
     {
         self.kinds.push(HazardKind
         {
@@ -246,6 +270,7 @@ impl HazardSpawner
             gravity,
             warning_duration,
             hit_radius,
+            on_hit
         });
 
         self.kinds.len() - 1
@@ -257,18 +282,28 @@ impl HazardSpawner
     }
 
     // true if player is hit (only simple distance check)
-    pub fn check_hit(&mut self, player_pos: Vec2) -> bool
+    pub fn check_hit(&mut self, player_pos: Vec2, player_radius: f32) -> bool
     {
         let hit_index = (0..self.pool.len()).find(|&i|
         {
             let is_active = (self.pool[i].state as usize) > 1;
             let kind = self.kinds[self.pool[i].kind_index];
-            let in_range = (self.pool[i].pos - player_pos).length() < kind.hit_radius;
+            let in_range = (self.pool[i].pos - player_pos).length() < kind.hit_radius + player_radius;
 
             is_active & in_range
         });
 
-        hit_index.into_iter().for_each(|i| self.pool[i].state = HazardState::Inactive);
+        hit_index.into_iter().for_each(|i|
+        {
+            let kind = self.kinds[self.pool[i].kind_index];
+            let offset = self.pool[i].pos - player_pos;
+            let away_from_player = offset * (1.0 / offset.length().max(0.0001));
+
+            self.pool[i].hit = true;
+            self.pool[i].state = kind.on_hit;
+            self.pool[i].velocity = self.pool[i].velocity * 0.4 + away_from_player * 250.0;
+            self.pool[i].angular_velocity = self.pool[i].velocity.x * 0.02;
+        });
 
         hit_index.is_some()
     }
@@ -307,7 +342,10 @@ impl HazardSpawner
             pos,
             velocity,
             warning_progress: 0.0,
-            highest_y: player_pos.y // should be camera, but has no acces to it right now, and camera and player are the same for now anyways
+            highest_y: player_pos.y, // should be camera, but has no acces to it right now, and camera and player are the same for now anyways
+            hit: false,
+            rotation: 0.0,
+            angular_velocity: 0.0
         };
     }
 

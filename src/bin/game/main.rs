@@ -7,7 +7,7 @@ pub mod hazard;
 
 use engine::{utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner}, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, player::Player, rope::Rope, wall::Wall};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -90,7 +90,7 @@ impl App
         self.player.score -= 2 * add_anchor as i32;
     }
 
-    fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(); }
+    fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(false); }
 
     fn player_move_up(&mut self, _ctx: &mut UpdateContext) { self.player.move_up(); }
     fn player_move_left(&mut self, _ctx: &mut UpdateContext) { self.player.move_left(); }
@@ -144,6 +144,9 @@ impl App
         ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
+
+    fn skip_hit(&mut self) {}
+    fn apply_hit(&mut self) { self.player.start_falling(true); }
 }
 
 impl EngineEvent for App
@@ -178,7 +181,7 @@ impl EngineEvent for App
         let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 256.0);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling);
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
         let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
@@ -215,6 +218,10 @@ impl EngineEvent for App
 
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
         self.hazards.maintain(&self.wall, self.player.collision.pos, update_ctx.dt as f32);
+
+        let player_hit = self.hazards.check_hit(self.player.collision.pos, self.player.hit_radius());
+        const HIT_TABLE: [fn(&mut App); 2] = [App::skip_hit, App::apply_hit];
+        HIT_TABLE[player_hit as usize](self);
 
         self.rope_extending_toggle.update(update_ctx.input);
 

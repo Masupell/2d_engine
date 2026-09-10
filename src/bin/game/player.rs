@@ -74,7 +74,7 @@ impl Player
             speed: 80.0,
             swing_thrust: 900.0,
             gravity: 1960.0,//980.0,
-            max_survivable_deceleration: 1960.0*30.0, //30g
+            max_survivable_deceleration: 1960.0*50.0, //50g
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
             recovery_tolerance: 15.0,
@@ -226,10 +226,10 @@ impl Player
         self.move_input.x += 1.0;
     }
 
-    pub fn start_falling(&mut self)
+    pub fn start_falling(&mut self, keep_velocity: bool)
     {
         self.state = MovementState::Falling;
-        self.velocity = Vec2::ZERO;
+        self.velocity *= keep_velocity as i32 as f32;
     }
 
     pub fn is_falling(&self) -> bool
@@ -268,6 +268,12 @@ impl Player
     {
         self.width = size.0;
         self.height = size.1;
+    }
+
+    // could just return 64.0 here, but wif it ever changes
+    pub fn hit_radius(&self) -> f32
+    {
+        self.width.min(self.height) * 0.5
     }
 }
 
