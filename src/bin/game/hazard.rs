@@ -44,6 +44,7 @@ struct Hazard
     pos: Vec2,
     velocity: Vec2,
     warning_progress: f32,
+    highest_y: f32,
 }
 
 impl Hazard
@@ -57,26 +58,28 @@ impl Hazard
             pos: Vec2::ZERO,
             velocity: Vec2::ZERO,
             warning_progress: 0.0,
+            highest_y: 0.0
         }
     }
 
-    fn update(&mut self, kind: &HazardKind, dt: f32)
+    fn update(&mut self, kind: &HazardKind, camera_pos: (f32, f32), dt: f32)
     {
-        const UPDATE_TABLE: [fn(&mut Hazard, &HazardKind, f32); HazardState::COUNT] =
+        const UPDATE_TABLE: [fn(&mut Hazard, &HazardKind, (f32, f32), f32); HazardState::COUNT] =
         [
             Hazard::update_inactive,
             Hazard::update_warning,
             Hazard::update_active,
         ];
 
-        UPDATE_TABLE[self.state as usize](self, kind, dt);
+        UPDATE_TABLE[self.state as usize](self, kind, camera_pos, dt);
     }
 
-    fn update_inactive(&mut self, _kind: &HazardKind, _dt: f32) {}
+    fn update_inactive(&mut self, _kind: &HazardKind, _camera_pos: (f32, f32), _dt: f32) {}
 
-    fn update_warning(&mut self, kind: &HazardKind, dt: f32)
+    fn update_warning(&mut self, kind: &HazardKind, camera_pos: (f32, f32), dt: f32)
     {
         self.warning_progress += dt;
+        self.highest_y = self.highest_y.min(camera_pos.1);
 
         let should_activate = (self.warning_progress > kind.warning_duration) as usize;
 
@@ -91,7 +94,7 @@ impl Hazard
         self.state = HazardState::Active;
     }
 
-    fn update_active(&mut self, kind: &HazardKind, dt: f32)
+    fn update_active(&mut self, kind: &HazardKind, _camera_pos: (f32, f32), dt: f32)
     {
         self.velocity.y += kind.gravity * dt;
         self.pos += self.velocity * dt;
@@ -113,7 +116,7 @@ impl Hazard
 
     fn draw_warning(&self, render_ctx: &mut RenderContext, _normal_tex_id: usize, warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
     {
-        const WARNING_POS_TABLE: [fn(Vec2, (f32, f32), (f32, f32), (f32, f32)) -> Vec2; HazardMovement::COUNT] =
+        const WARNING_POS_TABLE: [fn(Vec2, f32, (f32, f32), (f32, f32), (f32, f32)) -> Vec2; HazardMovement::COUNT] =
         [
             warning_pos_fall_from_top,
             warning_pos_shoot_from_left,
@@ -133,7 +136,7 @@ impl Hazard
         let grow_size = (size.0 * grow, size.1 * grow);
 
         let camera = render_ctx.graphics.renderer.camera_pos;
-        let screen_pos = WARNING_POS_TABLE[kind.movement as usize](self.pos, camera, (1280.0, 720.0), size);
+        let screen_pos = WARNING_POS_TABLE[kind.movement as usize](self.pos, self.highest_y, camera, (1280.0, 720.0), size);
 
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((screen_pos.x, screen_pos.y), size, shake), warning_tex_id, rect_pos, rect_size, z_index, shader_id);
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((screen_pos.x, screen_pos.y), grow_size, 0.0), warning_tex_id, rect_pos_2, rect_size, z_index, shader_id);
@@ -151,19 +154,19 @@ impl Hazard
     }
 }
 
-fn warning_pos_fall_from_top(hazard_pos: Vec2, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_fall_from_top(hazard_pos: Vec2, highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
-    Vec2::new(hazard_pos.x, camera.1 - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)
+    Vec2::new(hazard_pos.x, highest_y - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)//camera.1 - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)
 }
 
-fn warning_pos_shoot_from_left(hazard_pos: Vec2, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_shoot_from_left(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
     Vec2::new(camera.0 - virtual_size.0 * 0.5 + draw_size.0/2.0 + margin, hazard_pos.y)
 }
 
-fn warning_pos_shoot_from_right(hazard_pos: Vec2, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_shoot_from_right(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
     Vec2::new(camera.0 + virtual_size.0 * 0.5 - draw_size.0/2.0 - margin, hazard_pos.y)
@@ -304,6 +307,7 @@ impl HazardSpawner
             pos,
             velocity,
             warning_progress: 0.0,
+            highest_y: player_pos.y // should be camera, but has no acces to it right now, and camera and player are the same for now anyways
         };
     }
 
@@ -319,7 +323,7 @@ impl HazardSpawner
         (0..self.pool.len()).for_each(|i|
         {
             let kind = self.kinds[self.pool[i].kind_index];
-            self.pool[i].update(&kind, dt);
+            self.pool[i].update(&kind, (player_pos.x, player_pos.y), dt); // here also camera, but is player for now
         });
 
         const DESPAWN_DISTANCE: f32 = 1200.0;
