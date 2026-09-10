@@ -3,10 +3,11 @@ pub mod rope;
 pub mod wall;
 pub mod collectible;
 pub mod decorations;
+pub mod hazard;
 
 use engine::{utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner}, player::Player, rope::Rope, wall::Wall};
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -38,7 +39,8 @@ struct App
     rope_extending: bool,
     rope_extending_toggle: no_if::button::Button,
     current_wall_shader: usize,
-    decorations: DecorationSpawner
+    decorations: DecorationSpawner,
+    hazards: HazardSpawner
 }
 
 impl App
@@ -172,6 +174,12 @@ impl EngineEvent for App
         self.decorations.add_variant((256.0, 0.0), (222.0, 159.0), 40.0, false); // grass 1
         self.decorations.add_variant((0.0, 256.0), (329.0, 159.0), 40.0, false); // grass 2
 
+        let hazard_texture = graphics.load_texture("src/bin/game/assets/hazard_items.png", FilterMode::Linear, FilterMode::Linear);
+        let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
+        self.hazards.set_hazard_texture(hazard_texture);
+        self.hazards.set_warning_texture(warning_texture);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 256.0);
+
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
         let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
@@ -206,6 +214,7 @@ impl EngineEvent for App
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
+        self.hazards.maintain(&self.wall, self.player.collision.pos, update_ctx.dt as f32);
 
         self.rope_extending_toggle.update(update_ctx.input);
 
@@ -245,6 +254,7 @@ impl EngineEvent for App
         self.rope_extending_toggle.draw(render_ctx, 5, 0);
 
         self.decorations.draw(render_ctx, 2, 0);
+        self.hazards.draw(render_ctx, 3, 0);
     }
 }
 
@@ -270,7 +280,8 @@ impl App
             rope_extending: true,
             rope_extending_toggle,
             current_wall_shader: 1,
-            decorations: DecorationSpawner::new()
+            decorations: DecorationSpawner::new(),
+            hazards: HazardSpawner::new(3.0, 6.0)
         }
     }
 }
