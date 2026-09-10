@@ -38,7 +38,7 @@ pub struct Player
     pub max_survivable_deceleration: f32,
     pub tilt_per_velocity: f32,
     pub tilt_smoothing: f32,
-    pub recovery_tolerance: f32,
+    pub max_recoverable_vel: f32,
     pub last_deceleration: f32,
 
     pub rope_reserve: f32,
@@ -77,7 +77,7 @@ impl Player
             max_survivable_deceleration: 1960.0*50.0, //50g
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
-            recovery_tolerance: 15.0,
+            max_recoverable_vel: 400.0, //px per second, 200 = 1m => 400px -> 2m/s
             last_deceleration: 0.0,
             rope_reserve: 1000.0,
             rope_grow_tolerance: 10.0,
@@ -132,7 +132,7 @@ impl Player
         self.collision.rotation += (target_rotation - self.collision.rotation) * catch_up;
     }
 
-    fn resolve_solid_collision(&mut self, rect_pos: Vec2, rect_size: (f32, f32))
+    fn resolve_solid_collision(&mut self, rect_pos: Vec2, rect_size: (f32, f32), dt: f32)
     {
         self.collision.triangle_rect_mtv(rect_pos, rect_size).into_iter().for_each(|mtv|
         {
@@ -142,6 +142,7 @@ impl Player
             let speed_along_push = self.velocity.dot(push_dir);
             let inward_amount = (-speed_along_push).max(0.0);
             self.velocity += push_dir * inward_amount;
+            self.last_deceleration = inward_amount / dt.max(0.0001);
         });
     }
 
@@ -158,7 +159,7 @@ impl Player
         self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
 
-        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
     }
 
     fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
@@ -179,15 +180,15 @@ impl Player
         self.last_direction_y = falling_down - falling_up;
         self.collision.change_pos(self.velocity * dt);
 
-        let slack_deficit = self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
+        self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
 
-        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size));
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
 
         const RECOVERY_TABLE: [MovementState; 2] = [MovementState::Falling, MovementState::Climbing];
-        let at_bottom = slack_deficit > -self.recovery_tolerance;
+        let recoverable_speed = self.velocity.length() < self.max_recoverable_vel;
         let w_pressed = self.move_input.y < 0.0;
         let in_wall = (self.collision.pos.x >= wall_bounds.0) & (self.collision.pos.x <= wall_bounds.1);
-        let recover = at_bottom & w_pressed & in_wall;
+        let recover = recoverable_speed & w_pressed & in_wall;
 
         self.state = RECOVERY_TABLE[recover as usize];
     }
