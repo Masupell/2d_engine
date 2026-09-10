@@ -282,7 +282,7 @@ impl HazardSpawner
     }
 
     // true if player is hit (only simple distance check)
-    pub fn check_hit(&mut self, player_pos: Vec2, player_radius: f32) -> bool
+    pub fn check_hit(&mut self, player_pos: Vec2, player_radius: f32) -> (bool, Vec2)
     {
         let hit_index = (0..self.pool.len()).find(|&i|
         {
@@ -292,6 +292,8 @@ impl HazardSpawner
 
             is_active & in_range
         });
+
+        let mut away_from_hazard = Vec2::ZERO;
 
         hit_index.into_iter().for_each(|i|
         {
@@ -303,9 +305,11 @@ impl HazardSpawner
             self.pool[i].state = kind.on_hit;
             self.pool[i].velocity = self.pool[i].velocity * 0.4 + away_from_player * 250.0;
             self.pool[i].angular_velocity = self.pool[i].velocity.x * 0.02;
+
+            away_from_hazard = away_from_player * -1.0;
         });
 
-        hit_index.is_some()
+        (hit_index.is_some(), away_from_hazard)
     }
 
     fn skip_spawn(&mut self, _wall: &Wall, _player_pos: Vec2) {}

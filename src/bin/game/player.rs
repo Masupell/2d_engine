@@ -227,10 +227,10 @@ impl Player
         self.move_input.x += 1.0;
     }
 
-    pub fn start_falling(&mut self, keep_velocity: bool)
+    pub fn start_falling(&mut self, impulse: Vec2)
     {
         self.state = MovementState::Falling;
-        self.velocity *= keep_velocity as i32 as f32;
+        self.velocity += impulse;
     }
 
     pub fn is_falling(&self) -> bool

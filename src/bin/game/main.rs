@@ -90,7 +90,7 @@ impl App
         self.player.score -= 2 * add_anchor as i32;
     }
 
-    fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(false); }
+    fn player_start_falling(&mut self, _ctx: &mut UpdateContext) { self.player.start_falling(Vec2::ZERO); }
 
     fn player_move_up(&mut self, _ctx: &mut UpdateContext) { self.player.move_up(); }
     fn player_move_left(&mut self, _ctx: &mut UpdateContext) { self.player.move_left(); }
@@ -145,8 +145,11 @@ impl App
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
 
-    fn skip_hit(&mut self) {}
-    fn apply_hit(&mut self) { self.player.start_falling(true); }
+    fn skip_hit(&mut self, _direction: Vec2) {}
+    fn apply_hit(&mut self, direction: Vec2)
+    {
+        self.player.start_falling(direction * 800.0);
+    }
 }
 
 impl EngineEvent for App
@@ -219,9 +222,9 @@ impl EngineEvent for App
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
         self.hazards.maintain(&self.wall, self.player.collision.pos, update_ctx.dt as f32);
 
-        let player_hit = self.hazards.check_hit(self.player.collision.pos, self.player.hit_radius());
-        const HIT_TABLE: [fn(&mut App); 2] = [App::skip_hit, App::apply_hit];
-        HIT_TABLE[player_hit as usize](self);
+        let (player_hit, knockback_dir) = self.hazards.check_hit(self.player.collision.pos, self.player.hit_radius());
+        const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
+        HIT_TABLE[player_hit as usize](self, knockback_dir);
 
         self.rope_extending_toggle.update(update_ctx.input);
 
