@@ -27,9 +27,9 @@ impl GameState { const COUNT: usize = 5; }
 
 const GAME_UPDATE_TABLE: [ActionFn; GameState::COUNT] =
 [
-    App::update_menu_main,
+    App::update_main_menu,
     App::update_menu_settings,
-    App::update_playing,
+    App::update_world,
     App::update_pause_menu,
     App::update_dead,
 ];
@@ -141,7 +141,9 @@ struct App
     hazards: HazardSpawner,
     game_state: GameState,
     restart_button: no_if::button::Button,
-    blur_texture: usize
+    blur_texture: usize,
+    death_g_force: f32,
+    menu_climb: f32,
 }
 
 impl App
@@ -188,7 +190,7 @@ impl App
     fn no_state_change(&mut self) {}
     fn kill_player(&mut self)
     {
-        println!("Dead, deceleration: {}", self.player.last_deceleration);
+        self.death_g_force = self.player.last_deceleration / 1960.0;
         self.game_state = GameState::Dead;
     }
 
@@ -279,11 +281,17 @@ impl App
 // Seperation, just all game-state functions
 impl App
 {
-    fn update_menu_main(&mut self, _ctx: &mut UpdateContext) {}
+    fn update_main_menu(&mut self, ctx: &mut UpdateContext)
+    {
+        let x_value = (self.menu_climb * 0.05).sin() * 900.0;
+        ctx.graphics.set_camera_pos((x_value, 0.0 - self.menu_climb * 60.0));
+        self.menu_climb += ctx.dt as f32;
+        self.decorations.maintain(&self.wall, Vec2::new(x_value, -self.menu_climb*60.0), -1.0, 400.0, 720.0, 20);
+    }
 
     fn update_menu_settings(&mut self, _ctx: &mut UpdateContext) {}
 
-    fn update_playing(&mut self, update_ctx: &mut UpdateContext)
+    fn update_world(&mut self, update_ctx: &mut UpdateContext)
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
@@ -311,18 +319,24 @@ impl App
         self.rope_extending_toggle.update(update_ctx.input);
 
         const DEATH_TABLE: [fn(&mut App); 2] = [App::no_state_change, App::kill_player];
-        DEATH_TABLE[self.player.is_beyond_recovery() as usize](self);
+        DEATH_TABLE[self.player.is_beyond_recovery() as usize * (1-(self.game_state == GameState::Dead) as usize)](self);
     }
 
     fn update_pause_menu(&mut self, _ctx: &mut UpdateContext) {}
 
     fn update_dead(&mut self, ctx: &mut UpdateContext)
     {
-        self.update_playing(ctx);
+        self.update_world(ctx);
         self.restart_button.update(ctx.input);
     }
 
-    fn draw_main_menu(&self, _render_ctx: &mut RenderContext) {}
+    fn draw_main_menu(&self, render_ctx: &mut RenderContext)
+    {
+        self.wall.draw(render_ctx, 1);
+        self.decorations.draw(render_ctx, 2, 0);
+
+        render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, [0.5, 0.5, 0.5, 1.0], 3, 0);
+    }
 
     fn draw_main_menu_settings(&self, _render_ctx: &mut RenderContext) {}
 
@@ -375,7 +389,12 @@ impl App
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
 
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 300.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        let score_str = format!("Score: {}", self.player.score);
+        let g_force_str = format!("G-force: {}", self.death_g_force);
+
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 200.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &score_str, (450.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &g_force_str, (830.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
         self.restart_button.draw(render_ctx, 6, 0);
     }
 }
@@ -486,9 +505,11 @@ impl App
             current_wall_shader: 1,
             decorations: DecorationSpawner::new(),
             hazards: HazardSpawner::new(3.0, 6.0),
-            game_state: GameState::Playing,
+            game_state: GameState::MainMenu,
             restart_button,
-            blur_texture: 0
+            blur_texture: 0,
+            death_g_force: 0.0,
+            menu_climb: 0.0
         }
     }
 }
