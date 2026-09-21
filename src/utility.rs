@@ -246,6 +246,7 @@ pub enum PipeLineType
 }
 
 
+#[derive(Copy, Clone)]
 pub enum CoordSpace
 {
     World,

@@ -1130,6 +1130,50 @@ impl Renderer
         self.draw_text_with_font(device, queue, font_id, text, top_left, height_px, color, space, layer, z_index, shader_id);
     }
 
+    pub fn draw_text_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        self.draw_text_with_font_outline(device, queue, 0, text, pos, height_px, color, outline_color, outline_width, space, layer, z_index, shader_id);
+    }
+
+    // Only really works for a small outline width, also pushes draw count by quite a lot
+    pub fn draw_text_with_font_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        const DIRECTIONS: [(f32, f32); 8] =
+        [
+            (-1.0, -1.0), (0.0, -1.0), (1.0, -1.0),
+            (-1.0,  0.0),              (1.0,  0.0),
+            (-1.0,  1.0), (0.0,  1.0), (1.0,  1.0),
+        ];
+
+        let steps = outline_width.ceil().max(1.0) as i32;
+
+        for step in 1..=steps
+        {
+            let radius = outline_width * step as f32 / steps as f32;
+
+            for (dx, dy) in DIRECTIONS
+            {
+                let offset_pos = (pos.0 + dx * radius, pos.1 + dy * radius);
+                self.draw_text_with_font(device, queue, font_id, text, offset_pos, height_px, outline_color, space, layer, z_index, shader_id);
+            }
+        }
+
+        self.draw_text_with_font(device, queue, font_id, text, pos, height_px, color, space, layer, z_index, shader_id);
+    }
+
+    pub fn draw_text_centered_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        self.draw_text_with_font_centered_outline(device, queue, 0, text, center, height_px, color, outline_color, outline_width, space, layer, z_index, shader_id);
+    }
+
+    pub fn draw_text_with_font_centered_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        let width = self.measure_text_width_with_font(font_id, text, height_px);
+        let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
+
+        self.draw_text_with_font_outline(device, queue, font_id, text, top_left, height_px, color, outline_color, outline_width, space, layer, z_index, shader_id);
+    }
+
     pub fn measure_text_width(&self, text: &str, height_px: f32) -> f32
     {
         self.measure_text_width_with_font(0, text, height_px)
