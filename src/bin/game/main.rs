@@ -8,7 +8,7 @@ pub mod hazard;
 use engine::{utility::DrawLayer, *};
 
 use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, player::Player, rope::Rope, wall::Wall};
-// use rand::Rng;
+use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
 type RenderFn = fn(&App, &mut RenderContext);
@@ -179,6 +179,8 @@ impl App
     {
         self.player.reset();
         self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
+        let mut rng = rand::rng();
+        ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
 
         self.start_game(ctx);
     }
@@ -259,10 +261,12 @@ impl App
 
     fn wall_shader_bands(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
         ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
+        let mut rng = rand::rng();
+        ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
     }
 
     fn wall_shader_fast(&mut self, ctx: &mut UpdateContext)
@@ -414,10 +418,12 @@ impl EngineEvent for App
         self.blur_texture = graphics.load_texture("src/bin/game/assets/blur.png", FilterMode::Linear, FilterMode::Linear);
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
-        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
+        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
         graphics.set_uniform("band_height", UniformValue::Float(200.0));
         graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
+        let mut rng = rand::rng();
+        graphics.set_uniform("seed", UniformValue::Float(rng.random()));
         self.wall.set_rock_shader(rock_shader as u8);
 
         let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
