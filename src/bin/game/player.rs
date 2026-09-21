@@ -261,7 +261,7 @@ impl Player
 
     pub fn set_pos(&mut self, pos: Vec2)
     {
-        self.collision.pos += pos;
+        self.collision.pos = pos;
     }
 
     // Would not change collision, so dont do that yet
@@ -275,6 +275,20 @@ impl Player
     pub fn hit_radius(&self) -> f32
     {
         self.width.min(self.height) * 0.5
+    }
+
+    pub fn reset(&mut self)
+    {
+        self.set_pos(Vec2::ZERO);
+        self.velocity = Vec2::ZERO;
+        self.state = MovementState::Climbing;
+        self.last_direction_y = -1.0;
+        self.move_input = Vec2::ZERO;
+        self.last_deceleration = 0.0;
+        self.rope_reserve = 1000.0;
+        self.score = 0;
+        self.score_progress = 0.0;
+        self.highest_y = 0.0;
     }
 }
 

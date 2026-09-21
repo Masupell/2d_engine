@@ -11,22 +11,120 @@ use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::Dec
 // use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
+type RenderFn = fn(&App, &mut RenderContext);
 
-const ACTION_TABLE: [ActionFn; Action::COUNT] =
+#[derive(Copy, Clone, PartialEq)]
+enum GameState
+{
+    MainMenu,
+    MainMenuSettings,
+    Playing,
+    Paused,
+    Dead,
+}
+impl GameState { const COUNT: usize = 5; }
+
+
+const GAME_UPDATE_TABLE: [ActionFn; GameState::COUNT] =
 [
-    App::toggle_fullscreen,
-    App::escape,
-    App::mouse_left_pressed,
-    App::mouse_left_released,
-    App::mouse_left_hold,
-    App::toggle_wall_shader,
-    App::player_place_checkpoint,
-    App::player_start_falling,
-    App::player_move_up,
-    App::player_move_left,
-    App::player_move_right,
-    App::toggle_rope_extending
+    App::update_menu_main,
+    App::update_menu_settings,
+    App::update_playing,
+    App::update_pause_menu,
+    App::update_dead,
 ];
+
+const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
+[
+    App::draw_main_menu,
+    App::draw_main_menu_settings,
+    App::draw_playing,
+    App::draw_paused,
+    App::draw_dead,
+];
+
+
+const fn base_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table: [ActionFn; Action::COUNT] = [App::no_op; Action::COUNT];
+    table[Action::ToggleFullScreen as usize] = App::toggle_fullscreen;
+    table
+}
+
+const fn main_menu_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table = base_actions();
+    table[Action::StartGame as usize] = App::start_game;
+    table[Action::OpenSettings as usize] = App::open_settings;
+    table
+}
+
+const fn main_menu_settings_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table = base_actions();
+    table[Action::Escape as usize] = App::back_to_main_menu;
+    table[Action::BackToMainMenu as usize] = App::back_to_main_menu;
+    table
+}
+
+const fn playing_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table = base_actions();
+    table[Action::Escape as usize] = App::pause_game;
+    table[Action::MouseLeftPressed as usize] = App::mouse_left_pressed;
+    table[Action::MouseLeftReleased as usize] = App::mouse_left_released;
+    table[Action::MouseLeftHold as usize] = App::mouse_left_hold;
+    table[Action::ToggleWallShader as usize] = App::toggle_wall_shader;
+    table[Action::PlaceCheckPoint as usize] = App::player_place_checkpoint;
+    table[Action::StartFalling as usize] = App::player_start_falling;
+    table[Action::MoveUp as usize] = App::player_move_up;
+    table[Action::MoveLeft as usize] = App::player_move_left;
+    table[Action::MoveRight as usize] = App::player_move_right;
+    table[Action::ToggleRopeExtending as usize] = App::toggle_rope_extending;
+    table
+}
+
+const fn paused_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table = base_actions();
+    table[Action::Escape as usize] = App::resume_game;
+    table[Action::ResumeGame as usize] = App::resume_game;
+    table[Action::RestartGame as usize] = App::restart_game;
+    table
+}
+
+const fn dead_actions() -> [ActionFn; Action::COUNT]
+{
+    let mut table = base_actions();
+    table[Action::RestartGame as usize] = App::restart_game;
+    table
+}
+
+const ACTION_TABLES: [[ActionFn; Action::COUNT]; GameState::COUNT] =
+[
+    main_menu_actions(),
+    main_menu_settings_actions(),
+    playing_actions(),
+    paused_actions(),
+    dead_actions(),
+];
+
+
+// const ACTION_TABLE: [ActionFn; Action::COUNT] =
+// [
+//     App::toggle_fullscreen,
+//     App::escape,
+//     App::mouse_left_pressed,
+//     App::mouse_left_released,
+//     App::mouse_left_hold,
+//     App::toggle_wall_shader,
+//     App::player_place_checkpoint,
+//     App::player_start_falling,
+//     App::player_move_up,
+//     App::player_move_left,
+//     App::player_move_right,
+//     App::toggle_rope_extending
+// ];
 
 struct App
 {
@@ -40,19 +138,19 @@ struct App
     rope_extending_toggle: no_if::button::Button,
     current_wall_shader: usize,
     decorations: DecorationSpawner,
-    hazards: HazardSpawner
+    hazards: HazardSpawner,
+    game_state: GameState,
+    restart_button: no_if::button::Button,
+    blur_texture: usize
 }
 
 impl App
 {
+    fn no_op(&mut self, _ctx: &mut UpdateContext) {}
+
     fn toggle_fullscreen(&mut self, ctx: &mut UpdateContext)
     {
         ctx.context.toggle_fullscreen();
-    }
-
-    fn escape(&mut self, _ctx: &mut UpdateContext)
-    {
-
     }
 
     fn mouse_left_pressed(&mut self, _ctx: &mut UpdateContext)
@@ -68,6 +166,28 @@ impl App
     fn mouse_left_hold(&mut self, _ctx: &mut UpdateContext)
     {
 
+    }
+
+
+    fn start_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Playing; }
+    fn open_settings(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenuSettings; }
+    fn back_to_main_menu(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenu; }
+    fn resume_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Playing; }
+    fn pause_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Paused; }
+
+    fn restart_game(&mut self, ctx: &mut UpdateContext)
+    {
+        self.player.reset();
+        self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
+
+        self.start_game(ctx);
+    }
+
+    fn no_state_change(&mut self) {}
+    fn kill_player(&mut self)
+    {
+        println!("Dead, deceleration: {}", self.player.last_deceleration);
+        self.game_state = GameState::Dead;
     }
 
 
@@ -108,6 +228,12 @@ impl App
         self.rope_extending = !self.rope_extending;
     }
 
+    fn skip_hit(&mut self, _direction: Vec2) {}
+    fn apply_hit(&mut self, direction: Vec2)
+    {
+        self.player.start_falling(direction * 800.0);
+    }
+
     fn toggle_wall_shader(&mut self, ctx: &mut UpdateContext)
     {
         self.current_wall_shader = (self.current_wall_shader + 1) % 3;
@@ -144,64 +270,16 @@ impl App
         ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
-
-    fn skip_hit(&mut self, _direction: Vec2) {}
-    fn apply_hit(&mut self, direction: Vec2)
-    {
-        self.player.start_falling(direction * 800.0);
-    }
 }
 
-impl EngineEvent for App
+// Seperation, just all game-state functions
+impl App
 {
-    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
-    {
-        register_keys(input);
+    fn update_menu_main(&mut self, _ctx: &mut UpdateContext) {}
 
-        let player_texture = graphics.load_texture("src/bin/game/assets/player.png", FilterMode::Linear, FilterMode::Linear);
-        self.player.set_texture(player_texture);
+    fn update_menu_settings(&mut self, _ctx: &mut UpdateContext) {}
 
-        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
-        self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
-        for _ in 0..10
-        {
-            self.collectibles.spawn_rope_coil(&self.wall, self.player.collision.pos, 853.0, 2000.0, 200.0); // value in cm
-        }
-
-        let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
-        self.wall.set_border_right_texture(wall_border_texture);
-
-        let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
-        self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
-
-        let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
-        self.decorations.set_texture(decorations_texture);
-        self.decorations.add_variant((0.0, 0.0), (128.0, 128.0), 40.0, true); // rock
-        self.decorations.add_variant((256.0, 0.0), (222.0, 159.0), 40.0, false); // grass 1
-        self.decorations.add_variant((0.0, 256.0), (329.0, 159.0), 40.0, false); // grass 2
-
-        let hazard_texture = graphics.load_texture("src/bin/game/assets/hazard_items.png", FilterMode::Linear, FilterMode::Linear);
-        let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
-        self.hazards.set_hazard_texture(hazard_texture);
-        self.hazards.set_warning_texture(warning_texture);
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling);
-
-        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
-        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
-        graphics.set_uniform("scale", UniformValue::Float(150.0));
-        graphics.set_uniform("band_height", UniformValue::Float(200.0));
-        graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
-        self.wall.set_rock_shader(rock_shader as u8);
-
-        let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
-        ctx.set_post_process_pipeline(pp_id);
-
-        self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
-
-        graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
-    }
-
-    fn physics_update(&mut self, update_ctx: &mut UpdateContext)
+    fn update_playing(&mut self, update_ctx: &mut UpdateContext)
     {
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
@@ -228,31 +306,34 @@ impl EngineEvent for App
 
         self.rope_extending_toggle.update(update_ctx.input);
 
-        if self.player.is_beyond_recovery()
-        {
-            println!("Dead, deceleration: {}", self.player.last_deceleration);
-        }
-
-        let actions = update_ctx.input.actions().to_vec();
-        for action in actions
-        {
-            ACTION_TABLE[action as usize](self, update_ctx);
-        }
+        const DEATH_TABLE: [fn(&mut App); 2] = [App::no_state_change, App::kill_player];
+        DEATH_TABLE[self.player.is_beyond_recovery() as usize](self);
     }
 
-    fn update(&mut self, update_ctx: &mut UpdateContext)
+    fn update_pause_menu(&mut self, _ctx: &mut UpdateContext) {}
+
+    fn update_dead(&mut self, ctx: &mut UpdateContext)
     {
-        self.x = update_ctx.input.mouse_position().0 as f32;
-        self.y = update_ctx.input.mouse_position().1 as f32;
+        self.update_playing(ctx);
+        self.restart_button.update(ctx.input);
     }
 
-    fn render(&self, render_ctx: &mut RenderContext)
+    fn draw_main_menu(&self, _render_ctx: &mut RenderContext) {}
+
+    fn draw_main_menu_settings(&self, _render_ctx: &mut RenderContext) {}
+
+    fn draw_world(&self, render_ctx: &mut RenderContext)
     {
         self.wall.draw(render_ctx, 1);
         self.collectibles.draw(render_ctx, 2, 0);
+        self.decorations.draw(render_ctx, 2, 0);
         self.player.draw(render_ctx, 3, 0);
         self.rope.draw(render_ctx, 3, 1);
+        self.hazards.draw(render_ctx, 3, 0);
+    }
 
+    fn draw_hud(&self, render_ctx: &mut RenderContext)
+    {
         let score_text = format!("Score: {}", self.player.score);
         let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
         let rope_text = format!("Rope left: {}m\ntest newline?", self.player.rope_reserve/200.0);
@@ -267,9 +348,107 @@ impl EngineEvent for App
         render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 1.0, 1.0], 4, 0);
 
         self.rope_extending_toggle.draw(render_ctx, 5, 0);
+    }
 
-        self.decorations.draw(render_ctx, 2, 0);
-        self.hazards.draw(render_ctx, 3, 0);
+    fn draw_playing(&self, render_ctx: &mut RenderContext)
+    {
+        self.draw_world(render_ctx);
+        self.draw_hud(render_ctx);
+    }
+
+    fn draw_paused(&self, render_ctx: &mut RenderContext)
+    {
+        self.draw_world(render_ctx);
+
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
+
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+    }
+
+    fn draw_dead(&self, render_ctx: &mut RenderContext)
+    {
+        self.draw_world(render_ctx);
+
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
+
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 300.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        self.restart_button.draw(render_ctx, 6, 0);
+    }
+}
+
+impl EngineEvent for App
+{
+    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
+    {
+        register_keys(input);
+
+        let player_texture = graphics.load_texture("src/bin/game/assets/player.png", FilterMode::Linear, FilterMode::Linear);
+        self.player.set_texture(player_texture);
+
+        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
+        self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
+        for _ in 0..10
+        {
+            self.collectibles.spawn_rope_coil(&self.wall, self.player.collision.pos, 853.0, 2000.0, 200.0); // value in cm
+        }
+
+        let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
+        self.wall.set_border_right_texture(wall_border_texture);
+
+        let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
+        self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
+        self.restart_button.set_texture(rope_toggle_button_texture);
+
+        let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
+        self.decorations.set_texture(decorations_texture);
+        self.decorations.add_variant((0.0, 0.0), (128.0, 128.0), 40.0, true); // rock
+        self.decorations.add_variant((256.0, 0.0), (222.0, 159.0), 40.0, false); // grass 1
+        self.decorations.add_variant((0.0, 256.0), (329.0, 159.0), 40.0, false); // grass 2
+
+        let hazard_texture = graphics.load_texture("src/bin/game/assets/hazard_items.png", FilterMode::Linear, FilterMode::Linear);
+        let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
+        self.hazards.set_hazard_texture(hazard_texture);
+        self.hazards.set_warning_texture(warning_texture);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling);
+
+        self.blur_texture = graphics.load_texture("src/bin/game/assets/blur.png", FilterMode::Linear, FilterMode::Linear);
+
+        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float)]);
+        graphics.set_uniform("scale", UniformValue::Float(150.0));
+        graphics.set_uniform("band_height", UniformValue::Float(200.0));
+        graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
+        self.wall.set_rock_shader(rock_shader as u8);
+
+        let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
+        ctx.set_post_process_pipeline(pp_id);
+
+        self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
+
+        graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
+    }
+
+    fn physics_update(&mut self, update_ctx: &mut UpdateContext)
+    {
+        GAME_UPDATE_TABLE[self.game_state as usize](self, update_ctx);
+
+        let actions = update_ctx.input.actions().to_vec();
+        for action in actions
+        {
+            // ACTION_TABLE[action as usize](self, update_ctx);
+            ACTION_TABLES[self.game_state as usize][action as usize](self, update_ctx);
+        }
+    }
+
+    fn update(&mut self, update_ctx: &mut UpdateContext)
+    {
+        self.x = update_ctx.input.mouse_position().0 as f32;
+        self.y = update_ctx.input.mouse_position().1 as f32;
+    }
+
+    fn render(&self, render_ctx: &mut RenderContext)
+    {
+        GAME_RENDER_TABLE[self.game_state as usize](self, render_ctx);
     }
 }
 
@@ -284,6 +463,10 @@ impl App
         let mut rope_extending_toggle = no_if::button::Button::new(Rect::new(10.0, 202.0, 100.0, 50.0));
         rope_extending_toggle.set_action(ButtonEvent::Click, Action::ToggleRopeExtending);
 
+        let mut restart_button = no_if::button::Button::new(Rect::new(590.0, 350.0, 100.0, 50.0));
+        restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
+
+
         Self
         {
             x: 0.0,
@@ -296,7 +479,10 @@ impl App
             rope_extending_toggle,
             current_wall_shader: 1,
             decorations: DecorationSpawner::new(),
-            hazards: HazardSpawner::new(3.0, 6.0)
+            hazards: HazardSpawner::new(3.0, 6.0),
+            game_state: GameState::Playing,
+            restart_button,
+            blur_texture: 0
         }
     }
 }
@@ -310,6 +496,8 @@ pub fn register_keys(input: &mut Input)
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
     input.add_key_binding(Key::Tab, Some(Action::ToggleWallShader), None, None);
+
+    input.add_key_binding(Key::Escape, Some(Action::Escape), None, None);
 }
 
 fn main()

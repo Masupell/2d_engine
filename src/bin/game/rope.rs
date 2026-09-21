@@ -243,6 +243,36 @@ impl Rope
 
         self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update_mesh(renderer, device, queue, width));
     }
+
+    // pub fn reset_rope(&mut self, top_point: Vec2)
+    // {
+    //     let segment_length = 30.0;
+    //     let angle: f32 = 0.4;
+    //     let direction = Vec2::new(angle.cos(), angle.sin());
+
+    //     self.segments.clear();
+    //     self.segments = vec![RopeSegment::new(top_point, direction, segment_length, 1)];
+    //     self.view_bounds = (top_point, top_point);
+    // }
+    pub fn reset_rope(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, top_point: Vec2)
+    {
+        let segment_length = 30.0;
+        let angle: f32 = 0.4;
+        let direction = Vec2::new(angle.cos(), angle.sin());
+        let width = self.width;
+
+        self.segments.drain(..).for_each(|segment| segment.mesh_id.into_iter().for_each(|id| renderer.free_mesh(id)));
+
+        let mut segment = RopeSegment::new(top_point, direction, segment_length, 1);
+
+        let reused_id = renderer.reserve_mesh_slot();
+        reused_id.into_iter().for_each(|id| segment.use_reused_mesh_slot(id));
+
+        segment.build_mesh(renderer, device, queue, width);
+
+        self.segments = vec![segment];
+        self.view_bounds = (top_point, top_point);
+    }
 }
 
 pub struct RopeSegment

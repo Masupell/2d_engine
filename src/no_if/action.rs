@@ -5,7 +5,7 @@ pub enum Action
     // ToggleVSync,
     // MoveLeft,
     // MoveRight,
-    Esc,
+    Escape,
     // Mouse
     MouseLeftPressed,
     MouseLeftReleased,
@@ -20,7 +20,13 @@ pub enum Action
     MoveLeft,
     MoveRight,
 
-    ToggleRopeExtending
+    ToggleRopeExtending,
     // ToggleAnchorFalling
+
+    StartGame,
+    OpenSettings,
+    BackToMainMenu,
+    ResumeGame,
+    RestartGame
 }
-impl Action { pub const COUNT: usize = 12; }
+impl Action { pub const COUNT: usize = 17; }
