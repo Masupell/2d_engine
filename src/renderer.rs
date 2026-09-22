@@ -1108,10 +1108,15 @@ impl Renderer
 
         let baseline_pos = (pos.0, pos.1 + ascent * scale);
 
+        // to rotate around center point
+        let (_, width, height) = self.text_bounds_with_font(font_id, text, pos, height_px);
+        let center = (pos.0 + width * 0.5, pos.1 + height * 0.5);
+        let pivoted_pos = rotate_point_around(baseline_pos, center, rotation);
+
         let transform = match space
         {
-            CoordSpace::World => self.matrix(baseline_pos, (scale, scale), rotation),
-            CoordSpace::Screen => self.ui_matrix(baseline_pos, (scale, scale), rotation),
+            CoordSpace::World => self.matrix(pivoted_pos, (scale, scale), rotation),
+            CoordSpace::Screen => self.ui_matrix(pivoted_pos, (scale, scale), rotation),
         };
 
         self.draw_mesh_transformed(mesh_id, texture_id, transform, Some(color), layer, z_index, shader_id);
@@ -1399,4 +1404,15 @@ impl Renderer
 fn default_charset() -> String
 {
     (' '..='~').collect()
+}
+
+// gives pivot point to rotate around (for matrix, which uses center, and text which used top-left)
+fn rotate_point_around(point: (f32, f32), pivot: (f32, f32), rotation: f32) -> (f32, f32)
+{
+    let cos = rotation.cos();
+    let sin = rotation.sin();
+    let dx = point.0 - pivot.0;
+    let dy = point.1 - pivot.1;
+
+    (pivot.0 + dx * cos - dy * sin, pivot.1 + dx * sin + dy * cos)
 }
