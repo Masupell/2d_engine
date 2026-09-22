@@ -389,9 +389,9 @@ impl App
         let (top_left, width, height) = render_ctx.graphics.renderer.text_bounds(&score_text, (5.0, 5.0), 48.0);
         let center = (top_left.0 + width * 0.5, top_left.1 + height * 0.5);
         render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 0.0, 1.0], 4, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 0.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 53.0), 48.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 101.0), 48.0, [1.0, 1.0, 1.0, 1.0], CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 0.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 53.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 101.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
         let (top_left, width, height) = render_ctx.graphics.renderer.text_bounds(&rope_text, (5.0, 101.0), 48.0);
         let center = (top_left.0 + width * 0.5, top_left.1 + height * 0.5);
         render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 1.0, 1.0], 4, 0);
@@ -411,7 +411,7 @@ impl App
 
         // render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
 
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
     }
 
     fn draw_dead(&self, render_ctx: &mut RenderContext)
@@ -423,9 +423,9 @@ impl App
         let score_str = format!("Score: {}", self.player.score);
         let g_force_str = format!("G-force: {}", self.death_g_force);
 
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 200.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &score_str, (450.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &g_force_str, (830.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 200.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &score_str, (450.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &g_force_str, (830.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
         self.restart_button.draw(render_ctx, 6, 0);
     }
 }
