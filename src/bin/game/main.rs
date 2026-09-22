@@ -144,6 +144,9 @@ struct App
     blur_texture: usize,
     death_g_force: f32,
     menu_climb: f32,
+    vignette_id: usize,
+    blur_id: usize,
+    start_button: no_if::button::Button
 }
 
 impl App
@@ -171,11 +174,33 @@ impl App
     }
 
 
-    fn start_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Playing; }
+    fn start_game(&mut self, ctx: &mut UpdateContext)
+    {
+        self.game_state = GameState::Playing;
+        ctx.context.set_post_process_pipeline(self.vignette_id);
+    }
+
     fn open_settings(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenuSettings; }
-    fn back_to_main_menu(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenu; }
-    fn resume_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Playing; }
-    fn pause_game(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::Paused; }
+
+    fn back_to_main_menu(&mut self, ctx: &mut UpdateContext)
+    {
+        self.game_state = GameState::MainMenu;
+        ctx.context.set_post_process_pipeline(self.blur_id);
+        ctx.context.add_post_process_pipeline(self.vignette_id);
+    }
+
+    fn resume_game(&mut self, ctx: &mut UpdateContext)
+    {
+        self.game_state = GameState::Playing;
+        ctx.context.set_post_process_pipeline(self.vignette_id);
+    }
+
+    fn pause_game(&mut self, ctx: &mut UpdateContext)
+    {
+        self.game_state = GameState::Paused;
+        ctx.context.set_post_process_pipeline(self.blur_id);
+        ctx.context.add_post_process_pipeline(self.vignette_id);
+    }
 
     fn restart_game(&mut self, ctx: &mut UpdateContext)
     {
@@ -187,11 +212,14 @@ impl App
         self.start_game(ctx);
     }
 
-    fn no_state_change(&mut self) {}
-    fn kill_player(&mut self)
+    fn no_state_change(&mut self, _ctx: &mut UpdateContext) {}
+    fn kill_player(&mut self, ctx: &mut UpdateContext)
     {
         self.death_g_force = self.player.last_deceleration / 1960.0;
         self.game_state = GameState::Dead;
+
+        ctx.context.set_post_process_pipeline(self.blur_id);
+        ctx.context.add_post_process_pipeline(self.vignette_id);
     }
 
 
@@ -287,6 +315,8 @@ impl App
         ctx.graphics.set_camera_pos((x_value, 0.0 - self.menu_climb * 60.0));
         self.menu_climb += ctx.dt as f32;
         self.decorations.maintain(&self.wall, Vec2::new(x_value, -self.menu_climb*60.0), -1.0, 400.0, 720.0, 20);
+
+        self.start_button.update(ctx.input);
     }
 
     fn update_menu_settings(&mut self, _ctx: &mut UpdateContext) {}
@@ -318,8 +348,8 @@ impl App
 
         self.rope_extending_toggle.update(update_ctx.input);
 
-        const DEATH_TABLE: [fn(&mut App); 2] = [App::no_state_change, App::kill_player];
-        DEATH_TABLE[self.player.is_beyond_recovery() as usize * (1-(self.game_state == GameState::Dead) as usize)](self);
+        const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
+        DEATH_TABLE[self.player.is_beyond_recovery() as usize * (1-(self.game_state == GameState::Dead) as usize)](self, update_ctx);
     }
 
     fn update_pause_menu(&mut self, _ctx: &mut UpdateContext) {}
@@ -335,7 +365,8 @@ impl App
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
 
-        render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, [0.5, 0.5, 0.5, 1.0], 3, 0);
+        // render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, [0.5, 0.5, 0.5, 1.0], 3, 0);
+        self.start_button.draw(render_ctx, 3, 0);
     }
 
     fn draw_main_menu_settings(&self, _render_ctx: &mut RenderContext) {}
@@ -378,7 +409,7 @@ impl App
     {
         self.draw_world(render_ctx);
 
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
+        // render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
 
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
     }
@@ -387,7 +418,7 @@ impl App
     {
         self.draw_world(render_ctx);
 
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
+        // render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
 
         let score_str = format!("Score: {}", self.player.score);
         let g_force_str = format!("G-force: {}", self.death_g_force);
@@ -421,6 +452,7 @@ impl EngineEvent for App
         let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
         self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
         self.restart_button.set_texture(rope_toggle_button_texture);
+        self.start_button.set_texture(rope_toggle_button_texture);
 
         let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
         self.decorations.set_texture(decorations_texture);
@@ -445,8 +477,14 @@ impl EngineEvent for App
         graphics.set_uniform("seed", UniformValue::Float(rng.random()));
         self.wall.set_rock_shader(rock_shader as u8);
 
-        let pp_id = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
-        ctx.set_post_process_pipeline(pp_id);
+        let vignette_pipeline = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
+        self.vignette_id = vignette_pipeline;
+        ctx.set_post_process_pipeline(vignette_pipeline);
+
+        graphics.set_uniform("radius", UniformValue::Float(3.0));
+        let blur_pipeline = graphics.load_shader_with_uniform(Some("src/shaders/blur_post_process.wgsl"), Some("src/shaders/blur_post_process.wgsl"), PipeLineType::PostProcess, &[("radius", UniformType::Float)]);
+        self.blur_id = blur_pipeline;
+        ctx.add_post_process_pipeline(blur_pipeline);
 
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
@@ -491,6 +529,9 @@ impl App
         let mut restart_button = no_if::button::Button::new(Rect::new(590.0, 350.0, 100.0, 50.0));
         restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
 
+        let mut start_button = no_if::button::Button::new(Rect::new(590.0, 350.0, 100.0, 50.0));
+        start_button.set_action(ButtonEvent::Click, Action::StartGame);
+
 
         Self
         {
@@ -509,7 +550,10 @@ impl App
             restart_button,
             blur_texture: 0,
             death_g_force: 0.0,
-            menu_climb: 0.0
+            menu_climb: 0.0,
+            vignette_id: 0,
+            blur_id: 0,
+            start_button
         }
     }
 }
