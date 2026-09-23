@@ -56,6 +56,7 @@ const fn main_menu_actions() -> [ActionFn; Action::COUNT]
     let mut table = base_actions();
     table[Action::StartGame as usize] = App::start_game;
     table[Action::OpenSettings as usize] = App::open_settings;
+    table[Action::QuitGame as usize] = App::quit_game;
     table
 }
 
@@ -146,7 +147,8 @@ struct App
     menu_climb: f32,
     vignette_id: usize,
     blur_id: usize,
-    start_button: no_if::button::Button
+    setting_button: no_if::button::Button,
+    quit_button: no_if::button::Button
 }
 
 impl App
@@ -304,6 +306,11 @@ impl App
         ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
+
+    fn quit_game(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.context.close();
+    }
 }
 
 // Seperation, just all game-state functions
@@ -316,10 +323,20 @@ impl App
         self.menu_climb += ctx.dt as f32;
         self.decorations.maintain(&self.wall, Vec2::new(x_value, -self.menu_climb*60.0), -1.0, 400.0, 720.0, 20);
 
-        self.start_button.update(ctx.input);
+        self.setting_button.update(ctx.input);
+        self.quit_button.update(ctx.input);
+
+        const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::start_game];
+        PLAY_TABLE[ctx.input.unbound_input_pressed() as usize](self, ctx);
     }
 
-    fn update_menu_settings(&mut self, _ctx: &mut UpdateContext) {}
+    fn update_menu_settings(&mut self, ctx: &mut UpdateContext)
+    {
+        let x_value = (self.menu_climb * 0.05).sin() * 900.0;
+        ctx.graphics.set_camera_pos((x_value, 0.0 - self.menu_climb * 60.0));
+        self.menu_climb += ctx.dt as f32;
+        self.decorations.maintain(&self.wall, Vec2::new(x_value, -self.menu_climb*60.0), -1.0, 400.0, 720.0, 20);
+    }
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
     {
@@ -366,10 +383,21 @@ impl App
         self.decorations.draw(render_ctx, 2, 0);
 
         // render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, [0.5, 0.5, 0.5, 1.0], 3, 0);
-        self.start_button.draw(render_ctx, 3, 0);
+        let title_rotation = (self.menu_climb*2.0).sin() * 0.05;
+        let text_rotation = (self.menu_climb*5.0+2.0).sin() * 0.01;
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Climber?", (275.0, 360.0), 128.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, title_rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Press any key to continue", (640.0, 690.0), 48.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, text_rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+
+        self.setting_button.draw(render_ctx, 6, 0);
+        self.quit_button.draw(render_ctx, 6, 0);
     }
 
-    fn draw_main_menu_settings(&self, _render_ctx: &mut RenderContext) {}
+    fn draw_main_menu_settings(&self, render_ctx: &mut RenderContext)
+    {
+        self.wall.draw(render_ctx, 1);
+        self.decorations.draw(render_ctx, 2, 0);
+    }
 
     fn draw_world(&self, render_ctx: &mut RenderContext)
     {
@@ -451,8 +479,14 @@ impl EngineEvent for App
 
         let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
         self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
+        self.rope_extending_toggle.set_atlas_rect((0.0, 0.0), (200.0, 100.0));
         self.restart_button.set_texture(rope_toggle_button_texture);
-        self.start_button.set_texture(rope_toggle_button_texture);
+        self.restart_button.set_atlas_rect((0.0, 0.0), (200.0, 100.0));
+        let menu_button = graphics.load_texture("src/bin/game/assets/menu_button.png", FilterMode::Linear, FilterMode::Linear);
+        self.setting_button.set_texture(menu_button);
+        self.setting_button.set_atlas_rect((0.0, 0.0), (316.0, 116.0));
+        self.quit_button.set_texture(menu_button);
+        self.quit_button.set_atlas_rect((0.0, 116.0), (316.0, 116.0));
 
         let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
         self.decorations.set_texture(decorations_texture);
@@ -523,14 +557,17 @@ impl App
         let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
         let collectibles = CollectibleManager::new();
-        let mut rope_extending_toggle = no_if::button::Button::new(Rect::new(10.0, 202.0, 100.0, 50.0));
+        let mut rope_extending_toggle = no_if::button::Button::new((10.0, 202.0), (100.0, 50.0));
         rope_extending_toggle.set_action(ButtonEvent::Click, Action::ToggleRopeExtending);
 
-        let mut restart_button = no_if::button::Button::new(Rect::new(590.0, 350.0, 100.0, 50.0));
+        let mut restart_button = no_if::button::Button::new((590.0, 350.0), (100.0, 50.0));
         restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
 
-        let mut start_button = no_if::button::Button::new(Rect::new(590.0, 350.0, 100.0, 50.0));
-        start_button.set_action(ButtonEvent::Click, Action::StartGame);
+        let mut setting_button = no_if::button::Button::new((906.0, 255.0), (316.0, 116.0));
+        setting_button.set_action(ButtonEvent::Click, Action::OpenSettings);
+
+        let mut quit_button = no_if::button::Button::new((906.0, 455.0), (316.0, 116.0));
+        quit_button.set_action(ButtonEvent::Click, Action::QuitGame);
 
 
         Self
@@ -553,7 +590,8 @@ impl App
             menu_climb: 0.0,
             vignette_id: 0,
             blur_id: 0,
-            start_button
+            setting_button,
+            quit_button
         }
     }
 }

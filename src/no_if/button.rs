@@ -1,4 +1,4 @@
-use crate::no_if::{action::Action, shapes::Rect};
+use crate::no_if::action::Action;
 
 const EVENT_TABLE: [[[ButtonEvent; 3]; 2]; 2] =
 [
@@ -20,27 +20,33 @@ const EVENT_TABLE: [[[ButtonEvent; 3]; 2]; 2] =
 
 pub struct Button
 {
-    pub rect: Rect, // Tope left Corner definition
+    pos: (f32, f32), // center
+    size: (f32, f32),
     pub actions: [Option<Action>; ButtonEvent::COUNT],
     texture_id: usize,
+    atlas_pos: (f32, f32),
+    atlas_size: (f32, f32),
     was_inside: bool,
     hover_enabled: bool,
-    normal_size: (f64, f64),
+    normal_size: (f32, f32),
     hover_scale: f32
 }
 
 impl Button
 {
-    pub fn new(rect: Rect) -> Self
+    pub fn new(pos: (f32, f32), size: (f32, f32)) -> Self
     {
         Button
         {
-            rect,
+            pos,
+            size,
             actions: [None; ButtonEvent::COUNT],
             texture_id: 0,
+            atlas_pos: (0.0, 0.0),
+            atlas_size: (0.0, 0.0),
             was_inside: false,
             hover_enabled: true,
-            normal_size: (rect.width, rect.height),
+            normal_size: size,
             hover_scale: 1.1
         }
     }
@@ -50,10 +56,16 @@ impl Button
         self.actions[event as usize] = Some(action)
     }
 
+    pub fn set_pos(&mut self, pos: (f32, f32))
+    {
+        self.pos = pos;
+    }
+
     pub fn update(&mut self, input: &mut crate::Input)
     {
+        let top_left = (self.pos.0 - self.size.0/2.0, self.pos.1 - self.size.1/2.0);
         // None, Click, Released
-        let inside = self.rect.contains(input.mouse_position());
+        let inside = contained((input.mouse_position().0 as f32, input.mouse_position().1 as f32), top_left, self.size);
         // [was it inside?][is it still inside?][is it clicked (as bool, false is 0 therefore not clicked and hovered instead) + 2x is it released(2x1=1)]
         let pressed = input.actions().contains(&Action::MouseLeftPressed) as usize;
         let released = input.actions().contains(&Action::MouseLeftReleased) as usize;
@@ -67,8 +79,7 @@ impl Button
 
     pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
     {
-        let center = ((self.rect.x + self.rect.width/2.0) as f32, (self.rect.y + self.rect.height/2.0) as f32);
-        render_ctx.graphics.renderer.draw_texture_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (self.rect.width as f32, self.rect.height as f32), 0.0), self.texture_id, z_index, shader_id);
+        render_ctx.graphics.renderer.draw_texture_atlas_ui(0, render_ctx.graphics.renderer.ui_matrix(self.pos, (self.size.0, self.size.1), 0.0), self.texture_id, self.atlas_pos, self.atlas_size, z_index, shader_id);
     }
 
     fn handle_hover_event(&mut self, event: ButtonEvent)
@@ -81,7 +92,7 @@ impl Button
 
         scale_table[self.hover_enabled as usize][event as usize].into_iter().for_each(|scale|
         {
-            self.set_size_centered((self.normal_size.0 as f32 * scale, self.normal_size.1 as f32 * scale));
+             self.size = (self.normal_size.0 * scale, self.normal_size.1 * scale);
         });
     }
 
@@ -90,28 +101,15 @@ impl Button
         self.texture_id = texture_id;
     }
 
-    pub fn set_pos(&mut self, pos: (f32, f32))
+    pub fn set_atlas_rect(&mut self, pos: (f32, f32), size: (f32, f32))
     {
-        self.rect.x = pos.0 as f64;
-        self.rect.y = pos.1 as f64;
+        self.atlas_pos = pos;
+        self.atlas_size = size;
     }
 
     pub fn set_size(&mut self, size: (f32, f32))
     {
-        self.rect.width = size.0 as f64;
-        self.rect.height = size.1 as f64;
-    }
-
-    pub fn set_size_centered(&mut self, size: (f32, f32))
-    {
-        let center_x = self.rect.x + self.rect.width / 2.0;
-        let center_y = self.rect.y + self.rect.height / 2.0;
-
-        self.rect.width = size.0 as f64;
-        self.rect.height = size.1 as f64;
-
-        self.rect.x = center_x - self.rect.width / 2.0;
-        self.rect.y = center_y - self.rect.height / 2.0;
+        self.size = (size.0, size.1);
     }
 
     pub fn handle_hover(&mut self, enabled: bool)
@@ -138,4 +136,12 @@ pub enum ButtonEvent
 impl ButtonEvent
 {
     pub const COUNT: usize = 5;
+}
+
+pub fn contained(point: (f32, f32), top_left: (f32, f32), size: (f32, f32)) -> bool
+{
+    point.0 >= top_left.0
+        && point.0 <= top_left.0 + size.0
+        && point.1 >= top_left.1
+        && point.1 <= top_left.1 + size.1
 }

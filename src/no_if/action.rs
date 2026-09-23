@@ -27,6 +27,7 @@ pub enum Action
     OpenSettings,
     BackToMainMenu,
     ResumeGame,
-    RestartGame
+    RestartGame,
+    QuitGame
 }
-impl Action { pub const COUNT: usize = 17; }
+impl Action { pub const COUNT: usize = 18; }

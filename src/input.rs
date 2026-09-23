@@ -216,6 +216,19 @@ impl Input
     {
         &self.actions
     }
+
+    pub fn any_key_pressed(&self) -> bool
+    {
+        self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key))
+    }
+
+    pub fn unbound_input_pressed(&self) -> bool
+    {
+        let key_press = self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key) && !self.key_bindings.contains_key(key));
+        let mouse_press = self.mouse_pressed.iter().any(|button| !self.prev_mouse_pressed.contains(button) && !self.mouse_bindings.contains_key(button));
+
+        key_press || mouse_press
+    }
 }
 
 struct KeyBinding
