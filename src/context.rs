@@ -102,13 +102,19 @@ impl Context
     {
         self.post_process_pipelines.clear();
     }
+
+    pub fn close(&mut self)
+    {
+        self.pending_actions.push(ContextAction::Close);
+    }
 }
 
 pub enum ContextAction
 {
     ToggleFullscreen(bool),
     SetVSync(bool),
-    SetTitle(String)
+    SetTitle(String),
+    Close
 }
 
 pub struct UpdateContext<'a>

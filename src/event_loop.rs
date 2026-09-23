@@ -133,6 +133,10 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                     {
                                         state.window().set_title(&title);
                                     }
+                                    ContextAction::Close =>
+                                    {
+                                        control_flow.exit();
+                                    }
                                 }
                             }
 
