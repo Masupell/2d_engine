@@ -212,8 +212,6 @@ impl App
     {
         self.player.reset();
         self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
-        let mut rng = rand::rng();
-        ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
 
         self.start_game(ctx);
     }
@@ -330,6 +328,10 @@ impl App
     {
         self.fade_pending_action.take().into_iter().for_each(|action| action(self, ctx));
         self.fade_direction = -1.0;
+
+        // Temporarily here, just used whe the wall changes anyways, so its fine for now
+        let mut rng = rand::rng();
+        ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
     }
 
     fn quit_game(&mut self, ctx: &mut UpdateContext)
@@ -404,7 +406,15 @@ impl App
     fn update_dead(&mut self, ctx: &mut UpdateContext)
     {
         self.update_world(ctx);
+        self.menu_climb += ctx.dt as f32;
         self.restart_button.update(ctx.input);
+        const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::game_restart_transition];
+        PLAY_TABLE[ctx.input.unbound_input_pressed() as usize](self, ctx);
+    }
+
+    fn game_restart_transition(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.begin_fade_transition(App::restart_game);
     }
 
     fn draw_main_menu(&self, render_ctx: &mut RenderContext)
@@ -484,7 +494,11 @@ impl App
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You died", (640.0, 200.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &score_str, (450.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &g_force_str, (830.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
-        self.restart_button.draw(render_ctx, 6, 0);
+
+        let rotation = (self.menu_climb*2.0).sin() * 0.05;
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Press any key to restart", (640.0, 600.0), 48.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+
+        // self.restart_button.draw(render_ctx, 6, 0);
     }
 
     fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
