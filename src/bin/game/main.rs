@@ -148,7 +148,11 @@ struct App
     vignette_id: usize,
     blur_id: usize,
     setting_button: no_if::button::Button,
-    quit_button: no_if::button::Button
+    quit_button: no_if::button::Button,
+    fade_alpha: f32,
+    fade_direction: f32, // +1.0 fading to black, -1.0 fading in, 0.0 nothing
+    fade_speed: f32,
+    fade_pending_action: Option<ActionFn>
 }
 
 impl App
@@ -307,6 +311,27 @@ impl App
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
 
+    fn begin_fade_transition(&mut self, action: ActionFn)
+    {
+        self.fade_direction = 1.0;
+        self.fade_pending_action = Some(action);
+    }
+
+    fn update_fade_transition(&mut self, ctx: &mut UpdateContext)
+    {
+        self.fade_alpha = (self.fade_alpha + self.fade_direction * self.fade_speed * ctx.dt as f32).clamp(0.0, 1.0);
+
+        let reached_peak = (self.fade_alpha >= 1.0) & (self.fade_direction > 0.0);
+        const FIRE_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::fire_fade_action];
+        FIRE_TABLE[reached_peak as usize](self, ctx);
+    }
+
+    fn fire_fade_action(&mut self, ctx: &mut UpdateContext)
+    {
+        self.fade_pending_action.take().into_iter().for_each(|action| action(self, ctx));
+        self.fade_direction = -1.0;
+    }
+
     fn quit_game(&mut self, ctx: &mut UpdateContext)
     {
         ctx.context.close();
@@ -326,8 +351,13 @@ impl App
         self.setting_button.update(ctx.input);
         self.quit_button.update(ctx.input);
 
-        const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::start_game];
+        const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::begin_game_transition];
         PLAY_TABLE[ctx.input.unbound_input_pressed() as usize](self, ctx);
+    }
+
+    fn begin_game_transition(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.begin_fade_transition(App::start_game);
     }
 
     fn update_menu_settings(&mut self, ctx: &mut UpdateContext)
@@ -456,6 +486,11 @@ impl App
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, &g_force_str, (830.0, 300.0), 48.0, [0.7, 0.7, 0.7, 1.0], [0.0, 0.0, 0.0, 1.0], 1.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
         self.restart_button.draw(render_ctx, 6, 0);
     }
+
+    fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
+    {
+        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), [0.0, 0.0, 0.0, self.fade_alpha], 20, 0);
+    }
 }
 
 impl EngineEvent for App
@@ -528,6 +563,7 @@ impl EngineEvent for App
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
         GAME_UPDATE_TABLE[self.game_state as usize](self, update_ctx);
+        self.update_fade_transition(update_ctx);
 
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
@@ -546,6 +582,7 @@ impl EngineEvent for App
     fn render(&self, render_ctx: &mut RenderContext)
     {
         GAME_RENDER_TABLE[self.game_state as usize](self, render_ctx);
+        self.draw_fade_overlay(render_ctx);
     }
 }
 
@@ -591,7 +628,11 @@ impl App
             vignette_id: 0,
             blur_id: 0,
             setting_button,
-            quit_button
+            quit_button,
+            fade_alpha: 0.0,
+            fade_direction: 0.0,
+            fade_speed: 3.5,
+            fade_pending_action: None
         }
     }
 }
