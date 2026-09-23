@@ -14,7 +14,8 @@ pub struct Input
     virtual_size: (f64, f64),
     actions: Vec<Action>,
     key_bindings: HashMap<KeyCode, KeyBinding>,
-    mouse_bindings: HashMap<MouseButton, MouseBinding>
+    mouse_bindings: HashMap<MouseButton, MouseBinding>,
+    any_press: bool
 }
 
 impl Input
@@ -43,7 +44,8 @@ impl Input
             virtual_size: window_size,
             actions: Vec::new(),
             key_bindings,
-            mouse_bindings
+            mouse_bindings,
+            any_press: false
         }
     }
 
@@ -129,6 +131,8 @@ impl Input
     pub fn generate_actions(&mut self)
     {
         self.actions.clear();
+
+        self.any_press = self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key)) || self.mouse_pressed.iter().any(|button| !self.prev_mouse_pressed.contains(button));
 
         for key in &self.keys_pressed
         {
@@ -217,17 +221,10 @@ impl Input
         &self.actions
     }
 
-    pub fn any_key_pressed(&self) -> bool
+    pub fn any_free_press(&self, is_used: impl Fn(Action) -> bool) -> bool
     {
-        self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key))
-    }
-
-    pub fn unbound_input_pressed(&self) -> bool
-    {
-        let key_press = self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key) && !self.key_bindings.contains_key(key));
-        let mouse_press = self.mouse_pressed.iter().any(|button| !self.prev_mouse_pressed.contains(button) && !self.mouse_bindings.contains_key(button));
-
-        key_press || mouse_press
+        let claimed = self.actions.iter().any(|&action| is_used(action));
+        self.any_press && !claimed
     }
 }
 

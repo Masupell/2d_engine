@@ -43,71 +43,107 @@ const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
     App::draw_dead,
 ];
 
-
-const fn base_actions() -> [ActionFn; Action::COUNT]
+const fn base_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table: [ActionFn; Action::COUNT] = [App::no_op; Action::COUNT];
-    table[Action::ToggleFullScreen as usize] = App::toggle_fullscreen;
-    table
+    let mut actions: [ActionFn; Action::COUNT] = [App::no_op; Action::COUNT];
+    let mut used = [false; Action::COUNT];
+    actions[Action::ToggleFullScreen as usize] = App::toggle_fullscreen;
+    used[Action::ToggleFullScreen as usize] = true;
+    (actions, used)
 }
 
-const fn main_menu_actions() -> [ActionFn; Action::COUNT]
+const fn main_menu_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table = base_actions();
-    table[Action::StartGame as usize] = App::start_game;
-    table[Action::OpenSettings as usize] = App::open_settings;
-    table[Action::QuitGame as usize] = App::quit_game;
-    table
+    let (mut actions, mut used) = base_table();
+    actions[Action::StartGame as usize] = App::start_game;
+    actions[Action::OpenSettings as usize] = App::open_settings;
+    actions[Action::QuitGame as usize] = App::quit_game;
+    used[Action::StartGame as usize] = true;
+    used[Action::OpenSettings as usize] = true;
+    used[Action::QuitGame as usize] = true;
+    (actions, used)
 }
 
-const fn main_menu_settings_actions() -> [ActionFn; Action::COUNT]
+const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table = base_actions();
-    table[Action::Escape as usize] = App::back_to_main_menu;
-    table[Action::BackToMainMenu as usize] = App::back_to_main_menu;
-    table
+    let (mut actions, mut used) = base_table();
+    actions[Action::Escape as usize] = App::back_to_main_menu;
+    actions[Action::BackToMainMenu as usize] = App::back_to_main_menu;
+    used[Action::Escape as usize] = true;
+    used[Action::BackToMainMenu as usize] = true;
+    (actions, used)
 }
 
-const fn playing_actions() -> [ActionFn; Action::COUNT]
+const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table = base_actions();
-    table[Action::Escape as usize] = App::pause_game;
-    table[Action::MouseLeftPressed as usize] = App::mouse_left_pressed;
-    table[Action::MouseLeftReleased as usize] = App::mouse_left_released;
-    table[Action::MouseLeftHold as usize] = App::mouse_left_hold;
-    table[Action::ToggleWallShader as usize] = App::toggle_wall_shader;
-    table[Action::PlaceCheckPoint as usize] = App::player_place_checkpoint;
-    table[Action::StartFalling as usize] = App::player_start_falling;
-    table[Action::MoveUp as usize] = App::player_move_up;
-    table[Action::MoveLeft as usize] = App::player_move_left;
-    table[Action::MoveRight as usize] = App::player_move_right;
-    table[Action::ToggleRopeExtending as usize] = App::toggle_rope_extending;
-    table
+    let (mut actions, mut used) = base_table();
+    actions[Action::Escape as usize] = App::pause_game;
+    actions[Action::MouseLeftPressed as usize] = App::mouse_left_pressed;
+    actions[Action::MouseLeftReleased as usize] = App::mouse_left_released;
+    actions[Action::MouseLeftHold as usize] = App::mouse_left_hold;
+    actions[Action::ToggleWallShader as usize] = App::toggle_wall_shader;
+    actions[Action::PlaceCheckPoint as usize] = App::player_place_checkpoint;
+    actions[Action::StartFalling as usize] = App::player_start_falling;
+    actions[Action::MoveUp as usize] = App::player_move_up;
+    actions[Action::MoveLeft as usize] = App::player_move_left;
+    actions[Action::MoveRight as usize] = App::player_move_right;
+    actions[Action::ToggleRopeExtending as usize] = App::toggle_rope_extending;
+    used[Action::Escape as usize] = true;
+    used[Action::MouseLeftPressed as usize] = true;
+    used[Action::MouseLeftReleased as usize] = true;
+    used[Action::MouseLeftHold as usize] = true;
+    used[Action::ToggleWallShader as usize] = true;
+    used[Action::PlaceCheckPoint as usize] = true;
+    used[Action::StartFalling as usize] = true;
+    used[Action::MoveUp as usize] = true;
+    used[Action::MoveLeft as usize] = true;
+    used[Action::MoveRight as usize] = true;
+    used[Action::ToggleRopeExtending as usize] = true;
+    (actions, used)
 }
 
-const fn paused_actions() -> [ActionFn; Action::COUNT]
+const fn paused_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table = base_actions();
-    table[Action::Escape as usize] = App::resume_game;
-    table[Action::ResumeGame as usize] = App::resume_game;
-    table[Action::RestartGame as usize] = App::restart_game;
-    table
+    let (mut actions, mut used) = base_table();
+    actions[Action::Escape as usize] = App::resume_game;
+    actions[Action::ResumeGame as usize] = App::resume_game;
+    actions[Action::RestartGame as usize] = App::restart_game;
+    used[Action::Escape as usize] = true;
+    used[Action::ResumeGame as usize] = true;
+    used[Action::RestartGame as usize] = true;
+    (actions, used)
 }
 
-const fn dead_actions() -> [ActionFn; Action::COUNT]
+const fn dead_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
-    let mut table = base_actions();
-    table[Action::RestartGame as usize] = App::restart_game;
-    table
+    let (mut actions, mut used) = base_table();
+    actions[Action::RestartGame as usize] = App::restart_game;
+    used[Action::RestartGame as usize] = true;
+    (actions, used)
 }
+
+const MAIN_MENU: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = main_menu_table();
+const MAIN_MENU_SETTINGS: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = main_menu_settings_table();
+const PLAYING: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = play_table();
+const PAUSED: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = paused_table();
+const DEAD: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = dead_table();
 
 const ACTION_TABLES: [[ActionFn; Action::COUNT]; GameState::COUNT] =
 [
-    main_menu_actions(),
-    main_menu_settings_actions(),
-    playing_actions(),
-    paused_actions(),
-    dead_actions(),
+    MAIN_MENU.0,
+    MAIN_MENU_SETTINGS.0,
+    PLAYING.0,
+    PAUSED.0,
+    DEAD.0,
+];
+
+const USED_TABLE: [[bool; Action::COUNT]; GameState::COUNT] =
+[
+    MAIN_MENU.1,
+    MAIN_MENU_SETTINGS.1,
+    PLAYING.1,
+    PAUSED.1,
+    DEAD.1,
 ];
 
 
@@ -338,6 +374,12 @@ impl App
     {
         ctx.context.close();
     }
+
+    fn free_input_pressed(&self, input: &Input) -> bool
+    {
+        let used = USED_TABLE[self.game_state as usize];
+        input.any_free_press(|action| used[action as usize])
+    }
 }
 
 // Seperation, just all game-state functions
@@ -354,7 +396,7 @@ impl App
         self.quit_button.update(ctx.input);
 
         const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::begin_game_transition];
-        PLAY_TABLE[ctx.input.unbound_input_pressed() as usize](self, ctx);
+        PLAY_TABLE[self.free_input_pressed(ctx.input) as usize](self, ctx);
     }
 
     fn begin_game_transition(&mut self, _ctx: &mut UpdateContext)
@@ -409,7 +451,7 @@ impl App
         self.menu_climb += ctx.dt as f32;
         self.restart_button.update(ctx.input);
         const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::game_restart_transition];
-        PLAY_TABLE[ctx.input.unbound_input_pressed() as usize](self, ctx);
+        PLAY_TABLE[self.free_input_pressed(ctx.input) as usize](self, ctx);
     }
 
     fn game_restart_transition(&mut self, _ctx: &mut UpdateContext)
