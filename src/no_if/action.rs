@@ -11,8 +11,6 @@ pub enum Action
     MouseLeftReleased,
     MouseLeftHold,
 
-    ToggleWallShader,
-
     //Player
     PlaceCheckPoint,
     StartFalling,
@@ -28,6 +26,10 @@ pub enum Action
     BackToMainMenu,
     ResumeGame,
     RestartGame,
-    QuitGame
+    QuitGame,
+
+    SelectWallShaderCracks,
+    SelectWallShaderBands,
+    SelectWallShaderFast
 }
-impl Action { pub const COUNT: usize = 18; }
+impl Action { pub const COUNT: usize = 20; }

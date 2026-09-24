@@ -5,7 +5,7 @@ pub mod collectible;
 pub mod decorations;
 pub mod hazard;
 
-use engine::{utility::DrawLayer, *};
+use engine::{no_if::drop_down::Dropdown, utility::DrawLayer, *};
 
 use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, player::Player, rope::Rope, wall::Wall};
 use rand::Rng;
@@ -69,8 +69,14 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     let (mut actions, mut used) = base_table();
     actions[Action::Escape as usize] = App::back_to_main_menu;
     actions[Action::BackToMainMenu as usize] = App::back_to_main_menu;
+    actions[Action::SelectWallShaderCracks as usize] = App::wall_shader_cracks;
+    actions[Action::SelectWallShaderBands as usize] = App::wall_shader_bands;
+    actions[Action::SelectWallShaderFast as usize] = App::wall_shader_fast;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
+    used[Action::SelectWallShaderCracks as usize] = true;
+    used[Action::SelectWallShaderBands as usize] = true;
+    used[Action::SelectWallShaderFast as usize] = true;
     (actions, used)
 }
 
@@ -81,7 +87,6 @@ const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     actions[Action::MouseLeftPressed as usize] = App::mouse_left_pressed;
     actions[Action::MouseLeftReleased as usize] = App::mouse_left_released;
     actions[Action::MouseLeftHold as usize] = App::mouse_left_hold;
-    actions[Action::ToggleWallShader as usize] = App::toggle_wall_shader;
     actions[Action::PlaceCheckPoint as usize] = App::player_place_checkpoint;
     actions[Action::StartFalling as usize] = App::player_start_falling;
     actions[Action::MoveUp as usize] = App::player_move_up;
@@ -92,7 +97,6 @@ const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     used[Action::MouseLeftPressed as usize] = true;
     used[Action::MouseLeftReleased as usize] = true;
     used[Action::MouseLeftHold as usize] = true;
-    used[Action::ToggleWallShader as usize] = true;
     used[Action::PlaceCheckPoint as usize] = true;
     used[Action::StartFalling as usize] = true;
     used[Action::MoveUp as usize] = true;
@@ -173,7 +177,6 @@ struct App
     collectibles: CollectibleManager,
     rope_extending: bool,
     rope_extending_toggle: no_if::button::Button,
-    current_wall_shader: usize,
     decorations: DecorationSpawner,
     hazards: HazardSpawner,
     game_state: GameState,
@@ -188,7 +191,10 @@ struct App
     fade_alpha: f32,
     fade_direction: f32, // +1.0 fading to black, -1.0 fading in, 0.0 nothing
     fade_speed: f32,
-    fade_pending_action: Option<ActionFn>
+    fade_pending_action: Option<ActionFn>,
+    settings_background_texture: usize,
+    wall_shader_dropdown: Dropdown,
+    settings_back_button: no_if::button::Button
 }
 
 impl App
@@ -306,20 +312,6 @@ impl App
         self.player.start_falling(direction * 800.0);
     }
 
-    fn toggle_wall_shader(&mut self, ctx: &mut UpdateContext)
-    {
-        self.current_wall_shader = (self.current_wall_shader + 1) % 3;
-
-        const LOAD_SHADER: [fn(&mut App, &mut UpdateContext); 3] =
-        [
-            App::wall_shader_cracks,
-            App::wall_shader_bands,
-            App::wall_shader_fast
-        ];
-
-        LOAD_SHADER[self.current_wall_shader](self, ctx);
-    }
-
     fn wall_shader_cracks(&mut self, ctx: &mut UpdateContext)
     {
         ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)], self.wall.get_current_shader_id());
@@ -410,6 +402,9 @@ impl App
         ctx.graphics.set_camera_pos((x_value, 0.0 - self.menu_climb * 60.0));
         self.menu_climb += ctx.dt as f32;
         self.decorations.maintain(&self.wall, Vec2::new(x_value, -self.menu_climb*60.0), -1.0, 400.0, 720.0, 20);
+
+        self.wall_shader_dropdown.update(ctx.input);
+        self.settings_back_button.update(ctx.input);
     }
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
@@ -479,6 +474,13 @@ impl App
     {
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
+
+        render_ctx.graphics.renderer.draw_texture_ui(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1083.0, 586.0), 0.0), self.settings_background_texture, 0, 0);
+        self.wall_shader_dropdown.draw(render_ctx, 1);
+
+        self.settings_back_button.draw(render_ctx, 1, 0);
+
+        render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Wall look:", (190.0, 210.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
     }
 
     fn draw_world(&self, render_ctx: &mut RenderContext)
@@ -591,6 +593,13 @@ impl EngineEvent for App
         self.hazards.set_warning_texture(warning_texture);
         self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling);
 
+        let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
+        self.settings_background_texture = settings_texture;
+
+        let settings_back_texture = graphics.load_texture("src/bin/game/assets/back.png", FilterMode::Linear, FilterMode::Linear);
+        self.settings_back_button.set_texture(settings_back_texture);
+        self.settings_back_button.set_atlas_rect((0.0, 0.0), (264.0, 107.0));
+
         self.blur_texture = graphics.load_texture("src/bin/game/assets/blur.png", FilterMode::Linear, FilterMode::Linear);
 
         graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
@@ -662,6 +671,15 @@ impl App
         let mut quit_button = no_if::button::Button::new((906.0, 455.0), (316.0, 116.0));
         quit_button.set_action(ButtonEvent::Click, Action::QuitGame);
 
+        let mut wall_shader_dropdown = Dropdown::new((165.0, 30.0), "Wall Shader");
+        wall_shader_dropdown.add_option("+Cracks (+if)", Action::SelectWallShaderCracks);
+        wall_shader_dropdown.add_option("Default", Action::SelectWallShaderBands);
+        wall_shader_dropdown.add_option("Simple", Action::SelectWallShaderFast);
+        wall_shader_dropdown.set_pos((370.0, 210.0));
+        wall_shader_dropdown.set_selected(1);
+
+        let mut settings_back_button = no_if::button::Button::new((205.0, 120.0), (176.0, 71.0));
+        settings_back_button.set_action(ButtonEvent::Click, Action::BackToMainMenu);
 
         Self
         {
@@ -673,7 +691,6 @@ impl App
             collectibles,
             rope_extending: true,
             rope_extending_toggle,
-            current_wall_shader: 1,
             decorations: DecorationSpawner::new(),
             hazards: HazardSpawner::new(3.0, 6.0),
             game_state: GameState::MainMenu,
@@ -688,7 +705,10 @@ impl App
             fade_alpha: 0.0,
             fade_direction: 0.0,
             fade_speed: 3.5,
-            fade_pending_action: None
+            fade_pending_action: None,
+            settings_background_texture: 0,
+            wall_shader_dropdown,
+            settings_back_button
         }
     }
 }
@@ -701,7 +721,6 @@ pub fn register_keys(input: &mut Input)
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
-    input.add_key_binding(Key::Tab, Some(Action::ToggleWallShader), None, None);
 
     input.add_key_binding(Key::Escape, Some(Action::Escape), None, None);
 }
