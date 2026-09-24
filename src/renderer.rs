@@ -931,6 +931,41 @@ impl Renderer
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
 
+    // no anti-aliasing right now
+    pub fn draw_rect_outline(&mut self, center: (f32, f32), size: (f32, f32), thickness: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    {
+        let half = (size.0 * 0.5, size.1 * 0.5);
+        let t = thickness.min(half.0).min(half.1);
+        let inner_height = size.1 - 2.0 * t;
+
+        let edges =
+        [
+            ((0.0, -half.1 + t * 0.5), (size.0, t)), // top
+            ((0.0,  half.1 - t * 0.5), (size.0, t)), // bottom
+            ((-half.0 + t * 0.5, 0.0), (t, inner_height)), // left
+            (( half.0 - t * 0.5, 0.0), (t, inner_height)), // right
+        ];
+
+        let cos = rotation.cos();
+        let sin = rotation.sin();
+
+        let material = Arc::new(Material::color(color, shader_id));
+
+        for (offset, edge_size) in edges
+        {
+            let rotated = (offset.0 * cos - offset.1 * sin, offset.0 * sin + offset.1 * cos);
+            let pos = (center.0 + rotated.0, center.1 + rotated.1);
+
+            let transform = match space
+            {
+                CoordSpace::World => self.matrix(pos, edge_size, rotation),
+                CoordSpace::Screen => self.ui_matrix(pos, edge_size, rotation),
+            };
+
+            self.draw_commands.push(DrawCommand { mesh_id: 0, transform, z_index, material: Arc::clone(&material), layer, uv_rect: FULL_UV_RECT });
+        }
+    }
+
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
