@@ -5,7 +5,7 @@ pub mod collectible;
 pub mod decorations;
 pub mod hazard;
 
-use engine::{no_if::drop_down::Dropdown, utility::DrawLayer, *};
+use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
 use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, player::Player, rope::Rope, wall::Wall};
 use rand::Rng;
@@ -194,7 +194,8 @@ struct App
     fade_pending_action: Option<ActionFn>,
     settings_background_texture: usize,
     wall_shader_dropdown: Dropdown,
-    settings_back_button: no_if::button::Button
+    settings_back_button: no_if::button::Button,
+    fullscreen_checkbox: Checkbox
 }
 
 impl App
@@ -204,6 +205,7 @@ impl App
     fn toggle_fullscreen(&mut self, ctx: &mut UpdateContext)
     {
         ctx.context.toggle_fullscreen();
+        self.fullscreen_checkbox.set_checked(ctx.context.is_fullscreen());
     }
 
     fn mouse_left_pressed(&mut self, _ctx: &mut UpdateContext)
@@ -405,6 +407,8 @@ impl App
 
         self.wall_shader_dropdown.update(ctx.input);
         self.settings_back_button.update(ctx.input);
+
+        self.fullscreen_checkbox.update(ctx.input);
     }
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
@@ -476,11 +480,13 @@ impl App
         self.decorations.draw(render_ctx, 2, 0);
 
         render_ctx.graphics.renderer.draw_texture_ui(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1083.0, 586.0), 0.0), self.settings_background_texture, 0, 0);
-        self.wall_shader_dropdown.draw(render_ctx, 1);
 
         self.settings_back_button.draw(render_ctx, 1, 0);
 
-        render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Wall look:", (190.0, 210.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Wall look:", (210.0, 210.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        self.wall_shader_dropdown.draw(render_ctx, 2);
+
+        self.fullscreen_checkbox.draw(render_ctx, 1);
     }
 
     fn draw_world(&self, render_ctx: &mut RenderContext)
@@ -675,11 +681,14 @@ impl App
         wall_shader_dropdown.add_option("+Cracks (+if)", Action::SelectWallShaderCracks);
         wall_shader_dropdown.add_option("Default", Action::SelectWallShaderBands);
         wall_shader_dropdown.add_option("Simple", Action::SelectWallShaderFast);
-        wall_shader_dropdown.set_pos((370.0, 210.0));
+        wall_shader_dropdown.set_pos((390.0, 210.0));
         wall_shader_dropdown.set_selected(1);
 
         let mut settings_back_button = no_if::button::Button::new((205.0, 120.0), (176.0, 71.0));
         settings_back_button.set_action(ButtonEvent::Click, Action::BackToMainMenu);
+
+        let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
+        fullscreen_checkbox.set_pos((162.0, 265.0));
 
         Self
         {
@@ -708,7 +717,8 @@ impl App
             fade_pending_action: None,
             settings_background_texture: 0,
             wall_shader_dropdown,
-            settings_back_button
+            settings_back_button,
+            fullscreen_checkbox
         }
     }
 }
