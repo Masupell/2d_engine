@@ -50,6 +50,11 @@ impl Context
         self.pending_actions.push(ContextAction::ToggleFullscreen(fullscreen));
     }
 
+    pub fn is_fullscreen(&self) -> bool
+    {
+        self.fullscreen
+    }
+
     pub fn toggle_vsync(&mut self)
     {
         self.vsync = !self.vsync;
