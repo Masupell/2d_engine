@@ -111,9 +111,11 @@ const fn paused_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     let (mut actions, mut used) = base_table();
     actions[Action::Escape as usize] = App::resume_game;
     actions[Action::ResumeGame as usize] = App::resume_game;
-    actions[Action::RestartGame as usize] = App::restart_game;
+    actions[Action::BackToMainMenu as usize] = App::back_to_main_menu;
+    actions[Action::RestartGame as usize] = App::game_restart_transition;
     used[Action::Escape as usize] = true;
     used[Action::ResumeGame as usize] = true;
+    used[Action::BackToMainMenu as usize] = true;
     used[Action::RestartGame as usize] = true;
     (actions, used)
 }
@@ -121,7 +123,7 @@ const fn paused_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 const fn dead_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
     let (mut actions, mut used) = base_table();
-    actions[Action::RestartGame as usize] = App::restart_game;
+    actions[Action::RestartGame as usize] = App::game_restart_transition;
     used[Action::RestartGame as usize] = true;
     (actions, used)
 }
@@ -176,7 +178,6 @@ struct App
     wall: Wall,
     collectibles: CollectibleManager,
     rope_extending: bool,
-    rope_extending_toggle: no_if::button::Button,
     decorations: DecorationSpawner,
     hazards: HazardSpawner,
     game_state: GameState,
@@ -195,7 +196,9 @@ struct App
     settings_background_texture: usize,
     wall_shader_dropdown: Dropdown,
     settings_back_button: no_if::button::Button,
-    fullscreen_checkbox: Checkbox
+    fullscreen_checkbox: Checkbox,
+    pause_menu_button: no_if::button::Button,
+    pause_restart_button: no_if::button::Button
 }
 
 impl App
@@ -436,13 +439,15 @@ impl App
         const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
         HIT_TABLE[player_hit as usize](self, knockback_dir);
 
-        self.rope_extending_toggle.update(update_ctx.input);
-
         const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
         DEATH_TABLE[self.player.is_beyond_recovery() as usize * (1-(self.game_state == GameState::Dead) as usize)](self, update_ctx);
     }
 
-    fn update_pause_menu(&mut self, _ctx: &mut UpdateContext) {}
+    fn update_pause_menu(&mut self, ctx: &mut UpdateContext)
+    {
+        self.pause_menu_button.update(ctx.input);
+        self.pause_restart_button.update(ctx.input);
+    }
 
     fn update_dead(&mut self, ctx: &mut UpdateContext)
     {
@@ -503,18 +508,10 @@ impl App
     {
         let score_text = format!("Score: {}", self.player.score);
         let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
-        let rope_text = format!("Rope left: {}m\ntest newline?", self.player.rope_reserve/200.0);
-        let (top_left, width, height) = render_ctx.graphics.renderer.text_bounds(&score_text, (5.0, 5.0), 48.0);
-        let center = (top_left.0 + width * 0.5, top_left.1 + height * 0.5);
-        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 0.0, 1.0], 4, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 0.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
         render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 53.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
         render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 101.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
-        let (top_left, width, height) = render_ctx.graphics.renderer.text_bounds(&rope_text, (5.0, 101.0), 48.0);
-        let center = (top_left.0 + width * 0.5, top_left.1 + height * 0.5);
-        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix(center, (width, height), 0.0), [0.0, 1.0, 1.0, 1.0], 4, 0);
-
-        self.rope_extending_toggle.draw(render_ctx, 5, 0);
     }
 
     fn draw_playing(&self, render_ctx: &mut RenderContext)
@@ -527,9 +524,9 @@ impl App
     {
         self.draw_world(render_ctx);
 
-        // render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
-
-        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        self.pause_menu_button.draw(render_ctx, 1, 0);
+        self.pause_restart_button.draw(render_ctx, 1, 0);
     }
 
     fn draw_dead(&self, render_ctx: &mut RenderContext)
@@ -576,16 +573,17 @@ impl EngineEvent for App
         let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
         self.wall.set_border_right_texture(wall_border_texture);
 
-        let rope_toggle_button_texture = graphics.load_texture("src/image/button.png", FilterMode::Linear, FilterMode::Linear);
-        self.rope_extending_toggle.set_texture(rope_toggle_button_texture);
-        self.rope_extending_toggle.set_atlas_rect((0.0, 0.0), (200.0, 100.0));
-        self.restart_button.set_texture(rope_toggle_button_texture);
-        self.restart_button.set_atlas_rect((0.0, 0.0), (200.0, 100.0));
         let menu_button = graphics.load_texture("src/bin/game/assets/menu_button.png", FilterMode::Linear, FilterMode::Linear);
         self.setting_button.set_texture(menu_button);
         self.setting_button.set_atlas_rect((0.0, 0.0), (316.0, 116.0));
         self.quit_button.set_texture(menu_button);
         self.quit_button.set_atlas_rect((0.0, 116.0), (316.0, 116.0));
+
+        let pause_buttons_texture = graphics.load_texture("src/bin/game/assets/pause_button.png", FilterMode::Linear, FilterMode::Linear);
+        self.pause_menu_button.set_texture(pause_buttons_texture);
+        self.pause_menu_button.set_atlas_rect((0.0, 0.0), (247.0, 92.0));
+        self.pause_restart_button.set_texture(pause_buttons_texture);
+        self.pause_restart_button.set_atlas_rect((0.0, 92.0), (247.0, 92.0));
 
         let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
         self.decorations.set_texture(decorations_texture);
@@ -665,8 +663,6 @@ impl App
         let player = Player::new(Vec2::new(0.0, 0.0), 128.0, 128.0, 30.0_f32.to_radians());
         let rope = Rope::new(Vec2::new(0.0, 0.0));
         let collectibles = CollectibleManager::new();
-        let mut rope_extending_toggle = no_if::button::Button::new((10.0, 202.0), (100.0, 50.0));
-        rope_extending_toggle.set_action(ButtonEvent::Click, Action::ToggleRopeExtending);
 
         let mut restart_button = no_if::button::Button::new((590.0, 350.0), (100.0, 50.0));
         restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
@@ -690,6 +686,12 @@ impl App
         let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
         fullscreen_checkbox.set_pos((162.0, 265.0));
 
+        let mut pause_menu_button = no_if::button::Button::new((640.0, 320.0), (247.0, 92.0));
+        pause_menu_button.set_action(ButtonEvent::Click, Action::BackToMainMenu);
+
+        let mut pause_restart_button = no_if::button::Button::new((640.0, 440.0), (247.0, 92.0));
+        pause_restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
+
         Self
         {
             x: 0.0,
@@ -699,7 +701,6 @@ impl App
             wall: Wall::new(1280.0*2.0),
             collectibles,
             rope_extending: true,
-            rope_extending_toggle,
             decorations: DecorationSpawner::new(),
             hazards: HazardSpawner::new(3.0, 6.0),
             game_state: GameState::MainMenu,
@@ -718,7 +719,9 @@ impl App
             settings_background_texture: 0,
             wall_shader_dropdown,
             settings_back_button,
-            fullscreen_checkbox
+            fullscreen_checkbox,
+            pause_menu_button,
+            pause_restart_button
         }
     }
 }
@@ -731,8 +734,10 @@ pub fn register_keys(input: &mut Input)
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
+    input.add_key_binding(Key::KeyE, Some(Action::ToggleRopeExtending), None, None);
 
     input.add_key_binding(Key::Escape, Some(Action::Escape), None, None);
+
 }
 
 fn main()
