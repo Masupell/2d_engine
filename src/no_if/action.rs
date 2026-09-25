@@ -17,6 +17,7 @@ pub enum Action
     MoveUp,
     MoveLeft,
     MoveRight,
+    Dash,
 
     ToggleRopeExtending,
     // ToggleAnchorFalling
@@ -32,4 +33,4 @@ pub enum Action
     SelectWallShaderBands,
     SelectWallShaderFast
 }
-impl Action { pub const COUNT: usize = 20; }
+impl Action { pub const COUNT: usize = 21; }

@@ -84,25 +84,21 @@ const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
 {
     let (mut actions, mut used) = base_table();
     actions[Action::Escape as usize] = App::pause_game;
-    actions[Action::MouseLeftPressed as usize] = App::mouse_left_pressed;
-    actions[Action::MouseLeftReleased as usize] = App::mouse_left_released;
-    actions[Action::MouseLeftHold as usize] = App::mouse_left_hold;
     actions[Action::PlaceCheckPoint as usize] = App::player_place_checkpoint;
     actions[Action::StartFalling as usize] = App::player_start_falling;
     actions[Action::MoveUp as usize] = App::player_move_up;
     actions[Action::MoveLeft as usize] = App::player_move_left;
     actions[Action::MoveRight as usize] = App::player_move_right;
     actions[Action::ToggleRopeExtending as usize] = App::toggle_rope_extending;
+    actions[Action::Dash as usize] = App::player_dash;
     used[Action::Escape as usize] = true;
-    used[Action::MouseLeftPressed as usize] = true;
-    used[Action::MouseLeftReleased as usize] = true;
-    used[Action::MouseLeftHold as usize] = true;
     used[Action::PlaceCheckPoint as usize] = true;
     used[Action::StartFalling as usize] = true;
     used[Action::MoveUp as usize] = true;
     used[Action::MoveLeft as usize] = true;
     used[Action::MoveRight as usize] = true;
     used[Action::ToggleRopeExtending as usize] = true;
+    used[Action::Dash as usize] = true;
     (actions, used)
 }
 
@@ -210,22 +206,6 @@ impl App
         ctx.context.toggle_fullscreen();
         self.fullscreen_checkbox.set_checked(ctx.context.is_fullscreen());
     }
-
-    fn mouse_left_pressed(&mut self, _ctx: &mut UpdateContext)
-    {
-
-    }
-
-    fn mouse_left_released(&mut self, _ctx: &mut UpdateContext)
-    {
-
-    }
-
-    fn mouse_left_hold(&mut self, _ctx: &mut UpdateContext)
-    {
-
-    }
-
 
     fn start_game(&mut self, ctx: &mut UpdateContext)
     {
@@ -376,6 +356,11 @@ impl App
     {
         let used = USED_TABLE[self.game_state as usize];
         input.any_free_press(|action| used[action as usize])
+    }
+
+    fn player_dash(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.player.dash();
     }
 }
 
@@ -734,6 +719,7 @@ pub fn register_keys(input: &mut Input)
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
     input.add_key_binding(Key::KeyD, None, None, Some(Action::MoveRight));
     input.add_key_binding(Key::KeyE, Some(Action::ToggleRopeExtending), None, None);
+    input.add_key_binding(Key::ShiftLeft, Some(Action::Dash), None, None);
 
     input.add_key_binding(Key::Escape, Some(Action::Escape), None, None);
 

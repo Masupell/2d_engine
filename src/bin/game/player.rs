@@ -1,5 +1,10 @@
 use engine::{no_if::vector::Vec2, *};
 
+
+const JIGGLE_DURATION: f32 = 0.3;
+const JIGGLE_FREQUENCY: f32 = 60.0;
+const JIGGLE_AMPLITUDE: f32 = 8.0;
+
 // Climbing: Move up, left and right
 // Falling: Swing using left and right, press up when at bottom, to climb again
 #[derive(Copy, Clone, PartialEq)]
@@ -48,6 +53,14 @@ pub struct Player
     score_progress: f32,
     highest_y: f32,
     actions: [Option<Action>; PlayerEvent::COUNT],
+
+    pub dash: i32, // amounts of dashes at once
+    pub dash_speed: f32,
+    pub dash_duration: f32,
+    dash_requested: bool,
+    dash_dir: Vec2,
+    dash_timer: f32,
+    jiggle_timer: f32
 }
 
 impl Player
@@ -84,7 +97,14 @@ impl Player
             score: 0,
             score_progress: 0.0,
             highest_y: center.y,
-            actions: [None; PlayerEvent::COUNT]
+            actions: [None; PlayerEvent::COUNT],
+            dash: 2,
+            dash_speed: 1400.0,
+            dash_duration: 0.15,
+            dash_requested: false,
+            dash_dir: Vec2::ZERO,
+            dash_timer: 0.0,
+            jiggle_timer: 0.0
         }
     }
 
@@ -111,11 +131,54 @@ impl Player
         (should_grow, segment_length * (should_grow as u32 as f32))
     }
 
+    pub fn dash(&mut self)
+    {
+        self.dash_requested = true;
+    }
+
+    pub fn add_dash(&mut self, amount: i32)
+    {
+        self.dash += amount;
+    }
+
+    pub fn dash_request(&mut self)
+    {
+        let input_len = self.move_input.length();
+        let dir = self.move_input * (1.0/input_len.max(0.0001));
+        let has_dir = input_len > 0.0;
+        let has_charge = self.dash > 0;
+
+        let start = self.dash_requested & has_dir & has_charge;
+        let denied = self.dash_requested & !has_charge;
+
+        let start_i = start as i32;
+        let start_f = start_i as f32;
+        let denied_f = denied as u32 as f32;
+
+        self.dash -= start_i;
+        self.dash_dir = dir * start_f + self.dash_dir * (1.0 - start_f);
+        self.dash_timer = self.dash_duration * start_f + self.dash_timer * (1.0 - start_f);
+        self.jiggle_timer = JIGGLE_DURATION * denied_f + self.jiggle_timer * (1.0 - denied_f);
+
+        self.dash_requested = false;
+    }
+
+    fn apply_dash(&mut self, dt: f32)
+    {
+        let step = dt.min(self.dash_timer);
+        self.collision.change_pos(self.dash_dir * (self.dash_speed * step));
+        self.dash_timer -= step;
+    }
+
     pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
+        self.dash_request();
+        self.apply_dash(dt);
+
         STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds, nearby_solids);
         self.update_tilt(dt);
         self.move_input = Vec2::ZERO;
+        self.jiggle_timer = (self.jiggle_timer - dt).max(0.0);
 
         let upward = (self.highest_y - self.collision.pos.y).max(0.0);
         self.highest_y = self.highest_y.min(self.collision.pos.y);
@@ -248,9 +311,17 @@ impl Player
         self.last_deceleration > self.max_survivable_deceleration
     }
 
+    fn jiggle_offset(&self) -> f32
+    {
+        let fade = self.jiggle_timer / JIGGLE_DURATION;
+        (self.jiggle_timer * JIGGLE_FREQUENCY).sin() * JIGGLE_AMPLITUDE * fade
+    }
+
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.collision.pos.x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
+        let draw_x = self.collision.pos.x + self.jiggle_offset();
+
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((draw_x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
         render_ctx.graphics.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
     }
 
@@ -289,6 +360,11 @@ impl Player
         self.score = 0;
         self.score_progress = 0.0;
         self.highest_y = 0.0;
+        self.dash = 2;
+        self.dash_requested = false;
+        self.dash_dir = Vec2::ZERO;
+        self.dash_timer = 0.0;
+        self.jiggle_timer = 0.0;
     }
 }
 
