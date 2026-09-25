@@ -4,10 +4,11 @@ pub mod wall;
 pub mod collectible;
 pub mod decorations;
 pub mod hazard;
+pub mod dash_hud;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, dash_hud::DashHud, player::Player, rope::Rope, wall::Wall};
 use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -194,7 +195,9 @@ struct App
     settings_back_button: no_if::button::Button,
     fullscreen_checkbox: Checkbox,
     pause_menu_button: no_if::button::Button,
-    pause_restart_button: no_if::button::Button
+    pause_restart_button: no_if::button::Button,
+    dash_hud: DashHud,
+    elapsed: f32
 }
 
 impl App
@@ -239,6 +242,7 @@ impl App
     {
         self.player.reset();
         self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
+        self.dash_hud.reset();
 
         self.start_game(ctx);
     }
@@ -408,6 +412,15 @@ impl App
         self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, update_ctx.dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
 
+        // world to screen
+        let camera = update_ctx.graphics.renderer.camera_pos;
+        let to_screen = (1280.0 * 0.5 - camera.0, 720.0 * 0.5 - camera.1);
+
+        let dash_hud = &mut self.dash_hud;
+        self.collectibles.collected().iter().filter(|e| e.kind == CollectibleKind::DashOrb).for_each(|e| dash_hud.launch((e.pos.x + to_screen.0, e.pos.y + to_screen.1), e.size.1));
+        self.dash_hud.update(update_ctx.dt as f32);
+
+
         const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext, f32); 2] = [App::skip_rope_growth, App::do_rope_growth];
         let (has_rope, difference) = self.player.try_consume_rope_for_growth(rope_anchor, rope_max_reach, self.rope.segment_length);
         let should_grow = has_rope & self.rope_extending;
@@ -483,7 +496,7 @@ impl App
     {
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
-        self.collectibles.draw(render_ctx, 2, 0);
+        self.collectibles.draw(render_ctx, 2);
         self.player.draw(render_ctx, 3, 0);
         self.rope.draw(render_ctx, 3, 1);
         self.hazards.draw(render_ctx, 3, 0);
@@ -494,9 +507,10 @@ impl App
         let score_text = format!("Score: {}", self.player.score);
         let current_height_text = format!("Height: {:.2}m", -self.player.collision.pos.y/200.0);
         let rope_text = format!("Rope left: {}m", self.player.rope_reserve/200.0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 53.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
-        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 101.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &score_text, (5.0, 5.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &current_height_text, (5.0, 53.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        render_ctx.graphics.renderer.draw_text(render_ctx.graphics.device, render_ctx.graphics.queue, &rope_text, (5.0, 101.0), 48.0, [1.0, 1.0, 1.0, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        self.dash_hud.draw(render_ctx, self.player.dash_count(), self.player.max_dashes, 2);
     }
 
     fn draw_playing(&self, render_ctx: &mut RenderContext)
@@ -547,12 +561,6 @@ impl EngineEvent for App
 
         let player_texture = graphics.load_texture("src/bin/game/assets/player.png", FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
-
-        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
-        let score_texture = graphics.load_texture("src/bin/game/assets/score.png", FilterMode::Linear, FilterMode::Linear);
-        self.collectibles.add_kind(CollectibleKind::RopeCoil, rope_coil_texture, (224.0, 224.0), 200.0, 0.77);
-        self.collectibles.add_kind(CollectibleKind::Score, score_texture, (256.0, 326.0), 5.0, 0.23);
-        self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
 
         let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
         self.wall.set_border_right_texture(wall_border_texture);
@@ -611,10 +619,24 @@ impl EngineEvent for App
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
+
+
+        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("orb_time", UniformType::Float)]) as u8;
+        self.dash_hud.set_shader(dash_orb_shader);
+
+        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
+        let score_texture = graphics.load_texture("src/bin/game/assets/score.png", FilterMode::Linear, FilterMode::Linear);
+        self.collectibles.add_kind(CollectibleKind::RopeCoil, rope_coil_texture, (224.0, 224.0), 0, 300.0, 0.7);
+        self.collectibles.add_kind(CollectibleKind::Score, score_texture, (256.0, 326.0), 0, 5.0, 0.1);
+        self.collectibles.add_kind(CollectibleKind::DashOrb, 0, (1.0, 1.0), dash_orb_shader, 1.0, 0.2);
+        self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
+        self.elapsed += update_ctx.dt as f32;
+        update_ctx.graphics.set_uniform("orb_time", UniformValue::Float(self.elapsed));
+
         GAME_UPDATE_TABLE[self.game_state as usize](self, update_ctx);
         self.update_fade_transition(update_ctx);
 
@@ -705,7 +727,9 @@ impl App
             settings_back_button,
             fullscreen_checkbox,
             pause_menu_button,
-            pause_restart_button
+            pause_restart_button,
+            dash_hud: DashHud::new(),
+            elapsed: 0.0
         }
     }
 }

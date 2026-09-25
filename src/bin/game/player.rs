@@ -54,6 +54,7 @@ pub struct Player
     highest_y: f32,
     actions: [Option<Action>; PlayerEvent::COUNT],
 
+    pub max_dashes: i32,
     pub dash: i32, // amounts of dashes at once
     pub dash_speed: f32,
     pub dash_duration: f32,
@@ -98,7 +99,8 @@ impl Player
             score_progress: 0.0,
             highest_y: center.y,
             actions: [None; PlayerEvent::COUNT],
-            dash: 2,
+            max_dashes: 3,
+            dash: 3,
             dash_speed: 1400.0,
             dash_duration: 0.15,
             dash_requested: false,
@@ -138,7 +140,17 @@ impl Player
 
     pub fn add_dash(&mut self, amount: i32)
     {
-        self.dash += amount;
+        self.dash = (self.dash + amount).min(self.max_dashes);
+    }
+
+    pub fn can_gain_dash(&self) -> bool
+    {
+        self.dash < self.max_dashes
+    }
+
+    pub fn dash_count(&self) -> i32
+    {
+        self.dash
     }
 
     pub fn dash_request(&mut self)
@@ -360,7 +372,7 @@ impl Player
         self.score = 0;
         self.score_progress = 0.0;
         self.highest_y = 0.0;
-        self.dash = 2;
+        self.dash = 3;
         self.dash_requested = false;
         self.dash_dir = Vec2::ZERO;
         self.dash_timer = 0.0;

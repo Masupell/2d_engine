@@ -13,7 +13,7 @@ const BASE_SIZE: f32 = 110.0;
 
 const DESPAWN_MARGIN: f32 = 1000.0;
 
-const TARGET_ACTIVE: usize = 13; // Total amount of collectibles
+const TARGET_ACTIVE: usize = 15; // Total amount of collectibles
 const SPAWN_STD_DEV: f32 = 853.0;
 const SPAWN_ABOVE_SCREEN: f32 = 500.0;
 const WALL_MARGIN: f32 = 40.0;
@@ -22,9 +22,10 @@ const WALL_MARGIN: f32 = 40.0;
 pub enum CollectibleKind
 {
     RopeCoil,
-    Score
+    Score,
+    DashOrb
 }
-impl CollectibleKind { pub const COUNT: usize = 2; }
+impl CollectibleKind { pub const COUNT: usize = 3; }
 
 #[derive(Copy, Clone, PartialEq)]
 enum CollectibleState
@@ -59,8 +60,42 @@ type CollectEffectFn = fn(&mut Player, f32);
 const COLLECT_EFFECT_TABLE: [CollectEffectFn; CollectibleKind::COUNT] =
 [
     Collectible::apply_rope_coil,
-    Collectible::add_score_point
+    Collectible::add_score_point,
+    Collectible::apply_dash_orb
 ];
+
+type CanCollectFn = fn(&Player) -> bool;
+
+const CAN_COLLECT_TABLE: [CanCollectFn; CollectibleKind::COUNT] =
+[
+    Collectible::always_collectable,
+    Collectible::always_collectable,
+    Player::can_gain_dash
+];
+
+const NEXT_COLLECT_STATE: [CollectibleState; CollectibleKind::COUNT] =
+[
+    CollectibleState::Collecting,
+    CollectibleState::Collecting,
+    CollectibleState::Inactive
+];
+
+type TryCollectFn = fn(&mut Collectible, &mut Player, &mut Vec<CollectEvent>);
+
+const TRY_COLLECT_TABLE: [TryCollectFn; 2] =
+[
+    Collectible::skip_collect,
+    Collectible::collect
+];
+
+// What got collected this frame
+#[derive(Copy, Clone)]
+pub struct CollectEvent
+{
+    pub kind: CollectibleKind,
+    pub pos: Vec2, // world position at collection
+    pub size: (f32, f32) // draw size at collection
+}
 
 pub struct Collectible
 {
@@ -69,9 +104,10 @@ pub struct Collectible
     pos: Vec2,
     value: f32,
     texture_id: usize,
+    shader_id: u8,
+    aspect: f32,
     idle_phase: f32,
     collect_timer: f32,
-    aspect: f32
 }
 
 impl Collectible
@@ -85,22 +121,24 @@ impl Collectible
             pos: Vec2::ZERO,
             value: 0.0,
             texture_id: 0,
+            shader_id: 0,
+            aspect: 1.0,
             idle_phase: 0.0,
-            collect_timer: 0.0,
-            aspect: 1.0
+            collect_timer: 0.0
         }
     }
 
-    fn activate(&mut self, kind: CollectibleKind, pos: Vec2, value: f32, texture_id: usize, aspect: f32)
+    fn activate(&mut self, entry: &SpawnEntry, pos: Vec2)
     {
-        self.kind = kind;
+        self.kind = entry.kind;
         self.pos = pos;
-        self.value = value;
-        self.texture_id = texture_id;
+        self.value = entry.value;
+        self.texture_id = entry.texture_id;
+        self.shader_id = entry.shader_id;
+        self.aspect = entry.aspect;
         self.state = CollectibleState::Idle;
         self.idle_phase = 0.0;
         self.collect_timer = 0.0;
-        self.aspect = aspect;
     }
 
     fn deactivate(&mut self)
@@ -129,13 +167,17 @@ impl Collectible
         self.state = NEXT_STATE[finished as usize];
     }
 
-    fn collect(&mut self, player: &mut Player)
+    fn skip_collect(&mut self, _player: &mut Player, _events: &mut Vec<CollectEvent>) {}
+    fn collect(&mut self, player: &mut Player, events: &mut Vec<CollectEvent>)
     {
         COLLECT_EFFECT_TABLE[self.kind as usize](player, self.value);
+        events.push(CollectEvent { kind: self.kind, pos: self.pos, size: self.draw_size() });
 
-        self.state = CollectibleState::Collecting;
+        self.state = NEXT_COLLECT_STATE[self.kind as usize];
         self.collect_timer = 0.0;
     }
+
+    fn always_collectable(_player: &Player) -> bool { true }
 
     fn apply_rope_coil(player: &mut Player, amount: f32)
     {
@@ -145,6 +187,11 @@ impl Collectible
     fn add_score_point(player: &mut Player, amount: f32)
     {
         player.score += amount as i32;
+    }
+
+    fn apply_dash_orb(player: &mut Player, amount: f32)
+    {
+        player.add_dash(amount as i32);
     }
 
     fn current_scale(&self) -> f32
@@ -167,13 +214,17 @@ impl Collectible
         (1.0 - t + pop).max(0.0)
     }
 
-    fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
+    fn draw_size(&self) -> (f32, f32)
     {
         let scale = self.current_scale();
         let fit = BASE_SIZE * scale / self.aspect.max(1.0);
-        let size = (fit * self.aspect, fit);
+        (fit * self.aspect, fit)
+    }
 
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, 0.0), self.texture_id, z_index, shader_id);
+    fn draw(&self, render_ctx: &mut RenderContext, z_index: u32)
+    {
+        let size = self.draw_size();
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, 0.0), self.texture_id, z_index, self.shader_id);
     }
 }
 
@@ -182,6 +233,7 @@ struct SpawnEntry
 {
     kind: CollectibleKind,
     texture_id: usize,
+    shader_id: u8,
     aspect: f32,
     value: f32,
     weight: f32,  // spawnchance
@@ -192,6 +244,7 @@ pub struct CollectibleManager
 {
     pool: Vec<Collectible>,
     entries: Vec<SpawnEntry>,
+    events: Vec<CollectEvent>
 }
 
 impl CollectibleManager
@@ -202,20 +255,17 @@ impl CollectibleManager
         {
             pool: Vec::new(),
             entries: Vec::new(),
+            events: Vec::new()
         }
     }
 
-    // spawn_chance: 0.0..=1.0, share of all spawns this kind gets.
-    // Chances are normalized against each other, so they don't have to sum to exactly 1.0.
-    // value: what the collect effect receives (rope in cm, score points, ...)
     // spawn_chance from 0.0..=1.0, percentage of spawns
-    pub fn add_kind(&mut self, kind: CollectibleKind, texture_id: usize, texture_size: (f32, f32), value: f32, spawn_chance: f32)
+    pub fn add_kind(&mut self, kind: CollectibleKind, texture_id: usize, texture_size: (f32, f32), shader_id: u8, value: f32, spawn_chance: f32)
     {
         let aspect = texture_size.0 / texture_size.1;
-        self.entries.push(SpawnEntry { kind, texture_id, aspect, value, weight: spawn_chance.max(0.0), credit: 0.0 });
+        self.entries.push(SpawnEntry { kind, texture_id, shader_id, aspect, value, weight: spawn_chance.max(0.0), credit: 0.0 });
     }
 
-    // Initial fill, spread over a bigger area than the regular refill
     pub fn initialize_spawn(&mut self, wall: &Wall, player_pos: Vec2, count: usize, spread: f32)
     {
         let count = count * self.can_spawn() as usize;
@@ -233,15 +283,27 @@ impl CollectibleManager
         (0..deficit).for_each(|_| self.spawn_next(wall, player_pos, spread));
     }
 
-    pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
+    pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32)
     {
-        self.pool.iter().filter(|c| (c.state as usize) > 0).for_each(|c| c.draw(render_ctx, z_index, shader_id));
+        self.pool.iter().filter(|c| (c.state as usize) > 0).for_each(|c| c.draw(render_ctx, z_index));
     }
 
     pub fn check_collection(&mut self, player: &mut Player, collect_radius: f32)
     {
+        self.events.clear();
+
         let player_pos = player.collision.pos;
-        self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & ((c.pos - player_pos).length() < collect_radius)).for_each(|c| c.collect(player));
+        let events = &mut self.events;
+        self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & ((c.pos - player_pos).length() < collect_radius)).for_each(|c|
+        {
+            let allowed = CAN_COLLECT_TABLE[c.kind as usize](player);
+            TRY_COLLECT_TABLE[allowed as usize](c, player, events);
+        });
+    }
+
+    pub fn collected(&self) ->&[CollectEvent]
+    {
+        &self.events
     }
 
     fn total_weight(&self) -> f32
@@ -282,7 +344,7 @@ impl CollectibleManager
             self.pool.push(Collectible::inactive());
             self.pool.len() - 1
         });
-        self.pool[index].activate(entry.kind, pos, entry.value, entry.texture_id, entry.aspect);
+        self.pool[index].activate(&entry, pos);
     }
 
     pub fn amount(&self) -> usize
@@ -296,7 +358,7 @@ impl CollectibleManager
     }
 }
 
-// Very basic spawning: gaussian around the player horizontally, somewhere above the screen vertically
+// Very basic spawning
 fn random_spawn_pos(wall: &Wall, player_pos: Vec2, std_dev: f32, spread: f32) -> Vec2
 {
     let bounds = wall.get_bounds();
