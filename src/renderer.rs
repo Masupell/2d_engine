@@ -589,7 +589,11 @@ impl Renderer
     // Small problem, when two shaders have the same name, but different value, as that will not work right now
     pub(crate) fn set_uniform(&mut self, queue: &wgpu::Queue, name: &str, value: UniformValue)
     {
-        self.uniform_values.insert(name.to_string(), value);
+        match self.uniform_values.get_mut(name)
+        {
+            Some(exisiting) => *exisiting = value,
+            None => { self.uniform_values.insert(name.to_string(), value); }
+        }
 
         for pipeline_uniforms in self.pipeline_uniforms.iter().flatten()
         {
