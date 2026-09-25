@@ -13,13 +13,18 @@ const BASE_SIZE: f32 = 110.0;
 
 const DESPAWN_MARGIN: f32 = 1000.0;
 
+const TARGET_ACTIVE: usize = 13; // Total amount of collectibles
+const SPAWN_STD_DEV: f32 = 853.0;
+const SPAWN_ABOVE_SCREEN: f32 = 500.0;
+const WALL_MARGIN: f32 = 40.0;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum CollectibleKind
 {
     RopeCoil,
+    Score
 }
-
-impl CollectibleKind { pub const COUNT: usize = 1; }
+impl CollectibleKind { pub const COUNT: usize = 2; }
 
 #[derive(Copy, Clone, PartialEq)]
 enum CollectibleState
@@ -28,7 +33,6 @@ enum CollectibleState
     Idle,
     Collecting,
 }
-
 impl CollectibleState { const COUNT: usize = 3; }
 
 type StateUpdateFn = fn(&mut Collectible, f32);
@@ -55,6 +59,7 @@ type CollectEffectFn = fn(&mut Player, f32);
 const COLLECT_EFFECT_TABLE: [CollectEffectFn; CollectibleKind::COUNT] =
 [
     Collectible::apply_rope_coil,
+    Collectible::add_score_point
 ];
 
 pub struct Collectible
@@ -66,6 +71,7 @@ pub struct Collectible
     texture_id: usize,
     idle_phase: f32,
     collect_timer: f32,
+    aspect: f32
 }
 
 impl Collectible
@@ -81,10 +87,11 @@ impl Collectible
             texture_id: 0,
             idle_phase: 0.0,
             collect_timer: 0.0,
+            aspect: 1.0
         }
     }
 
-    fn activate(&mut self, kind: CollectibleKind, pos: Vec2, value: f32, texture_id: usize)
+    fn activate(&mut self, kind: CollectibleKind, pos: Vec2, value: f32, texture_id: usize, aspect: f32)
     {
         self.kind = kind;
         self.pos = pos;
@@ -93,6 +100,7 @@ impl Collectible
         self.state = CollectibleState::Idle;
         self.idle_phase = 0.0;
         self.collect_timer = 0.0;
+        self.aspect = aspect;
     }
 
     fn deactivate(&mut self)
@@ -134,6 +142,11 @@ impl Collectible
         player.add_rope_reserve(amount);
     }
 
+    fn add_score_point(player: &mut Player, amount: f32)
+    {
+        player.score += amount as i32;
+    }
+
     fn current_scale(&self) -> f32
     {
         SCALE_TABLE[self.state as usize](self)
@@ -157,16 +170,28 @@ impl Collectible
     fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
         let scale = self.current_scale();
-        let size = (BASE_SIZE * scale, BASE_SIZE * scale);
+        let fit = BASE_SIZE * scale / self.aspect.max(1.0);
+        let size = (fit * self.aspect, fit);
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, 0.0), self.texture_id, z_index, shader_id);
     }
 }
 
+#[derive(Copy, Clone)]
+struct SpawnEntry
+{
+    kind: CollectibleKind,
+    texture_id: usize,
+    aspect: f32,
+    value: f32,
+    weight: f32,  // spawnchance
+    credit: f32  // how likely it is to actually spawn
+}
+
 pub struct CollectibleManager
 {
     pool: Vec<Collectible>,
-    texture_ids: [usize; CollectibleKind::COUNT],
+    entries: Vec<SpawnEntry>,
 }
 
 impl CollectibleManager
@@ -176,13 +201,25 @@ impl CollectibleManager
         Self
         {
             pool: Vec::new(),
-            texture_ids: [0; CollectibleKind::COUNT],
+            entries: Vec::new(),
         }
     }
 
-    pub fn set_texture(&mut self, kind: CollectibleKind, texture_id: usize)
+    // spawn_chance: 0.0..=1.0, share of all spawns this kind gets.
+    // Chances are normalized against each other, so they don't have to sum to exactly 1.0.
+    // value: what the collect effect receives (rope in cm, score points, ...)
+    // spawn_chance from 0.0..=1.0, percentage of spawns
+    pub fn add_kind(&mut self, kind: CollectibleKind, texture_id: usize, texture_size: (f32, f32), value: f32, spawn_chance: f32)
     {
-        self.texture_ids[kind as usize] = texture_id;
+        let aspect = texture_size.0 / texture_size.1;
+        self.entries.push(SpawnEntry { kind, texture_id, aspect, value, weight: spawn_chance.max(0.0), credit: 0.0 });
+    }
+
+    // Initial fill, spread over a bigger area than the regular refill
+    pub fn initialize_spawn(&mut self, wall: &Wall, player_pos: Vec2, count: usize, spread: f32)
+    {
+        let count = count * self.can_spawn() as usize;
+        (0..count).for_each(|_| self.spawn_next(wall, player_pos, spread));
     }
 
     pub fn update(&mut self, wall: &Wall, player_pos: Vec2, spread: f32, dt: f32)
@@ -191,9 +228,9 @@ impl CollectibleManager
 
         self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & (c.pos.y > player_pos.y + DESPAWN_MARGIN)).for_each(|c| c.deactivate());
 
-        let deficit = 10_usize.saturating_sub(self.active_amount());
+        let deficit = TARGET_ACTIVE.saturating_sub(self.active_amount()) * self.can_spawn() as usize;
 
-        (0..deficit).for_each(|_| self.spawn_rope_coil(wall, player_pos, 853.0, spread, 200.0));
+        (0..deficit).for_each(|_| self.spawn_next(wall, player_pos, spread));
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -207,10 +244,37 @@ impl CollectibleManager
         self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & ((c.pos - player_pos).length() < collect_radius)).for_each(|c| c.collect(player));
     }
 
-    fn spawn(&mut self, kind: CollectibleKind, pos: Vec2, value: f32)
+    fn total_weight(&self) -> f32
     {
-        let texture_id = self.texture_ids[kind as usize];
+        self.entries.iter().map(|e| e.weight).sum()
+    }
 
+    fn can_spawn(&self) -> bool
+    {
+        self.total_weight() > 0.0
+    }
+
+    // picks index based on weight, removes total weight from picked index, so it has less of a chance of being spawned next time
+    fn next_entry_index(&mut self) -> usize
+    {
+        let total = self.total_weight();
+        self.entries.iter_mut().for_each(|e| e.credit += e.weight);
+        let index = self.entries.iter().enumerate().max_by(|a, b| a.1.credit.total_cmp(&b.1.credit)).map(|(i, _)| i).unwrap_or(0);
+        self.entries[index].credit -= total;
+        index
+    }
+
+    fn spawn_next(&mut self, wall: &Wall, player_pos: Vec2, spread: f32)
+    {
+        let index = self.next_entry_index();
+        let entry = self.entries[index];
+        let pos = random_spawn_pos(wall, player_pos, SPAWN_STD_DEV, spread);
+
+        self.spawn(entry, pos);
+    }
+
+    fn spawn(&mut self, entry: SpawnEntry, pos: Vec2)
+    {
         // Either reuses the first Inactive collectible, or if no exist adds a new one
         // No filter(), to avoid borrowing issues
         let index = self.pool.iter().position(|c| c.state == CollectibleState::Inactive).unwrap_or_else(||
@@ -218,21 +282,7 @@ impl CollectibleManager
             self.pool.push(Collectible::inactive());
             self.pool.len() - 1
         });
-        self.pool[index].activate(kind, pos, value, texture_id);
-    }
-
-    // Very basic spawning
-    pub fn spawn_rope_coil(&mut self, wall: &Wall, player_pos: Vec2, std_dev: f32, spread: f32, value: f32)
-    {
-        let bounds = wall.get_bounds();
-        let margin = 40.0;
-        let mut rng = rand::rng();
-
-        let raw_x = sample_gaussian(&mut rng, player_pos.x, std_dev);
-        let x = raw_x.clamp(bounds.0 + margin, bounds.1 - margin);//rng.random_range((bounds.0 + margin)..(bounds.1 - margin)) as f32;
-        let y = player_pos.y - rng.random_range(0.0_f32..spread) - 500.0; // -500, so it spawns above screen
-
-        self.spawn(CollectibleKind::RopeCoil, Vec2::new(x, y), value);
+        self.pool[index].activate(entry.kind, pos, entry.value, entry.texture_id, entry.aspect);
     }
 
     pub fn amount(&self) -> usize
@@ -244,6 +294,19 @@ impl CollectibleManager
     {
         self.pool.iter().filter(|c| c.state == CollectibleState::Idle).count()
     }
+}
+
+// Very basic spawning: gaussian around the player horizontally, somewhere above the screen vertically
+fn random_spawn_pos(wall: &Wall, player_pos: Vec2, std_dev: f32, spread: f32) -> Vec2
+{
+    let bounds = wall.get_bounds();
+    let mut rng = rand::rng();
+
+    let raw_x = sample_gaussian(&mut rng, player_pos.x, std_dev);
+    let x = raw_x.clamp(bounds.0 + WALL_MARGIN, bounds.1 - WALL_MARGIN);
+    let y = player_pos.y - rng.random_range(0.0_f32..spread) - SPAWN_ABOVE_SCREEN;
+
+    Vec2::new(x, y)
 }
 
 // Box-muller transform

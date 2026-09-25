@@ -497,8 +497,8 @@ impl App
     fn draw_world(&self, render_ctx: &mut RenderContext)
     {
         self.wall.draw(render_ctx, 1);
-        self.collectibles.draw(render_ctx, 2, 0);
         self.decorations.draw(render_ctx, 2, 0);
+        self.collectibles.draw(render_ctx, 2, 0);
         self.player.draw(render_ctx, 3, 0);
         self.rope.draw(render_ctx, 3, 1);
         self.hazards.draw(render_ctx, 3, 0);
@@ -564,11 +564,10 @@ impl EngineEvent for App
         self.player.set_texture(player_texture);
 
         let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
-        self.collectibles.set_texture(CollectibleKind::RopeCoil, rope_coil_texture);
-        for _ in 0..10
-        {
-            self.collectibles.spawn_rope_coil(&self.wall, self.player.collision.pos, 853.0, 2000.0, 200.0); // value in cm
-        }
+        let score_texture = graphics.load_texture("src/bin/game/assets/score.png", FilterMode::Linear, FilterMode::Linear);
+        self.collectibles.add_kind(CollectibleKind::RopeCoil, rope_coil_texture, (224.0, 224.0), 200.0, 0.77);
+        self.collectibles.add_kind(CollectibleKind::Score, score_texture, (256.0, 326.0), 5.0, 0.23);
+        self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
 
         let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
         self.wall.set_border_right_texture(wall_border_texture);
