@@ -74,11 +74,15 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     actions[Action::SelectWallShaderCracks as usize] = App::wall_shader_cracks;
     actions[Action::SelectWallShaderBands as usize] = App::wall_shader_bands;
     actions[Action::SelectWallShaderFast as usize] = App::wall_shader_fast;
+    actions[Action::SelectLavaShaderComplex as usize] = App::lava_shader_complex;
+    actions[Action::SelectLavaShaderSimple as usize] = App::lava_shader_simple;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
     used[Action::SelectWallShaderCracks as usize] = true;
     used[Action::SelectWallShaderBands as usize] = true;
     used[Action::SelectWallShaderFast as usize] = true;
+    used[Action::SelectLavaShaderComplex as usize] = true;
+    used[Action::SelectLavaShaderSimple as usize] = true;
     (actions, used)
 }
 
@@ -199,7 +203,8 @@ struct App
     pause_restart_button: no_if::button::Button,
     dash_hud: DashHud,
     elapsed: f32,
-    lava: Lava
+    lava: Lava,
+    lava_shader_dropdown: Dropdown
 }
 
 impl App
@@ -325,6 +330,16 @@ impl App
         ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
     }
 
+    fn lava_shader_complex(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/lava_shader/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
+    }
+
+    fn lava_shader_simple(&mut self, ctx: &mut UpdateContext)
+    {
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/lava_shader/lava_simple.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
+    }
+
     fn wall_shader_fast(&mut self, ctx: &mut UpdateContext)
     {
         ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
@@ -404,6 +419,8 @@ impl App
 
         self.wall_shader_dropdown.update(ctx.input);
         self.settings_back_button.update(ctx.input);
+
+        self.lava_shader_dropdown.update(ctx.input);
 
         self.fullscreen_checkbox.update(ctx.input);
     }
@@ -507,7 +524,10 @@ impl App
         self.settings_back_button.draw(render_ctx, 1, 0);
 
         render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Wall look:", (210.0, 210.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
-        self.wall_shader_dropdown.draw(render_ctx, 2);
+        self.wall_shader_dropdown.draw(render_ctx, 4);
+
+        render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Lava look:", (210.0, 265.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
+        self.lava_shader_dropdown.draw(render_ctx, 2);
 
         self.fullscreen_checkbox.draw(render_ctx, 1);
     }
@@ -714,14 +734,20 @@ impl App
         let mut settings_back_button = no_if::button::Button::new((205.0, 120.0), (176.0, 71.0));
         settings_back_button.set_action(ButtonEvent::Click, Action::BackToMainMenu);
 
-        let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
-        fullscreen_checkbox.set_pos((162.0, 265.0));
-
         let mut pause_menu_button = no_if::button::Button::new((640.0, 320.0), (247.0, 92.0));
         pause_menu_button.set_action(ButtonEvent::Click, Action::BackToMainMenu);
 
         let mut pause_restart_button = no_if::button::Button::new((640.0, 440.0), (247.0, 92.0));
         pause_restart_button.set_action(ButtonEvent::Click, Action::RestartGame);
+
+        let mut lava_shader_dropdown = Dropdown::new((165.0, 30.0), "Lava Shader");
+        lava_shader_dropdown.add_option("Default", Action::SelectLavaShaderComplex);
+        lava_shader_dropdown.add_option("Simple", Action::SelectLavaShaderSimple);
+        lava_shader_dropdown.set_pos((390.0, 265.0));
+        lava_shader_dropdown.set_selected(0);
+
+        let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
+        fullscreen_checkbox.set_pos((162.0, 330.0));
 
         Self
         {
@@ -755,7 +781,8 @@ impl App
             pause_restart_button,
             dash_hud: DashHud::new(),
             elapsed: 0.0,
-            lava: Lava::new(700.0)
+            lava: Lava::new(700.0),
+            lava_shader_dropdown
         }
     }
 }

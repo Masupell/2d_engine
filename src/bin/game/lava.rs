@@ -45,6 +45,11 @@ impl Lava
         self.shader_id = shader_id;
     }
 
+    pub fn shader_id(&self) -> u8
+    {
+        self.shader_id
+    }
+
     pub fn reset(&mut self)
     {
         self.surface_y = self.start_y;

@@ -31,6 +31,9 @@ pub enum Action
 
     SelectWallShaderCracks,
     SelectWallShaderBands,
-    SelectWallShaderFast
+    SelectWallShaderFast,
+
+    SelectLavaShaderComplex,
+    SelectLavaShaderSimple
 }
-impl Action { pub const COUNT: usize = 21; }
+impl Action { pub const COUNT: usize = 23; }

@@ -36,7 +36,7 @@ impl Dropdown
             is_open: false,
             selected: 0,
             hovered: 0,
-            backgrounds: [[0.6, 0.1, 0.0, 0.9], [0.8, 0.15, 0.0, 0.9]],
+            backgrounds: [[0.6, 0.1, 0.0, 1.0], [0.8, 0.15, 0.0, 1.0]],
             text_color: [1.0, 1.0, 1.0, 1.0],
             font_size: size.1,
         }
