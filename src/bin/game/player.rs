@@ -61,7 +61,10 @@ pub struct Player
     dash_requested: bool,
     dash_dir: Vec2,
     dash_timer: f32,
-    jiggle_timer: f32
+    jiggle_timer: f32,
+
+    stun_timer: f32,
+    stun_shader: u8
 }
 
 impl Player
@@ -106,7 +109,9 @@ impl Player
             dash_requested: false,
             dash_dir: Vec2::ZERO,
             dash_timer: 0.0,
-            jiggle_timer: 0.0
+            jiggle_timer: 0.0,
+            stun_timer: 0.0,
+            stun_shader: 0
         }
     }
 
@@ -184,6 +189,10 @@ impl Player
 
     pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
+        let awake = !self.stunned();
+        self.move_input = self.move_input * (awake as u32 as f32);
+        self.dash_requested &= awake;
+
         self.dash_request();
         self.apply_dash(dt);
 
@@ -198,6 +207,8 @@ impl Player
         let point = (self.score_progress >= 200.0) as i32;
         self.score += point;
         self.score_progress -= 200.0 * point as f32;
+
+        self.stun_timer = (self.stun_timer - dt).max(0.0);
     }
 
     fn update_tilt(&mut self, dt: f32)
@@ -335,6 +346,14 @@ impl Player
 
         render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((draw_x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
         render_ctx.graphics.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
+
+        const STARS_SIZE: (f32, f32) = (150.0, 75.0);
+        let fade = (self.stun_timer / 0.3).min(1.0);
+        let head_offset = -(self.height * 0.5 + 15.0);
+        let (sin, cos) = self.collision.rotation.sin_cos();
+        let stars_pos = (self.collision.pos.x - head_offset * sin, self.collision.pos.y + head_offset * cos);
+
+        render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.matrix(stars_pos, STARS_SIZE, self.collision.rotation), 0, [1.0, 1.0, 1.0, fade], z_index+1, self.stun_shader);
     }
 
     pub fn set_texture(&mut self, texture_id: usize)
@@ -360,6 +379,21 @@ impl Player
         self.width.min(self.height) * 0.5
     }
 
+    pub fn stun(&mut self, duration: f32)
+    {
+        self.stun_timer = self.stun_timer.max(duration);
+    }
+
+    pub fn stunned(&self) -> bool
+    {
+        self.stun_timer > 0.0
+    }
+
+    pub fn set_stun_shader(&mut self, shader_id: u8)
+    {
+        self.stun_shader = shader_id;
+    }
+
     pub fn reset(&mut self)
     {
         self.set_pos(Vec2::ZERO);
@@ -377,6 +411,7 @@ impl Player
         self.dash_dir = Vec2::ZERO;
         self.dash_timer = 0.0;
         self.jiggle_timer = 0.0;
+        self.stun_timer = 0.0;
     }
 }
 

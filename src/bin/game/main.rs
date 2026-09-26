@@ -8,7 +8,7 @@ pub mod dash_hud;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState}, dash_hud::DashHud, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, player::Player, rope::Rope, wall::Wall};
 use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -269,7 +269,8 @@ impl App
 
         let on_wall = self.wall.contains(self.player.collision.pos) as usize;
         let falling = !self.player.is_falling() as usize; // Later maybe instead of not allowing that, only dont, when player fell to much
-        PLACE_TABLE[on_wall&falling](self, ctx);
+        let awake = !self.player.stunned() as usize;
+        PLACE_TABLE[on_wall&falling&awake](self, ctx);
     }
     fn place_nothing(&mut self, _: &mut UpdateContext) {}
     fn place_anchor(&mut self, ctx: &mut UpdateContext)
@@ -434,7 +435,7 @@ impl App
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
         self.hazards.maintain(&self.wall, self.player.collision.pos, update_ctx.dt as f32);
 
-        let (player_hit, knockback_dir) = self.hazards.check_hit(self.player.collision.pos, self.player.hit_radius());
+        let (player_hit, knockback_dir) = self.hazards.check_hit(&mut self.player);
         const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
         HIT_TABLE[player_hit as usize](self, knockback_dir);
 
@@ -589,7 +590,7 @@ impl EngineEvent for App
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, 4.0, 12.0);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -623,7 +624,7 @@ impl EngineEvent for App
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
 
 
-        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("orb_time", UniformType::Float)]) as u8;
+        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
         self.dash_hud.set_shader(dash_orb_shader);
 
         let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
@@ -632,12 +633,15 @@ impl EngineEvent for App
         self.collectibles.add_kind(CollectibleKind::Score, score_texture, (256.0, 326.0), 0, 5.0, 0.1);
         self.collectibles.add_kind(CollectibleKind::DashOrb, 0, (1.0, 1.0), dash_orb_shader, 1.0, 0.2);
         self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
+
+        let stun_shader = graphics.load_shader_with_uniform(Some("src/shaders/stars.wgsl"), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
+        self.player.set_stun_shader(stun_shader);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
         self.elapsed += update_ctx.dt as f32;
-        update_ctx.graphics.set_uniform("orb_time", UniformValue::Float(self.elapsed));
+        update_ctx.graphics.set_uniform("time", UniformValue::Float(self.elapsed));
 
         GAME_UPDATE_TABLE[self.game_state as usize](self, update_ctx);
         self.update_fade_transition(update_ctx);

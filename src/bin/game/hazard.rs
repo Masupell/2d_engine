@@ -3,7 +3,30 @@ use std::f32;
 use engine::*;
 use rand::Rng;
 
-use crate::wall::Wall;
+use crate::{player::Player, wall::Wall};
+
+
+#[derive(Copy, Clone)]
+pub enum HitEffect // what happens to the player after being hit
+{
+    None,
+    Stun
+}
+impl HitEffect { const COUNT: usize = 2; }
+
+type HitEffectFn = fn(&mut Player, f32);
+
+const HIT_EFFECT_TABLE: [HitEffectFn; HitEffect::COUNT] =
+[
+    no_hit_effect,
+    stun_hit_effect
+];
+
+fn no_hit_effect(_player: &mut Player, _strength: f32) {}
+fn stun_hit_effect(player: &mut Player, strength: f32)
+{
+    player.stun(strength);
+}
 
 const SAFE_ALTITUDE: f32 = 300.0; // 1.5m
 
@@ -37,6 +60,8 @@ struct HazardKind
     warning_duration: f32,
     hit_radius: f32,
     on_hit: HazardState,
+    hit_effect: HitEffect,
+    effect_strength: f32,
     min_interval: f32,
     max_interval: f32
 }
@@ -273,7 +298,7 @@ impl HazardSpawner
         self.warning_texture_id = texture_id;
     }
 
-    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, min_interval: f32, max_interval: f32) -> usize
+    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32) -> usize
     {
         let kind = HazardKind
         {
@@ -285,6 +310,8 @@ impl HazardSpawner
             warning_duration,
             hit_radius,
             on_hit,
+            hit_effect,
+            effect_strength,
             min_interval,
             max_interval
         };
@@ -310,11 +337,14 @@ impl HazardSpawner
     }
 
     // true if player is hit (only simple distance check)
-    pub fn check_hit(&mut self, player_pos: Vec2, player_radius: f32) -> (bool, Vec2)
+    pub fn check_hit(&mut self, player: &mut Player) -> (bool, Vec2)
     {
+        let player_pos = player.collision.pos;
+        let player_radius = player.hit_radius();
+
         let hit_index = (0..self.pool.len()).find(|&i|
         {
-            let is_active = (self.pool[i].state as usize) > 1;
+            let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit;
             let kind = self.kinds[self.pool[i].kind_index];
             let in_range = (self.pool[i].pos - player_pos).length() < kind.hit_radius + player_radius;
 
@@ -328,6 +358,8 @@ impl HazardSpawner
             let kind = self.kinds[self.pool[i].kind_index];
             let offset = self.pool[i].pos - player_pos;
             let away_from_player = offset * (1.0 / offset.length().max(0.0001));
+
+            HIT_EFFECT_TABLE[kind.hit_effect as usize](player, kind.effect_strength);
 
             self.pool[i].hit = true;
             self.pool[i].state = kind.on_hit;
