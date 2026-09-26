@@ -5,6 +5,8 @@ use rand::Rng;
 
 use crate::wall::Wall;
 
+const SAFE_ALTITUDE: f32 = 300.0; // 1.5m
+
 #[derive(Copy, Clone)]
 pub enum HazardState
 {
@@ -34,7 +36,17 @@ struct HazardKind
     gravity: f32,
     warning_duration: f32,
     hit_radius: f32,
-    on_hit: HazardState
+    on_hit: HazardState,
+    min_interval: f32,
+    max_interval: f32
+}
+
+impl HazardKind
+{
+    fn roll_interval(&self, rng: &mut impl Rng) -> f32
+    {
+        rng.random_range(self.min_interval..=self.max_interval)
+    }
 }
 
 struct Hazard
@@ -228,14 +240,15 @@ pub struct HazardSpawner
     normal_texture_id: usize,
     warning_texture_id: usize,
     kinds: Vec<HazardKind>,
-    spawn_timer: f32,
-    pub min_spawn_interval: f32,
-    pub max_spawn_interval: f32,
+    spawn_timers: Vec<f32>,
+    highest_altitude: f32,
+    pub max_spawn_rate: f32,
+    pub half_distance_difficulty: f32, // px after safe zone to get halfway to max_spawn_rate
 }
 
 impl HazardSpawner
 {
-    pub fn new(min_spawn_interval: f32, max_spawn_interval: f32) -> Self
+    pub fn new() -> Self
     {
         Self
         {
@@ -243,9 +256,10 @@ impl HazardSpawner
             normal_texture_id: 0,
             warning_texture_id: 0,
             kinds: Vec::new(),
-            spawn_timer: min_spawn_interval,
-            min_spawn_interval,
-            max_spawn_interval,
+            spawn_timers: Vec::new(),
+            highest_altitude: 0.0,
+            max_spawn_rate: 4.0,
+            half_distance_difficulty: 4000.0 // 20m
         }
     }
 
@@ -259,9 +273,9 @@ impl HazardSpawner
         self.warning_texture_id = texture_id;
     }
 
-    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState) -> usize
+    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, min_interval: f32, max_interval: f32) -> usize
     {
-        self.kinds.push(HazardKind
+        let kind = HazardKind
         {
             movement,
             active_rect: (active_rect_pos, active_rect_size),
@@ -270,10 +284,24 @@ impl HazardSpawner
             gravity,
             warning_duration,
             hit_radius,
-            on_hit
-        });
+            on_hit,
+            min_interval,
+            max_interval
+        };
+
+        self.spawn_timers.push(kind.roll_interval(&mut rand::rng()));
+        self.kinds.push(kind);
 
         self.kinds.len() - 1
+    }
+
+    pub fn reset(&mut self)
+    {
+        let mut rng = rand::rng();
+
+        self.pool.iter_mut().for_each(|h| h.state = HazardState::Inactive);
+        self.highest_altitude = 0.0;
+        self.kinds.iter().zip(self.spawn_timers.iter_mut()).for_each(|(kind, timer)| *timer = kind.roll_interval(&mut rng));
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
@@ -312,16 +340,24 @@ impl HazardSpawner
         (hit_index.is_some(), away_from_hazard)
     }
 
-    fn skip_spawn(&mut self, _wall: &Wall, _player_pos: Vec2) {}
+    // 1.0 after safe zone, after that it approaches the max_spawn_rate with height of player, by half every time
+    fn spawn_rate(&self) -> f32
+    {
+        let climbed = (self.highest_altitude - SAFE_ALTITUDE).max(0.0);
+        let remaining = 0.5_f32.powf(climbed/self.half_distance_difficulty);
 
-    fn spawn_random(&mut self, wall: &Wall, player_pos: Vec2)
+        self.max_spawn_rate - (self.max_spawn_rate - 1.0) * remaining
+    }
+
+    fn skip_spawn(&mut self, _wall: &Wall, _player_pos: Vec2, _kind_index: usize) {}
+
+    fn spawn_kind(&mut self, wall: &Wall, player_pos: Vec2, kind_index: usize)
     {
         let mut rng = rand::rng();
-
-        self.spawn_timer = rng.random_range(self.min_spawn_interval..self.max_spawn_interval);
-
-        let kind_index = rng.random_range(0..self.kinds.len());
         let kind = self.kinds[kind_index];
+
+        self.spawn_timers[kind_index] += kind.roll_interval(&mut rng);
+
         let bounds = wall.get_bounds();
 
         const SETUP_TABLE: [fn(Vec2, (f32, f32), f32, &mut rand::rngs::ThreadRng) -> (Vec2, Vec2); HazardMovement::COUNT] =
@@ -356,17 +392,25 @@ impl HazardSpawner
     // Right now all hazards use same spawn timer
     pub fn maintain(&mut self, wall: &Wall, player_pos: Vec2, dt: f32)
     {
-        self.spawn_timer -= dt;
+         self.highest_altitude = self.highest_altitude.max(-player_pos.y);
 
-        let should_spawn = (self.spawn_timer < 0.0) as usize;
-        const SPAWN_TABLE: [fn(&mut HazardSpawner, &Wall, Vec2); 2] = [HazardSpawner::skip_spawn, HazardSpawner::spawn_random];
-        SPAWN_TABLE[should_spawn](self, wall, player_pos);
+         let past_safe_zone = (self.highest_altitude > SAFE_ALTITUDE) as u32 as f32;
+         let tick = dt * self.spawn_rate() * past_safe_zone;
 
-        (0..self.pool.len()).for_each(|i|
+        const SPAWN_TABLE: [fn(&mut HazardSpawner, &Wall, Vec2, usize); 2] = [HazardSpawner::skip_spawn, HazardSpawner::spawn_kind];
+
+        for i in 0..self.kinds.len()
+        {
+            self.spawn_timers[i] -= tick;
+            let should_spawn = (self.spawn_timers[i] < 0.0) as usize;
+            SPAWN_TABLE[should_spawn](self, wall, player_pos, i);
+        }
+
+        for i in 0..self.pool.len()
         {
             let kind = self.kinds[self.pool[i].kind_index];
             self.pool[i].update(&kind, (player_pos.x, player_pos.y), dt); // here also camera, but is player for now
-        });
+        };
 
         const DESPAWN_DISTANCE: f32 = 1200.0;
 

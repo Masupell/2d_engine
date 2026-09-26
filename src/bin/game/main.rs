@@ -243,6 +243,7 @@ impl App
         self.player.reset();
         self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
         self.dash_hud.reset();
+        self.hazards.reset();
 
         self.start_game(ctx);
     }
@@ -587,7 +588,8 @@ impl EngineEvent for App
         let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling);
+        //4.0..=12.0 -> 1.0..=3.0
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, 4.0, 12.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -708,7 +710,7 @@ impl App
             collectibles,
             rope_extending: true,
             decorations: DecorationSpawner::new(),
-            hazards: HazardSpawner::new(3.0, 6.0),
+            hazards: HazardSpawner::new(),
             game_state: GameState::MainMenu,
             restart_button,
             blur_texture: 0,
