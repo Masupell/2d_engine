@@ -5,10 +5,11 @@ pub mod collectible;
 pub mod decorations;
 pub mod hazard;
 pub mod dash_hud;
+pub mod lava;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::Wall};
 use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -197,7 +198,8 @@ struct App
     pause_menu_button: no_if::button::Button,
     pause_restart_button: no_if::button::Button,
     dash_hud: DashHud,
-    elapsed: f32
+    elapsed: f32,
+    lava: Lava
 }
 
 impl App
@@ -244,6 +246,7 @@ impl App
         self.rope.reset_rope(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, Vec2::ZERO);
         self.dash_hud.reset();
         self.hazards.reset();
+        self.lava.reset();
 
         self.start_game(ctx);
     }
@@ -407,6 +410,10 @@ impl App
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
     {
+        self.elapsed += update_ctx.dt as f32;
+        update_ctx.graphics.set_uniform("game_time", UniformValue::Float(self.elapsed));
+        update_ctx.graphics.set_uniform("lava_surface", UniformValue::Float(self.lava.surface_y()));
+
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
         self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds(), &nearby);
@@ -439,8 +446,13 @@ impl App
         const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
         HIT_TABLE[player_hit as usize](self, knockback_dir);
 
+        let alive = self.game_state != GameState::Dead;
+        self.lava.update(self.player.collision.pos, update_ctx.dt as f32, alive);
+        let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
+
         const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
-        DEATH_TABLE[self.player.is_beyond_recovery() as usize * (1-(self.game_state == GameState::Dead) as usize)](self, update_ctx);
+        let should_die = (self.player.is_beyond_recovery() | in_lava) & alive;
+        DEATH_TABLE[should_die as usize](self, update_ctx);
     }
 
     fn update_pause_menu(&mut self, ctx: &mut UpdateContext)
@@ -502,6 +514,7 @@ impl App
         self.player.draw(render_ctx, 3, 0);
         self.rope.draw(render_ctx, 3, 1);
         self.hazards.draw(render_ctx, 3, 0);
+        self.lava.draw(render_ctx, 4);
     }
 
     fn draw_hud(&self, render_ctx: &mut RenderContext)
@@ -624,7 +637,7 @@ impl EngineEvent for App
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
 
 
-        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
+        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.dash_hud.set_shader(dash_orb_shader);
 
         let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
@@ -634,15 +647,15 @@ impl EngineEvent for App
         self.collectibles.add_kind(CollectibleKind::DashOrb, 0, (1.0, 1.0), dash_orb_shader, 1.0, 0.2);
         self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
 
-        let stun_shader = graphics.load_shader_with_uniform(Some("src/shaders/stars.wgsl"), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
+        let stun_shader = graphics.load_shader_with_uniform(Some("src/shaders/stars.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.player.set_stun_shader(stun_shader);
+
+        let lava_shader = graphics.load_shader_with_uniform(Some("src/shaders/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float)]) as u8;
+        self.lava.set_shader(lava_shader);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
     {
-        self.elapsed += update_ctx.dt as f32;
-        update_ctx.graphics.set_uniform("time", UniformValue::Float(self.elapsed));
-
         GAME_UPDATE_TABLE[self.game_state as usize](self, update_ctx);
         self.update_fade_transition(update_ctx);
 
@@ -735,7 +748,8 @@ impl App
             pause_menu_button,
             pause_restart_button,
             dash_hud: DashHud::new(),
-            elapsed: 0.0
+            elapsed: 0.0,
+            lava: Lava::new(700.0)
         }
     }
 }
