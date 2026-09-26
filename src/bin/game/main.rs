@@ -410,15 +410,18 @@ impl App
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
     {
-        self.elapsed += update_ctx.dt as f32;
+        let dt = update_ctx.dt as f32;
+
+        self.elapsed += dt as f32;
         update_ctx.graphics.set_uniform("game_time", UniformValue::Float(self.elapsed));
         update_ctx.graphics.set_uniform("lava_surface", UniformValue::Float(self.lava.surface_y()));
+        update_ctx.graphics.set_uniform("lava_splashes", UniformValue::Mat4(self.lava.splash_uniform()));
 
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
-        self.player.update(update_ctx.dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds(), &nearby);
+        self.player.update(dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds(), &nearby);
 
-        self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, update_ctx.dt as f32);
+        self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
 
         // world to screen
@@ -427,7 +430,7 @@ impl App
 
         let dash_hud = &mut self.dash_hud;
         self.collectibles.collected().iter().filter(|e| e.kind == CollectibleKind::DashOrb).for_each(|e| dash_hud.launch((e.pos.x + to_screen.0, e.pos.y + to_screen.1), e.size.1));
-        self.dash_hud.update(update_ctx.dt as f32);
+        self.dash_hud.update(dt as f32);
 
 
         const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext, f32); 2] = [App::skip_rope_growth, App::do_rope_growth];
@@ -435,19 +438,22 @@ impl App
         let should_grow = has_rope & self.rope_extending;
         GROWTH_TABLE[should_grow as usize](self, update_ctx, difference);
 
-        self.rope.update(980.0, self.player.collision.pos, update_ctx.dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
+        self.rope.update(980.0, self.player.collision.pos, dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
         self.rope.reclaim_visible_splits(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
-        self.hazards.maintain(&self.wall, self.player.collision.pos, update_ctx.dt as f32);
+        self.hazards.maintain(&self.wall, self.player.collision.pos, dt as f32);
 
         let (player_hit, knockback_dir) = self.hazards.check_hit(&mut self.player);
         const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
         HIT_TABLE[player_hit as usize](self, knockback_dir);
 
         let alive = self.game_state != GameState::Dead;
-        self.lava.update(self.player.collision.pos, update_ctx.dt as f32, alive);
+        self.lava.update(self.player.collision.pos, dt as f32, alive, self.elapsed);
+        self.lava.check_entry(self.player.collision.pos, self.player.velocity(), self.player.hit_radius(), 70.0, dt);
+        let lava = &mut self.lava;
+        self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
         let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
 
         const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
@@ -603,7 +609,7 @@ impl EngineEvent for App
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -650,7 +656,7 @@ impl EngineEvent for App
         let stun_shader = graphics.load_shader_with_uniform(Some("src/shaders/stars.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.player.set_stun_shader(stun_shader);
 
-        let lava_shader = graphics.load_shader_with_uniform(Some("src/shaders/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float)]) as u8;
+        let lava_shader = graphics.load_shader_with_uniform(Some("src/shaders/lava_shader/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)]) as u8;
         self.lava.set_shader(lava_shader);
     }
 

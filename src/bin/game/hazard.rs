@@ -63,7 +63,8 @@ struct HazardKind
     hit_effect: HitEffect,
     effect_strength: f32,
     min_interval: f32,
-    max_interval: f32
+    max_interval: f32,
+    mass: f32 // kg
 }
 
 impl HazardKind
@@ -298,7 +299,7 @@ impl HazardSpawner
         self.warning_texture_id = texture_id;
     }
 
-    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32) -> usize
+    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32, mass: f32) -> usize
     {
         let kind = HazardKind
         {
@@ -313,7 +314,8 @@ impl HazardSpawner
             hit_effect,
             effect_strength,
             min_interval,
-            max_interval
+            max_interval,
+            mass
         };
 
         self.spawn_timers.push(kind.roll_interval(&mut rand::rng()));
@@ -447,6 +449,16 @@ impl HazardSpawner
         const DESPAWN_DISTANCE: f32 = 1200.0;
 
         self.pool.iter_mut().filter(|h| (h.state as usize > 0) & ((h.pos - player_pos).length() > DESPAWN_DISTANCE)).for_each(|h| h.state = HazardState::Inactive);
+    }
+
+    // Only active, or tumbling (for now only tumbling) ones: position, velocity, radius
+    pub fn bodies(&self) -> impl Iterator<Item = (Vec2, Vec2, f32, f32)> + '_
+    {
+        self.pool.iter().filter(|h| (h.state as usize) > 1).map(|h|
+        {
+            let kind = &self.kinds[h.kind_index];
+            (h.pos, h.velocity, kind.hit_radius, kind.mass)
+        })
     }
 }
 

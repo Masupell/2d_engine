@@ -394,6 +394,11 @@ impl Player
         self.stun_shader = shader_id;
     }
 
+    pub fn velocity(&self) -> Vec2
+    {
+        self.velocity
+    }
+
     pub fn reset(&mut self)
     {
         self.set_pos(Vec2::ZERO);
