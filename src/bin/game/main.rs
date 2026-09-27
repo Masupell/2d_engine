@@ -465,7 +465,8 @@ impl App
         HIT_TABLE[player_hit as usize](self, knockback_dir);
 
         let alive = self.game_state != GameState::Dead;
-        self.lava.update(self.player.collision.pos, dt as f32, alive, self.elapsed);
+        let rising = (self.player.collision.pos.y < -300.0) & alive;
+        self.lava.update(self.player.collision.pos, dt as f32, rising, self.elapsed);
         self.lava.check_entry(self.player.collision.pos, self.player.velocity(), self.player.hit_radius(), 70.0, dt);
         let lava = &mut self.lava;
         self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
