@@ -313,7 +313,7 @@ impl App
 
     fn wall_shader_cracks(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
         ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
@@ -326,8 +326,6 @@ impl App
         ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
         ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
-        let mut rng = rand::rng();
-        ctx.graphics.set_uniform("seed", UniformValue::Float(rng.random()));
     }
 
     fn lava_shader_complex(&mut self, ctx: &mut UpdateContext)

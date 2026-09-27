@@ -14,6 +14,7 @@ struct MountainUniforms
     band_height: f32,
     tilt_strength: f32,
     crack_density: f32,
+    seed: f32
 };
 
 @group(1) @binding(0)
@@ -159,18 +160,25 @@ fn palette_color(index: i32) -> vec3<f32>
     return palette[i];
 }
 
+fn seed_offset_from(seed: f32) -> vec2<f32>
+{
+    return vec2<f32>(hash(vec2<f32>(seed, 11.0)), hash(vec2<f32>(seed, 53.0))) * 80.0;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
+    let seed_offset = seed_offset_from(mountain.seed);
+
     let band_height = max(mountain.band_height, 1.0);
     let crack_scale = max(mountain.scale, 0.0001);
 
     // tile_seed, so tile does not just tilt the same way everywhere
-    let tilt_seed = fbm2(vec2<f32>(in.world_pos.y * 0.0012, 37.0));
+    let tilt_seed = fbm2(vec2<f32>(in.world_pos.y * 0.0012, 37.0) + seed_offset);
     let tilt = (tilt_seed - 0.5) * 2.0 * mountain.tilt_strength;
     let tilted_y = in.world_pos.y + in.world_pos.x * tilt;
 
-    let band_warp = (fbm(in.world_pos * 0.004) - 0.5) * band_height * 1.5;
+    let band_warp = (fbm(in.world_pos * 0.004 + seed_offset) - 0.5) * band_height * 1.5;
     let band_coord = (tilted_y + band_warp) / band_height;
     let band_index = i32(floor(band_coord));
     let band_frac = fract(band_coord);
@@ -188,7 +196,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let outlined = banded * mix(1.0, 0.3, outline);
 
     // Not sure about the look here
-    let grain = value_noise(in.world_pos / crack_scale * 3.0);
+    let grain = value_noise((in.world_pos + seed_offset) / crack_scale * 3.0);
     let posterized_grain = floor(grain * 3.0) / 3.0;
     let varied = outlined * mix(0.96, 1.16, posterized_grain);
 
