@@ -94,7 +94,7 @@ impl Player
             max_survivable_deceleration: 1960.0*50.0, //50g
             tilt_per_velocity: 0.0025,
             tilt_smoothing: 0.05,
-            max_recoverable_vel: 400.0, //px per second, 200 = 1m => 400px -> 2m/s
+            max_recoverable_vel: 600.0, // 3m/s
             last_deceleration: 0.0,
             rope_reserve: 1000.0,
             rope_grow_tolerance: 10.0,

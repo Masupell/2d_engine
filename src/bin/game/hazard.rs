@@ -246,7 +246,7 @@ fn setup_fall_from_top(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &m
 
 fn setup_shoot_from_left(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
-    let y = player_pos.y + rng.random_range(-100.0..100.0);
+    let y = sample_flat_distribution(rng, player_pos.y-90.0, 300.0, 0.2);
     let pos = Vec2::new(bounds.0 - 30.0, y);
 
     (pos, Vec2::new(speed, 0.0))
@@ -254,7 +254,7 @@ fn setup_shoot_from_left(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: 
 
 fn setup_shoot_from_right(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
-    let y = player_pos.y + rng.random_range(-100.0..100.0);
+    let y = sample_flat_distribution(rng, player_pos.y-90.0, 300.0, 0.2);
     let pos = Vec2::new(bounds.1 + 30.0, y);
 
     (pos, Vec2::new(-speed, 0.0))
