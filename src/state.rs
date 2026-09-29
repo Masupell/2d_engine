@@ -113,6 +113,7 @@ impl<'a> State<'a>
                 self.screen_textures[i] = Texture::screen_texture(&self.device, self.config.format, new_size.width, new_size.height);
                 self.bind_groups[i] = self.screen_textures[i].bind_group(&self.device, &self.renderer.texture_bindgroup_layout);
             }
+            self.renderer.resize_targets(&self.device, new_size.width, new_size.height);
         }
     }
 
@@ -138,16 +139,12 @@ impl<'a> State<'a>
         }
 
         self.renderer.upload_instances(&self.device, &self.queue);
-        // self.renderer.begin_pass(&mut encoder, &self.screen_texture.view/*&view*/); // Normal Render Pass -> outputs to Texture, not View
-        // // self.renderer.begin_pass(&mut encoder, &view);
-        // if let Some(pp_id) = context.post_process_pipeline
-        // {
-        //     self.renderer.screen_texture(&mut encoder, &view, pp_id, &self.bind_group); // Manual here for now. remember to remove from here later
-        // }
+
+        self.renderer.render_targets(&mut encoder);
+
         if context.post_process_pipelines.is_empty()
         {
             self.renderer.begin_pass(&mut encoder, &view, DrawLayer::World);
-            println!("???");
         }
         else
         {
@@ -179,7 +176,7 @@ impl<'a> State<'a>
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
-        self.renderer.draw_commands.clear();
+        self.renderer.end_frame();
 
         Ok(())
     }

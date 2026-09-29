@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, create_target_sampler, create_target_texture, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -35,15 +35,17 @@ const WHITE_TEXTURE: usize = 0;
 const MODE_COLOR: u32 = 0;
 const MODE_TEXTURE: u32 = 1;
 
-// Sort key layout (u64): [layer: 1][z_index: 32][pipeline: 8][submission index: 23]
+// Sort key layout (u128): [target: 16][layer: 8][z_index: 32][pipeline: 16][submission index: 32]
 // Sorting by this number = sorting by layer, then z, then pipeline, then submission order.
-// The index at the end makes sort_unstable give exactly the same order as a stable sort would.
-const INDEX_BITS: u32 = 23;
-const INDEX_MASK: u64 = (1 << INDEX_BITS) - 1;
+const INDEX_BITS: u32 = 32;
+const INDEX_MASK: u128 = (1 << INDEX_BITS) - 1;
 const PIPELINE_SHIFT: u32 = INDEX_BITS;
-const Z_SHIFT: u32 = PIPELINE_SHIFT + 8;
+const Z_SHIFT: u32 = PIPELINE_SHIFT + 16;
 const LAYER_SHIFT: u32 = Z_SHIFT + 32;
+const TARGET_SHIFT: u32 = LAYER_SHIFT + 8;
 const LAYER_COUNT: usize = 2; // World, UI
+
+pub(crate) const SCREEN_TARGET: u16 = u16::MAX;
 
 const SURFACE_SLOT: usize = 0;
 
@@ -60,14 +62,15 @@ pub(crate) struct DrawCommand
     pub(crate) layer: DrawLayer,
     // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
     // meshes with baked in uv, should leave this at default
-    pub(crate) uv_rect: [f32; 4]
+    pub(crate) uv_rect: [f32; 4],
+    pub(crate) target: u16 // target id or SCREEN_TARGET
 }
 
 impl DrawCommand
 {
-    fn sort_key(&self, index: usize) -> u64
+    fn sort_key(&self, index: usize) -> u128
     {
-        (self.layer as u64) << LAYER_SHIFT | (self.z_index as u64) << Z_SHIFT | (self.pipeline_id as u64) << PIPELINE_SHIFT | index as u64
+        (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | (self.pipeline_id as u128) << PIPELINE_SHIFT | index as u128
     }
 
     // draws with the same values can be one instance
@@ -154,14 +157,26 @@ fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, 
     })
 }
 
+// all sorted commands of one target, split by layer
+struct TargetGroup
+{
+    target: u16,
+    start: usize,
+    end: usize,
+    layer_bounds: [usize; LAYER_COUNT + 1]
+}
+
 pub struct Renderer
 {
-    // pub pipeline: wgpu::RenderPipeline,
     pipelines: Vec<PipelineEntry>,
     formats: Vec<wgpu::TextureFormat>,
     pub(crate) draw_commands: Vec<DrawCommand>,
-    sort_keys: Vec<u64>,
-    layer_bounds: [usize; LAYER_COUNT + 1],
+    sort_keys: Vec<u128>,
+    groups: Vec<TargetGroup>, // one per target
+    targets: Vec<RenderTarget>,
+    target_sampler: wgpu::Sampler,
+    current_target: u16, // where to draw to
+    screen_size: (u32, u32), // basically window size, but not float and for targets
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: usize,
     instances: Vec<InstanceData>, // reused each frame
@@ -182,7 +197,6 @@ pub struct Renderer
     text_cache: TextCache,
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
     free_mesh_ids: Vec<usize>,
-    // Same size as 'pipelines', just None for any that have no Uniforms
     uniform_values: HashMap<String, UniformValue>
 }
 
@@ -300,7 +314,11 @@ impl Renderer
             formats: vec![config.format],
             draw_commands: Vec::new(),
             sort_keys: Vec::new(),
-            layer_bounds: [0; LAYER_COUNT + 1],
+            groups: Vec::new(),
+            targets: Vec::new(),
+            target_sampler: create_target_sampler(device),
+            current_target: SCREEN_TARGET,
+            screen_size: (config.width, config.height),
             instance_buf: None,
             instance_capacity: 0,
             instances: Vec::new(),
@@ -453,7 +471,7 @@ impl Renderer
         id
     }
 
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
     {
         let entry = self.build_entry(device, None, fragment_path, vertex_path, pipeline_type, None);
         self.push_entry(device, entry)
@@ -468,13 +486,13 @@ impl Renderer
     // Has to have the same order in rust as in the shader
     // Names technically dont have to match
     // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
-    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
     {
         let entry = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
         self.push_entry(device, entry)
     }
 
-    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
     {
         // silently skips if not exisiting for now
         if pipeline_id >= self.pipelines.len() { return; }
@@ -754,16 +772,101 @@ impl Renderer
         }
     }
 
+    pub fn surface_format(&self) -> wgpu::TextureFormat
+    {
+        self.formats[SURFACE_SLOT]
+    }
+
+    // scale relative to the window (1.0 = full, 0.5 = half resolution), format e.g. surface_format() or Rgba16Float
+    pub(crate) fn create_render_target(&mut self, device: &wgpu::Device, scale: f32, format: wgpu::TextureFormat) -> TargetHandle
+    {
+        let id = self.targets.len();
+        debug_assert!(id < SCREEN_TARGET as usize, "too many render targets");
+
+        let size = scaled_size(self.screen_size, scale);
+        let (texture, view, entry) = create_target_texture(device, &self.texture_bindgroup_layout, &self.target_sampler, format, size);
+
+        let texture_id = self.textures.len();
+        self.textures.push(entry);
+
+        let format_slot = self.format_slot(device, format);
+        self.targets.push(RenderTarget { scale, format, format_slot, texture, view, size, texture_id, clear: Some(wgpu::Color::TRANSPARENT) });
+
+        TargetHandle { id, texture_id }
+    }
+
+    pub(crate) fn resize_targets(&mut self, device: &wgpu::Device, width: u32, height: u32)
+    {
+        self.screen_size = (width.max(1), height.max(1));
+
+        for target in &mut self.targets
+        {
+            let size = scaled_size(self.screen_size, target.scale);
+            let (texture, view, entry) = create_target_texture(device, &self.texture_bindgroup_layout, &self.target_sampler, target.format, size);
+
+            target.texture = texture;
+            target.view = view;
+            target.size = size;
+            self.textures[target.texture_id] = entry;
+        }
+    }
+
+    pub fn set_target(&mut self, target: TargetHandle)
+    {
+        self.current_target = target.id as u16;
+    }
+
+    pub fn set_screen_target(&mut self)
+    {
+        self.current_target = SCREEN_TARGET;
+    }
+
+    // Clear color of the target each frame, None keeps last frames contents
+    pub fn set_target_clear(&mut self, target: TargetHandle, color: Option<[f64; 4]>)
+    {
+        self.targets[target.id].clear = color.map(|c| wgpu::Color { r: c[0], g: c[1], b: c[2], a: c[3] });
+    }
+
+    // in pixels
+    pub fn target_size(&self, target: TargetHandle) -> (u32, u32)
+    {
+        self.targets[target.id].size
+    }
+
+    pub(crate) fn end_frame(&mut self)
+    {
+        self.draw_commands.clear();
+        self.current_target = SCREEN_TARGET;
+    }
+
     // Command in position in draw order
     fn command_at(&self, position: usize) -> &DrawCommand
     {
         &self.draw_commands[(self.sort_keys[position] & INDEX_MASK) as usize]
     }
 
-    fn layer_range(&self, layer: DrawLayer) -> Range<usize>
+    fn screen_layer_range(&self, layer: DrawLayer) -> Range<usize>
     {
-        let layer = layer as usize;
-        self.layer_bounds[layer]..self.layer_bounds[layer+1]
+        match self.groups.last()
+        {
+            Some(group) if group.target == SCREEN_TARGET =>
+            {
+                let layer = layer as usize;
+                group.layer_bounds[layer]..group.layer_bounds[layer+1]
+            }
+            _ => 0..0,
+        }
+    }
+
+    pub(crate) fn render_targets(&self, encoder: &mut wgpu::CommandEncoder)
+    {
+        for group in self.groups.iter().filter(|group| group.target != SCREEN_TARGET)
+        {
+            let target = &self.targets[group.target as usize];
+            let load = target.clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear);
+
+            self.draw_range(encoder, &target.view, target.format_slot, load, group.start..group.end);
+        }
     }
 
     pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layer: DrawLayer)
@@ -774,16 +877,21 @@ impl Renderer
             DrawLayer::UI => wgpu::LoadOp::Load
         };
 
+        self.draw_range(encoder, view, SURFACE_SLOT, load_op, self.screen_layer_range(layer));
+    }
+
+    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>)
+    {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
-            label: Some("Render Pass"),
+            label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment
             {
                 view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
-                    load: load_op,
+                    load,
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -791,9 +899,6 @@ impl Renderer
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-
-        // Only commands for this layer
-        let range = self.layer_range(layer);
 
         let Some(instance_buf) = &self.instance_buf else { return; };
         if range.is_empty() { return; }
@@ -823,7 +928,7 @@ impl Renderer
             {
                 bound_pipeline = pipeline_id;
                 let entry = &self.pipelines[pipeline_id];
-                render_pass.set_pipeline(entry.variant(SURFACE_SLOT));
+                render_pass.set_pipeline(entry.variant(format_slot));
 
                 if let Some(pipeline_uniform) = &entry.uniforms
                 {
@@ -890,7 +995,8 @@ impl Renderer
 
     fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect });
+        let target = self.current_target;
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect, target });
     }
 
     // no anti-aliasing right now
@@ -1170,7 +1276,7 @@ impl Renderer
     pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
         self.sort_keys.clear();
-        self.layer_bounds = [0; LAYER_COUNT + 1];
+        self.groups.clear();
 
         if self.draw_commands.is_empty()
         {
@@ -1181,8 +1287,21 @@ impl Renderer
         self.sort_keys.extend(self.draw_commands.iter().enumerate().map(|(index, cmd)| cmd.sort_key(index)));
         self.sort_keys.sort_unstable();
 
+        // All target commands next to each other
+        // inside a target, each layers commands a re next to each other
         let keys = &self.sort_keys;
-        self.layer_bounds = std::array::from_fn(|layer| keys.partition_point(|&key| ((key >> LAYER_SHIFT) as usize) < layer));
+        let mut start = 0;
+        while start < keys.len()
+        {
+            let target = (keys[start] >> TARGET_SHIFT) as u16;
+            let end = start + keys[start..].partition_point(|&key| ((key >> TARGET_SHIFT) as u16) <= target);
+
+            let group_keys = &keys[start..end];
+            let layer_bounds = std::array::from_fn(|layer| start + group_keys.partition_point(|&key| (((key >> LAYER_SHIFT) & 0xFF) as usize) < layer));
+
+            self.groups.push(TargetGroup { target, start, end, layer_bounds });
+            start = end;
+        }
 
         self.instances.clear();
         self.instances.extend(self.sort_keys.iter().map(|&key|
