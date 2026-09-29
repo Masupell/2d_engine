@@ -1,4 +1,4 @@
-use crate::{Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, texture::FilterMode, utility::{PipeLineType, UniformType}};
+use crate::{Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -205,6 +205,11 @@ impl<'a> GraphicsContext<'a>
         self.renderer.surface_format()
     }
 
+    pub fn supports_format(&self, format: wgpu::TextureFormat) -> bool
+    {
+        format_is_usable(format, self.device.features())
+    }
+
     // following drawcalls go into 'target'
     pub fn set_target(&mut self, target: TargetHandle)
     {
@@ -223,6 +228,11 @@ impl<'a> GraphicsContext<'a>
         self.renderer.set_target_clear(target, color);
     }
 
+    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
+    {
+        self.renderer.set_screen_read_mode(pipeline_id, mode);
+    }
+
     pub fn set_uniform(&mut self, name: &str, value: UniformValue)
     {
         self.renderer.set_uniform(self.queue, name, value);
@@ -236,11 +246,6 @@ impl<'a> GraphicsContext<'a>
     pub fn set_clear_color(&mut self, color: [f64; 4])
     {
         self.renderer.set_clear_color(color);
-    }
-
-    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
-    {
-        self.renderer.set_screen_read_mode(pipeline_id, mode);
     }
 
     pub fn set_default_font(&mut self, font_path: &str, size: f32)

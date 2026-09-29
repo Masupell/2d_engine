@@ -37,6 +37,16 @@ pub(crate) fn create_snapshot(device: &wgpu::Device, texture_layout: &wgpu::Bind
     Snapshot { texture, view, entry }
 }
 
+// true if format can be a render target here: renderable, sampleable, filterable (linear sampler), blendable
+pub fn format_is_usable(format: wgpu::TextureFormat, device_features: wgpu::Features) -> bool
+{
+    let features = format.guaranteed_format_features(device_features);
+    let usages = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST;
+    let flags = wgpu::TextureFormatFeatureFlags::FILTERABLE | wgpu::TextureFormatFeatureFlags::BLENDABLE;
+
+    features.allowed_usages.contains(usages) & features.flags.contains(flags)
+}
+
 pub(crate) fn scaled_size(screen_size: (u32, u32), scale: f32) -> (u32, u32)
 {
     (((screen_size.0 as f32 * scale).round() as u32).max(1), ((screen_size.1 as f32 * scale).round() as u32).max(1))

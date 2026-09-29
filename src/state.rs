@@ -12,9 +12,7 @@ pub struct State<'a>
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     pub renderer: Renderer,
-    // // Ping-pong pair (gets passed from the one to the other and so forth, allowing for infinite post-process effects)
-    // screen_textures: [Texture; 2],
-    // bind_groups: [wgpu::BindGroup; 2]
+    view_format: wgpu::TextureFormat
 }
 
 impl<'a> State<'a>
@@ -58,7 +56,8 @@ impl<'a> State<'a>
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(surface_caps.formats[0]);
-        let copy_src = surface_caps.usages & wgpu::TextureUsages::COPY_SRC;
+        let view_format = surface_format.add_srgb_suffix();
+        let copy_src = if view_format == surface_format { surface_caps.usages & wgpu::TextureUsages::COPY_SRC } else { wgpu::TextureUsages::empty() };
         let config = wgpu::SurfaceConfiguration
         {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | copy_src,
@@ -68,18 +67,13 @@ impl<'a> State<'a>
             present_mode: wgpu::PresentMode::Fifo,//surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             desired_maximum_frame_latency: 2,
-            view_formats: vec![],
+            view_formats: if view_format == surface_format { vec![] } else { vec![view_format] },
         };
 
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
-
-        // let screen_texture_a = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
-        // let screen_texture_b = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
-        // let bind_group_a = screen_texture_a.bind_group(&device, &renderer.texture_bindgroup_layout);
-        // let bind_group_b = screen_texture_b.bind_group(&device, &renderer.texture_bindgroup_layout);
+        let renderer = Renderer::new(&device, &queue, view_format, (size.width.max(1), size.height.max(1)), config.usage.contains(wgpu::TextureUsages::COPY_SRC), (size.width as f32, size.height as f32));
 
         Self
         {
@@ -90,8 +84,7 @@ impl<'a> State<'a>
             size,
             window,
             renderer,
-            // screen_textures: [screen_texture_a, screen_texture_b],
-            // bind_groups: [bind_group_a, bind_group_b]
+            view_format
         }
     }
 
@@ -122,7 +115,7 @@ impl<'a> State<'a>
     pub fn render<T>(&mut self, context: &mut Context, draw: T) -> Result<(), wgpu::SurfaceError> where T: FnOnce(&mut RenderContext)
     {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.view_format), ..Default::default() });
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor
         {

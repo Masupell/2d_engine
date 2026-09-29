@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -223,7 +223,7 @@ pub struct Renderer
 
 impl Renderer
 {
-    pub(crate) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, queue: &wgpu::Queue, window_size: (f32, f32)) -> Self
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, screen_size: (u32, u32), screen_copyable: bool, window_size: (f32, f32)) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
@@ -280,7 +280,7 @@ impl Renderer
         let default_source = PipelineSource { layout: default_layout, vertex: default_vertex.clone(), fragment: default_fragment.clone() };
         let default_pipeline = PipelineEntry
         {
-            variants: vec![default_source.create(device, config.format)],
+            variants: vec![default_source.create(device, format)],
             source: default_source,
             uniforms: None,
             reads_screen: false,
@@ -298,7 +298,7 @@ impl Renderer
             bind_group_layouts: &[&texture_bindgroup_layout],
             push_constant_ranges: &[]
         });
-        let blit_pipeline = create_render_pipeline(device, &blit_layout, &blit_module, "vs_main", &blit_module, "fs_main", config.format);
+        let blit_pipeline = create_render_pipeline(device, &blit_layout, &blit_module, "vs_main", &blit_module, "fs_main", format);
 
         let fullscreen_instance = InstanceData { model: IDENTITY, color: WHITE, mode: MODE_TEXTURE, uv_rect: FULL_UV_RECT };
         let fullscreen_instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
@@ -347,17 +347,17 @@ impl Renderer
         Self
         {
             pipelines: vec![default_pipeline],
-            formats: vec![config.format],
+            formats: vec![format],
             draw_commands: Vec::new(),
             sort_keys: Vec::new(),
             targets: Vec::new(),
             target_sampler: create_target_sampler(device),
             current_target: SCREEN_TARGET,
-            screen_size: (config.width, config.height),
+            screen_size,
             segments: Vec::new(),
             screen_snapshot: None,
             screen_canvas: None,
-            screen_copyable: config.usage.contains(wgpu::TextureUsages::COPY_SRC),
+            screen_copyable: screen_copyable,
             screen_to_canvas: false,
             blit_pipeline,
             instance_buf: None,
@@ -832,6 +832,7 @@ impl Renderer
     {
         let id = self.targets.len();
         debug_assert!(id < SCREEN_TARGET as usize, "too many render targets");
+        debug_assert!(format_is_usable(format, device.features()), "{format:?} can't be used as a render target on this device (check GraphicsContext::supports_format)");
 
         let size = scaled_size(self.screen_size, scale);
         let (texture, view, entry) = create_target_texture(device, &self.texture_bindgroup_layout, &self.target_sampler, format, size);
@@ -1188,7 +1189,7 @@ impl Renderer
     pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
     {
         let transform = self.ui_matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.virtual_size, 0.0);
-        self.push_command(0, transform, texture_id, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::World, z_index, id);
+        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
