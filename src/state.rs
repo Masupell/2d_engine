@@ -12,9 +12,9 @@ pub struct State<'a>
     pub size: winit::dpi::PhysicalSize<u32>,
     window: &'a Window,
     pub renderer: Renderer,
-    // Ping-pong pair (gets passed from the one to the other and so forth, allowing for infinite post-process effects)
-    screen_textures: [Texture; 2],
-    bind_groups: [wgpu::BindGroup; 2]
+    // // Ping-pong pair (gets passed from the one to the other and so forth, allowing for infinite post-process effects)
+    // screen_textures: [Texture; 2],
+    // bind_groups: [wgpu::BindGroup; 2]
 }
 
 impl<'a> State<'a>
@@ -58,9 +58,10 @@ impl<'a> State<'a>
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(surface_caps.formats[0]);
+        let copy_src = surface_caps.usages & wgpu::TextureUsages::COPY_SRC;
         let config = wgpu::SurfaceConfiguration
         {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | copy_src,
             format: surface_format,
             width: size.width,
             height: size.height,
@@ -75,10 +76,10 @@ impl<'a> State<'a>
         let size = window.inner_size();
         let renderer = Renderer::new(&device, &config, &queue, (size.width as f32, size.height as f32));
 
-        let screen_texture_a = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
-        let screen_texture_b = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
-        let bind_group_a = screen_texture_a.bind_group(&device, &renderer.texture_bindgroup_layout);
-        let bind_group_b = screen_texture_b.bind_group(&device, &renderer.texture_bindgroup_layout);
+        // let screen_texture_a = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
+        // let screen_texture_b = Texture::screen_texture(&device, surface_format, size.width as u32, size.height as u32);
+        // let bind_group_a = screen_texture_a.bind_group(&device, &renderer.texture_bindgroup_layout);
+        // let bind_group_b = screen_texture_b.bind_group(&device, &renderer.texture_bindgroup_layout);
 
         Self
         {
@@ -89,8 +90,8 @@ impl<'a> State<'a>
             size,
             window,
             renderer,
-            screen_textures: [screen_texture_a, screen_texture_b],
-            bind_groups: [bind_group_a, bind_group_b]
+            // screen_textures: [screen_texture_a, screen_texture_b],
+            // bind_groups: [bind_group_a, bind_group_b]
         }
     }
 
@@ -108,11 +109,6 @@ impl<'a> State<'a>
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
             self.renderer.window_size = (new_size.width as f32, new_size.height as f32);
-            for i in 0..2
-            {
-                self.screen_textures[i] = Texture::screen_texture(&self.device, self.config.format, new_size.width, new_size.height);
-                self.bind_groups[i] = self.screen_textures[i].bind_group(&self.device, &self.renderer.texture_bindgroup_layout);
-            }
             self.renderer.resize_targets(&self.device, new_size.width, new_size.height);
         }
     }
@@ -138,40 +134,10 @@ impl<'a> State<'a>
             draw(&mut render_ctx);
         }
 
-        self.renderer.upload_instances(&self.device, &self.queue);
+        self.renderer.prepare_frame(&self.device, &self.queue);
 
-        self.renderer.render_targets(&mut encoder);
-
-        if context.post_process_pipelines.is_empty()
-        {
-            self.renderer.begin_pass(&mut encoder, &view, DrawLayer::World);
-        }
-        else
-        {
-            self.renderer.begin_pass(&mut encoder, &self.screen_textures[0].view, DrawLayer::World);
-
-            let mut current: usize = 0;
-            let last_index = context.post_process_pipelines.len()-1;
-            // println!("Good so far, {}", context.post_process_pipelines.len());
-
-            for (i, &pipeline_id) in context.post_process_pipelines.iter().enumerate()
-            {
-                if i == last_index // Final pass
-                {
-                    // println!("Should work?");
-                    self.renderer.screen_texture(&mut encoder, &view, pipeline_id, &self.bind_groups[current]);
-                }
-                else
-                {
-                    let next = 1 - current;
-                    self.renderer.screen_texture(&mut encoder, &self.screen_textures[next].view, pipeline_id, &self.bind_groups[current]);
-                    current = next;
-                }
-            }
-        }
-
-        // Draws UI on top of everything else
-        self.renderer.begin_pass(&mut encoder, &view, DrawLayer::UI);
+        // All targets in order of creation, then the screen (world, ui)
+        self.renderer.render_frame(&mut encoder, &output.texture, &view);
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

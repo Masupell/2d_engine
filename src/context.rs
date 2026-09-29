@@ -1,4 +1,4 @@
-use crate::{Input, Renderer, TargetHandle, UniformValue, texture::FilterMode, utility::{PipeLineType, UniformType}};
+use crate::{Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, texture::FilterMode, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -8,8 +8,7 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     fullscreen: bool,
     fixed_dt: f64, // fixed dt
     fps: u32,
-    pub(crate) pending_actions: Vec<ContextAction>,
-    pub(crate) post_process_pipelines: Vec<usize>
+    pub(crate) pending_actions: Vec<ContextAction>
 }
 
 impl Context
@@ -23,8 +22,7 @@ impl Context
             fullscreen,
             fixed_dt: 1.0 / 60.0,
             fps: 0,
-            pending_actions: Vec::new(),
-            post_process_pipelines: Vec::new()
+            pending_actions: Vec::new()
         }
     }
 
@@ -90,22 +88,6 @@ impl Context
     pub fn set_title(&mut self, title: impl Into<String>)
     {
         self.pending_actions.push(ContextAction::SetTitle(title.into()));
-    }
-
-    // For only one
-    pub fn set_post_process_pipeline(&mut self, id: usize)
-    {
-        self.post_process_pipelines = vec![id];
-    }
-
-    pub fn add_post_process_pipeline(&mut self, id: usize)
-    {
-        self.post_process_pipelines.push(id);
-    }
-
-    pub fn clear_post_process_pipelines(&mut self)
-    {
-        self.post_process_pipelines.clear();
     }
 
     pub fn close(&mut self)
@@ -254,6 +236,11 @@ impl<'a> GraphicsContext<'a>
     pub fn set_clear_color(&mut self, color: [f64; 4])
     {
         self.renderer.set_clear_color(color);
+    }
+
+    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
+    {
+        self.renderer.set_screen_read_mode(pipeline_id, mode);
     }
 
     pub fn set_default_font(&mut self, font_path: &str, size: f32)

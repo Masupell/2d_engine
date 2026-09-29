@@ -20,6 +20,21 @@ pub(crate) struct RenderTarget
     pub(crate) size: (u32, u32),
     pub(crate) texture_id: usize,
     pub(crate) clear: Option<wgpu::Color>,
+    pub(crate) snapshot: Option<Snapshot>
+}
+
+// copy of a target (or screen)
+pub(crate) struct Snapshot
+{
+    pub(crate) texture: wgpu::Texture,
+    pub(crate) view: wgpu::TextureView,
+    pub(crate) entry: TextureEntry
+}
+
+pub(crate) fn create_snapshot(device: &wgpu::Device, texture_layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, format: wgpu::TextureFormat, size: (u32, u32)) -> Snapshot
+{
+    let (texture, view, entry) = create_target_texture(device, texture_layout, sampler, format, size);
+    Snapshot { texture, view, entry }
 }
 
 pub(crate) fn scaled_size(screen_size: (u32, u32), scale: f32) -> (u32, u32)

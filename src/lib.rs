@@ -9,12 +9,13 @@ pub mod text;
 pub mod context;
 pub mod asset_manager;
 pub mod mesh_builder;
+pub mod target;
 
 pub mod no_if;
 
 pub use event_loop::{EngineEvent, game_loop};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
-pub use renderer::Renderer;
+pub use renderer::{Renderer, ScreenReadMode};
 pub use input::Input;
 
 pub use winit::keyboard::KeyCode as Key; // Temporary here
@@ -27,3 +28,4 @@ pub use texture::FilterMode;
 pub use utility::{MeshData, CoordSpace, UniformType, UniformValue};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;
+pub use target::TargetHandle;

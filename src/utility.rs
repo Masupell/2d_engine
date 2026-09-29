@@ -183,7 +183,7 @@ pub struct CameraUniform
 pub enum PipeLineType
 {
     Normal, // takes camera layout
-    PostProcess // does not
+    NormalWithScreen // same, but also takes underlying screen as input
 }
 
 

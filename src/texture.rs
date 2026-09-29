@@ -178,44 +178,6 @@ impl Texture
         Ok(Self { texture, view, sampler })
     }
 
-    // Needs Surface Format, as it is for the output, 'from_image' does not, as it is an input
-    pub fn screen_texture(device: &wgpu::Device, surface_format: wgpu::TextureFormat, width: u32, height: u32) -> Self
-    {
-        let size = wgpu::Extent3d
-        {
-            width: width,
-            height: height,
-            depth_or_array_layers: 1,
-        };
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor
-        {
-            label: Some("Screen Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: surface_format,//wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[]
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor
-        {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        Self { texture, view, sampler }
-    }
-
-
     // bindgroup_layout
     pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout
     {

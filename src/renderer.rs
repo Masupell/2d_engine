@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, create_target_sampler, create_target_texture, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -43,11 +43,23 @@ const PIPELINE_SHIFT: u32 = INDEX_BITS;
 const Z_SHIFT: u32 = PIPELINE_SHIFT + 16;
 const LAYER_SHIFT: u32 = Z_SHIFT + 32;
 const TARGET_SHIFT: u32 = LAYER_SHIFT + 8;
-const LAYER_COUNT: usize = 2; // World, UI
 
 pub(crate) const SCREEN_TARGET: u16 = u16::MAX;
 
 const SURFACE_SLOT: usize = 0;
+
+const BLIT_SHADER: &str = include_str!("shaders/blit.wgsl");
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ScreenReadMode
+{
+    // For pretty much everything, copy target and keep drawing into it
+    Copy,
+    // Currently does the same as Copy
+    // Later, should do the target-swapping, for fullscreen post-process effectes
+    // saves the copying step (and therefore faster)
+    Swap,
+}
 
 #[derive(Copy, Clone)]
 pub(crate) struct DrawCommand
@@ -99,7 +111,9 @@ pub(crate) struct PipelineEntry
 {
     source: PipelineSource,
     variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc)
-    uniforms: Option<PipelineUniforms>
+    uniforms: Option<PipelineUniforms>,
+    reads_screen: bool,
+    screen_read_mode: ScreenReadMode
 }
 
 impl PipelineEntry
@@ -157,13 +171,15 @@ fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, 
     })
 }
 
-// all sorted commands of one target, split by layer
-struct TargetGroup
+// one render pass basically, sorted
+#[derive(Copy, Clone)]
+struct Segment
 {
     target: u16,
     start: usize,
     end: usize,
-    layer_bounds: [usize; LAYER_COUNT + 1]
+    copy_before: bool,
+    load: wgpu::LoadOp<wgpu::Color>
 }
 
 pub struct Renderer
@@ -172,11 +188,16 @@ pub struct Renderer
     formats: Vec<wgpu::TextureFormat>,
     pub(crate) draw_commands: Vec<DrawCommand>,
     sort_keys: Vec<u128>,
-    groups: Vec<TargetGroup>, // one per target
     targets: Vec<RenderTarget>,
     target_sampler: wgpu::Sampler,
     current_target: u16, // where to draw to
     screen_size: (u32, u32), // basically window size, but not float and for targets
+    segments: Vec<Segment>,
+    screen_snapshot: Option<Snapshot>,
+    screen_canvas: Option<Snapshot>, // only if the surface can't be copied from
+    screen_copyable: bool,  // surface was configured with COPY_SRC
+    screen_to_canvas: bool,
+    blit_pipeline: wgpu::RenderPipeline,
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: usize,
     instances: Vec<InstanceData>, // reused each frame
@@ -262,7 +283,22 @@ impl Renderer
             variants: vec![default_source.create(device, config.format)],
             source: default_source,
             uniforms: None,
+            reads_screen: false,
+            screen_read_mode: ScreenReadMode::Copy
         };
+
+        let blit_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
+        {
+            label: Some("Blit Shader"),
+            source: wgpu::ShaderSource::Wgsl(BLIT_SHADER.into())
+        });
+        let blit_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        {
+            label: Some("Blit Pipeline Layout"),
+            bind_group_layouts: &[&texture_bindgroup_layout],
+            push_constant_ranges: &[]
+        });
+        let blit_pipeline = create_render_pipeline(device, &blit_layout, &blit_module, "vs_main", &blit_module, "fs_main", config.format);
 
         let fullscreen_instance = InstanceData { model: IDENTITY, color: WHITE, mode: MODE_TEXTURE, uv_rect: FULL_UV_RECT };
         let fullscreen_instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
@@ -314,11 +350,16 @@ impl Renderer
             formats: vec![config.format],
             draw_commands: Vec::new(),
             sort_keys: Vec::new(),
-            groups: Vec::new(),
             targets: Vec::new(),
             target_sampler: create_target_sampler(device),
             current_target: SCREEN_TARGET,
             screen_size: (config.width, config.height),
+            segments: Vec::new(),
+            screen_snapshot: None,
+            screen_canvas: None,
+            screen_copyable: config.usage.contains(wgpu::TextureUsages::COPY_SRC),
+            screen_to_canvas: false,
+            blit_pipeline,
             instance_buf: None,
             instance_capacity: 0,
             instances: Vec::new(),
@@ -371,10 +412,12 @@ impl Renderer
 
     fn base_bind_group_layouts(&self, pipeline_type: &PipeLineType) -> Vec<&wgpu::BindGroupLayout>
     {
+        // Normal: 0 camera, 1 texture, (2 uniforms)
+        // NormalWithScreen: 0 camera, 1 texture, 2 screen copy, (3 uniforms)
         match pipeline_type
         {
             PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
-            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
+            PipeLineType::NormalWithScreen => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout, &self.texture_bindgroup_layout]
         }
     }
 
@@ -391,6 +434,8 @@ impl Renderer
             Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
             None => self.default_fragment.clone()
         };
+
+        let reads_screen = matches!(pipeline_type, PipeLineType::NormalWithScreen);
 
         let uniform_setup = uniforms.map(|uniforms|
         {
@@ -460,7 +505,7 @@ impl Renderer
             PipelineUniforms { buffer, bind_group, group_index, offsets }
         });
 
-        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms }
+        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms, reads_screen, screen_read_mode: ScreenReadMode::Copy }
     }
 
     fn push_entry(&mut self, device: &wgpu::Device, entry: PipelineEntry) -> usize
@@ -499,6 +544,11 @@ impl Renderer
 
         self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
         self.fill_variant(device, pipeline_id);
+    }
+
+    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
+    {
+        self.pipelines[pipeline_id].screen_read_mode = mode;
     }
 
     // algined by wgsls uniform rules
@@ -790,7 +840,7 @@ impl Renderer
         self.textures.push(entry);
 
         let format_slot = self.format_slot(device, format);
-        self.targets.push(RenderTarget { scale, format, format_slot, texture, view, size, texture_id, clear: Some(wgpu::Color::TRANSPARENT) });
+        self.targets.push(RenderTarget { scale, format, format_slot, texture, view, size, texture_id, clear: Some(wgpu::Color::TRANSPARENT), snapshot: None });
 
         TargetHandle { id, texture_id }
     }
@@ -807,8 +857,11 @@ impl Renderer
             target.texture = texture;
             target.view = view;
             target.size = size;
+            target.snapshot = None; // wrong size, recreated once its needed
             self.textures[target.texture_id] = entry;
         }
+        self.screen_snapshot = None;
+        self.screen_canvas = None;
     }
 
     pub fn set_target(&mut self, target: TargetHandle)
@@ -845,49 +898,181 @@ impl Renderer
         &self.draw_commands[(self.sort_keys[position] & INDEX_MASK) as usize]
     }
 
-    fn screen_layer_range(&self, layer: DrawLayer) -> Range<usize>
+    fn ensure_snapshot(&mut self, device: &wgpu::Device, target: u16)
     {
-        match self.groups.last()
+        if target == SCREEN_TARGET
         {
-            Some(group) if group.target == SCREEN_TARGET =>
+            let format = self.surface_format();
+
+            if self.screen_snapshot.is_none()
             {
-                let layer = layer as usize;
-                group.layer_bounds[layer]..group.layer_bounds[layer+1]
+                self.screen_snapshot = Some(create_snapshot(device, &self.texture_bindgroup_layout, &self.target_sampler, format, self.screen_size));
             }
-            _ => 0..0,
+
+            // If it can't copy
+            self.screen_to_canvas = !self.screen_copyable;
+            if self.screen_to_canvas & self.screen_canvas.is_none()
+            {
+                self.screen_canvas = Some(create_snapshot(device, &self.texture_bindgroup_layout, &self.target_sampler, format, self.screen_size));
+            }
+        }
+        else
+        {
+            let target = &mut self.targets[target as usize];
+            if target.snapshot.is_none()
+            {
+                target.snapshot = Some(create_snapshot(device, &self.texture_bindgroup_layout, &self.target_sampler, target.format, target.size));
+            }
         }
     }
 
-    pub(crate) fn render_targets(&self, encoder: &mut wgpu::CommandEncoder)
+    fn first_load(&self, target: u16) -> wgpu::LoadOp<wgpu::Color>
     {
-        for group in self.groups.iter().filter(|group| group.target != SCREEN_TARGET)
+        match target
         {
-            let target = &self.targets[group.target as usize];
-            let load = target.clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear);
-
-            self.draw_range(encoder, &target.view, target.format_slot, load, group.start..group.end);
+            SCREEN_TARGET => wgpu::LoadOp::Clear(self.clear_color),
+            id => self.targets[id as usize].clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear)
         }
     }
 
-    pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layer: DrawLayer)
+    fn build_segments(&mut self, device: &wgpu::Device)
     {
-        let load_op = match layer
-        {
-            DrawLayer::World => wgpu::LoadOp::Clear(self.clear_color),
-            DrawLayer::UI => wgpu::LoadOp::Load
-        };
+        self.segments.clear();
+        self.screen_to_canvas = false;
 
-        self.draw_range(encoder, view, SURFACE_SLOT, load_op, self.screen_layer_range(layer));
+        let count = self.sort_keys.len();
+        let mut position = 0;
+
+        while position < count
+        {
+            let target = (self.sort_keys[position] >> TARGET_SHIFT) as u16;
+
+            let mut load = self.first_load(target);
+            let mut segment_start = position;
+            let mut copy_before = false;
+
+            let mut dirty = true;
+            let mut reader_dirty = false;
+            let mut copy_z = 0;
+
+            while position < count && (self.sort_keys[position] >> TARGET_SHIFT) as u16 == target
+            {
+                let (reads, z) = { let cmd = self.command_at(position); (self.pipelines[cmd.pipeline_id as usize].reads_screen, cmd.z_index) };
+
+                let needs_copy = reads & (dirty | (reader_dirty & (z != copy_z)));
+                if needs_copy
+                {
+                    self.segments.push(Segment { target, start: segment_start, end: position, copy_before, load });
+
+                    segment_start = position;
+                    copy_before = true;
+                    load = wgpu::LoadOp::Load;
+                    copy_z = z;
+                    dirty = false;
+                    reader_dirty = false;
+                }
+                dirty |= !reads;
+                reader_dirty |= reads;
+                position += 1;
+            }
+            self.segments.push(Segment { target, start: segment_start, end: position, copy_before, load });
+        }
+
+        if self.segments.last().map_or(true, |segment| segment.target != SCREEN_TARGET)
+        {
+            self.segments.push(Segment { target: SCREEN_TARGET, start: count, end: count, copy_before: false, load: wgpu::LoadOp::Clear(self.clear_color) });
+        }
+
+        for index in 0..self.segments.len()
+        {
+            let segment = self.segments[index];
+            if segment.copy_before
+            {
+                self.ensure_snapshot(device, segment.target);
+            }
+        }
     }
 
-    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>)
+
+    pub(crate) fn render_frame(&self, encoder: &mut wgpu::CommandEncoder, surface_texture: &wgpu::Texture, surface_view: &wgpu::TextureView)
+    {
+        for segment in &self.segments
+        {
+            let (view, texture, size, format_slot, snapshot) = match segment.target
+            {
+                SCREEN_TARGET =>
+                {
+                    let (view, texture) = match (self.screen_to_canvas, &self.screen_canvas)
+                    {
+                        (true, Some(canvas)) => (&canvas.view, &canvas.texture),
+                        _ => (surface_view, surface_texture)
+                    };
+                    (view, texture, self.screen_size, SURFACE_SLOT, self.screen_snapshot.as_ref())
+                }
+                id =>
+                {
+                    let target = &self.targets[id as usize];
+                    (&target.view, &target.texture, target.size, target.format_slot, target.snapshot.as_ref())
+                }
+            };
+
+            if segment.copy_before
+            {
+                let snapshot = snapshot.expect("shouldn't happen, snapshot in render frame");
+                encoder.copy_texture_to_texture(texture.as_image_copy(), snapshot.texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 });
+            }
+
+            let snapshot_bind_group = snapshot.map(|snapshot| snapshot.entry.bind_group.as_ref());
+            self.draw_range(encoder, view, format_slot, segment.load, segment.start..segment.end, snapshot_bind_group);
+
+            if self.screen_to_canvas
+            {
+                if let Some(canvas) = &self.screen_canvas
+                {
+                    self.blit(encoder, canvas.entry.bind_group.as_ref(), surface_view);
+                }
+            }
+        }
+    }
+
+    // copies a texture onto the view
+    fn blit(&self, encoder: &mut wgpu::CommandEncoder, source: &wgpu::BindGroup, view: &wgpu::TextureView)
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
+        {
+            label: Some("Blit Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment
+            {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations
+                {
+                    load: wgpu::LoadOp::Clear(self.clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        let mesh = &self.meshes[0];
+        render_pass.set_pipeline(&self.blit_pipeline);
+        render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
+        render_pass.set_vertex_buffer(1, self.fullscreen_instance_buf.slice(..));
+        render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_bind_group(0, source, &[]);
+        render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+    }
+
+    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>, snapshot: Option<&wgpu::BindGroup>)
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment
             {
-                view: &view,
+                view,
                 resolve_target: None,
                 ops: wgpu::Operations
                 {
@@ -930,6 +1115,11 @@ impl Renderer
                 let entry = &self.pipelines[pipeline_id];
                 render_pass.set_pipeline(entry.variant(format_slot));
 
+                if let (true, Some(snapshot)) = (entry.reads_screen, snapshot)
+                {
+                    render_pass.set_bind_group(2, snapshot, &[]);
+                }
+
                 if let Some(pipeline_uniform) = &entry.uniforms
                 {
                     render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
@@ -953,44 +1143,6 @@ impl Renderer
             render_pass.draw_indexed(0..mesh.index_count, 0, start as u32..end as u32);
             start = end;
         }
-    }
-
-    pub(crate) fn screen_texture(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, pipeline_id: usize, texture: &wgpu::BindGroup)
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
-        {
-            label: Some("Single Texture Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment
-            {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations
-                {
-                    load: wgpu::LoadOp::Clear(self.clear_color),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-
-        let entry = &self.pipelines[pipeline_id];
-        render_pass.set_pipeline(entry.variant(SURFACE_SLOT)); // Post Processing Shader, then just draws full-screen texture with it
-
-        let mesh = &self.meshes[0]; // Just a quad
-        render_pass.set_vertex_buffer(1, self.fullscreen_instance_buf.slice(..));
-        render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
-        render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
-
-        render_pass.set_bind_group(0, texture, &[]);
-
-        if let Some(pipeline_uniform) = &entry.uniforms
-        {
-            render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
-        }
-
-        render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
 
     fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
@@ -1030,6 +1182,13 @@ impl Renderer
 
             self.push_command(0, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, layer, z_index, shader_id);
         }
+    }
+
+    // basically for a post-proceses effect with a NormalWithScreen pipeline
+    pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
+    {
+        let transform = self.ui_matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.virtual_size, 0.0);
+        self.push_command(0, transform, texture_id, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
@@ -1273,35 +1432,19 @@ impl Renderer
         width * scale
     }
 
-    pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
+    pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
         self.sort_keys.clear();
-        self.groups.clear();
 
         if self.draw_commands.is_empty()
         {
+            self.build_segments(device);
             return;
         }
         debug_assert!(self.draw_commands.len() <= INDEX_MASK as usize, "more than {INDEX_MASK} draw commands in one frame");
 
         self.sort_keys.extend(self.draw_commands.iter().enumerate().map(|(index, cmd)| cmd.sort_key(index)));
         self.sort_keys.sort_unstable();
-
-        // All target commands next to each other
-        // inside a target, each layers commands a re next to each other
-        let keys = &self.sort_keys;
-        let mut start = 0;
-        while start < keys.len()
-        {
-            let target = (keys[start] >> TARGET_SHIFT) as u16;
-            let end = start + keys[start..].partition_point(|&key| ((key >> TARGET_SHIFT) as u16) <= target);
-
-            let group_keys = &keys[start..end];
-            let layer_bounds = std::array::from_fn(|layer| start + group_keys.partition_point(|&key| (((key >> LAYER_SHIFT) & 0xFF) as usize) < layer));
-
-            self.groups.push(TargetGroup { target, start, end, layer_bounds });
-            start = end;
-        }
 
         self.instances.clear();
         self.instances.extend(self.sort_keys.iter().map(|&key|
@@ -1327,6 +1470,7 @@ impl Renderer
         }
 
         queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&self.instances));
+        self.build_segments(device);
     }
 
     pub(crate) fn set_clear_color(&mut self, color: [f64; 4])
