@@ -1,10 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawCommand, DrawLayer, FULL_UV_RECT, InstanceData, Material, MaterialType, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
-
-
+use crate::{MeshBuilder, MeshTopology, shader::ShaderModuleHandle, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -24,14 +22,71 @@ const DEFAULT_FONT_PATH: &str = "src/image/Montserrat-Bold.ttf"; // Gotta change
 const DEFAULT_FONT_SIZE: f32 = 128.0; // Size for now, later add multiple sizes and it chooses from it, or better a 'MSDF' (creating a signed distance field, and reconstruct it when needed)
 const TEXT_CACHE_CAPACITY: usize = 64;
 
+const IDENTITY: [[f32; 4]; 4] =
+[
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0]
+];
+
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const WHITE_TEXTURE: usize = 0;
+const MODE_COLOR: u32 = 0;
+const MODE_TEXTURE: u32 = 1;
+
+// Sort key layout (u64): [layer: 1][z_index: 32][pipeline: 8][submission index: 23]
+// Sorting by this number = sorting by layer, then z, then pipeline, then submission order.
+// The index at the end makes sort_unstable give exactly the same order as a stable sort would.
+const INDEX_BITS: u32 = 23;
+const INDEX_MASK: u64 = (1 << INDEX_BITS) - 1;
+const PIPELINE_SHIFT: u32 = INDEX_BITS;
+const Z_SHIFT: u32 = PIPELINE_SHIFT + 8;
+const LAYER_SHIFT: u32 = Z_SHIFT + 32;
+const LAYER_COUNT: usize = 2; // World, UI
+
+
+#[derive(Copy, Clone)]
+pub(crate) struct DrawCommand
+{
+    pub(crate) mesh_id: usize,
+    pub(crate) transform: [[f32; 4]; 4], // 4x4 model matrix
+    pub(crate) z_index: u32,
+    pub(crate) texture_id: usize,
+    pub(crate) color: [f32; 4],
+    pub(crate) mode: u32, // color or texture
+    pub(crate) pipeline_id: u8,
+    pub(crate) layer: DrawLayer,
+    // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
+    // meshes with baked in uv, should leave this at default
+    pub(crate) uv_rect: [f32; 4]
+}
+
+impl DrawCommand
+{
+    fn sort_key(&self, index: usize) -> u64
+    {
+        (self.layer as u64) << LAYER_SHIFT | (self.z_index as u64) << Z_SHIFT | (self.pipeline_id as u64) << PIPELINE_SHIFT | index as u64
+    }
+
+    // draws with the same values can be one instance
+    fn batches_with(&self, other: &DrawCommand) -> bool
+    {
+        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id)
+    }
+}
 
 pub struct Renderer
 {
     // pub pipeline: wgpu::RenderPipeline,
     pub(crate) pipelines: Vec<wgpu::RenderPipeline>,
     pub(crate) draw_commands: Vec<DrawCommand>,
+    sort_keys: Vec<u64>,
+    layer_bounds: [usize; LAYER_COUNT + 1],
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: usize,
+    instances: Vec<InstanceData>, // reused each frame
+    fullscreen_instance_buf: wgpu::Buffer, // for the screen_texture
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
@@ -156,6 +211,14 @@ impl Renderer
             cache: None
         });
 
+        let fullscreen_instance = InstanceData { model: IDENTITY, color: WHITE, mode: MODE_TEXTURE, uv_rect: FULL_UV_RECT };
+        let fullscreen_instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
+        {
+            label: Some("Fullscreen Instance Buffer"),
+            contents: bytemuck::bytes_of(&fullscreen_instance),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         let vertex_capacity = QUAD_VERTICES.len() * std::mem::size_of::<Vertex>();
         let index_capacity = QUAD_INDICES.len() * std::mem::size_of::<u16>();
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
@@ -196,8 +259,12 @@ impl Renderer
         {
             pipelines: vec![pipeline],
             draw_commands: Vec::new(),
+            sort_keys: Vec::new(),
+            layer_bounds: [0; LAYER_COUNT + 1],
             instance_buf: None,
             instance_capacity: 0,
+            instances: Vec::new(),
+            fullscreen_instance_buf,
             meshes,
             window_size,
             virtual_size: window_size,
@@ -205,8 +272,6 @@ impl Renderer
             texture_bindgroup_layout,
             default_vertex,
             default_fragment,
-            // diffuse_bind_group
-            // texture_bind_groups
             camera_pos: (0.0, 0.0),
             camera_buf,
             camera_bind_group,
@@ -827,6 +892,18 @@ impl Renderer
         }
     }
 
+    // Command in position in draw order
+    fn command_at(&self, position: usize) -> &DrawCommand
+    {
+        &self.draw_commands[(self.sort_keys[position] & INDEX_MASK) as usize]
+    }
+
+    fn layer_range(&self, layer: DrawLayer) -> Range<usize>
+    {
+        let layer = layer as usize;
+        self.layer_bounds[layer]..self.layer_bounds[layer+1]
+    }
+
     pub(crate) fn begin_pass(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layer: DrawLayer)
     {
         let load_op = match layer
@@ -853,48 +930,60 @@ impl Renderer
             timestamp_writes: None,
         });
 
-        if let Some(ref instance_buf) = self.instance_buf
+        // Only commands for this layer
+        let range = self.layer_range(layer);
+
+        let Some(instance_buf) = &self.instance_buf else { return; };
+        if range.is_empty() { return; }
+
+        render_pass.set_vertex_buffer(1, instance_buf.slice(..));
+
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
+        let mut bound_pipeline = usize::MAX;
+        let mut bound_mesh = usize::MAX;
+        let mut bound_texture = usize::MAX;
+
+        let mut start = range.start;
+        while start < range.end
         {
-            render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-            let mut current_pipeline: Option<u8> = None;
+            let cmd = self.command_at(start);
 
-            for (instance_id, cmd) in self.draw_commands.iter().enumerate()
+            // Increase current batch, if next commands are the same
+            let mut end = start + 1;
+            while end < range.end && self.command_at(end).batches_with(cmd)
             {
-                if cmd.layer != layer { continue; }
+                end += 1;
+            }
 
-                if Some(cmd.material.pipeline_id) != current_pipeline
-                {
-                    current_pipeline = Some(cmd.material.pipeline_id);
-                    render_pass.set_pipeline(&self.pipelines[cmd.material.pipeline_id as usize]);
-                }
+            let pipeline_id = cmd.pipeline_id as usize;
+            if pipeline_id != bound_pipeline
+            {
+                bound_pipeline = pipeline_id;
+                render_pass.set_pipeline(&self.pipelines[pipeline_id]);
 
-                let mesh = &self.meshes[cmd.mesh_id];
-
-                render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
-                render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
-
-
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-                match &cmd.material.kind
-                {
-                    MaterialType::Color(_) =>
-                    {
-                        render_pass.set_bind_group(1, self.textures[0].bind_group.as_ref(), &[]);
-                    }
-                    MaterialType::Texture(texture, _) =>
-                    {
-                        render_pass.set_bind_group(1, texture.as_ref(), &[]);
-                    }
-                }
-
-                if let Some(pipeline_uniform) = &self.pipeline_uniforms[cmd.material.pipeline_id as usize]
+                if let Some(pipeline_uniform) = &self.pipeline_uniforms[pipeline_id]
                 {
                     render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
                 }
-
-                render_pass.draw_indexed(0..mesh.index_count, 0, instance_id as u32..instance_id as u32 + 1);
             }
+
+            let mesh = &self.meshes[cmd.mesh_id];
+            if cmd.mesh_id != bound_mesh
+            {
+                bound_mesh = cmd.mesh_id;
+                render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
+                render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+            }
+
+            if cmd.texture_id != bound_texture
+            {
+                bound_texture = cmd.texture_id;
+                render_pass.set_bind_group(1, self.textures[cmd.texture_id].bind_group.as_ref(), &[]);
+            }
+
+            render_pass.draw_indexed(0..mesh.index_count, 0, start as u32..end as u32);
+            start = end;
         }
     }
 
@@ -921,7 +1010,7 @@ impl Renderer
         render_pass.set_pipeline(&self.pipelines[pipeline_id]); // Post Processing Shader, then just draws full-screen texture with it
 
         let mesh = &self.meshes[0]; // Just a quad
-        render_pass.set_vertex_buffer(1, self.instance_buf.as_ref().unwrap().slice(..));
+        render_pass.set_vertex_buffer(1, self.fullscreen_instance_buf.slice(..));
         render_pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
         render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -933,6 +1022,11 @@ impl Renderer
         }
 
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+    }
+
+    fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
+    {
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect });
     }
 
     // no anti-aliasing right now
@@ -953,8 +1047,6 @@ impl Renderer
         let cos = rotation.cos();
         let sin = rotation.sin();
 
-        let material = Arc::new(Material::color(color, shader_id));
-
         for (offset, edge_size) in edges
         {
             let rotated = (offset.0 * cos - offset.1 * sin, offset.0 * sin + offset.1 * cos);
@@ -966,42 +1058,38 @@ impl Renderer
                 CoordSpace::Screen => self.ui_matrix(pos, edge_size, rotation),
             };
 
-            self.draw_commands.push(DrawCommand { mesh_id: 0, transform, z_index, material: Arc::clone(&material), layer, uv_rect: FULL_UV_RECT });
+            self.push_command(0, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, layer, z_index, shader_id);
         }
     }
 
     pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
     pub fn draw_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
     {
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::color(color, id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::UI, z_index, id);
     }
 
     pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id].bind_group);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
     pub fn draw_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id].bind_group);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::UI, z_index, id);
     }
 
     pub fn draw_tinted_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id].bind_group);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::World, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, texture_id, tint, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
     pub fn draw_tinted_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id].bind_group);
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, tint, id)), layer: DrawLayer::UI, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, texture_id, tint, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::UI, z_index, id);
     }
 
     pub fn draw_texture_atlas(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), z_index: u32, shader_id: u8)
@@ -1016,9 +1104,7 @@ impl Renderer
 
     fn draw_texture_atlas_layer(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        let entry = &self.textures[texture_id];
-        let texture_size = entry.size;
-        let texture = Arc::clone(&entry.bind_group);
+        let texture_size = self.textures[texture_id].size;
 
         let uv_rect =
         [
@@ -1028,35 +1114,20 @@ impl Renderer
             rect_size.1 / texture_size.1,
         ];
 
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id)), layer, uv_rect });
+        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, uv_rect, layer, z_index, shader_id);
     }
 
 
     // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
     pub fn draw_mesh(&mut self, mesh_id: usize, texture_id: usize, z_index: u32, shader_id: u8)
     {
-        const IDENTITY: [[f32; 4]; 4] =
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0]
-        ];
-
         self.draw_mesh_transformed(mesh_id, texture_id, IDENTITY, None, DrawLayer::World, z_index, shader_id);
     }
 
     // Same as normal draw_mesh, but with tint and transform, meant only for local space, not world space (text for example)
     pub fn draw_mesh_transformed(&mut self, mesh_id: usize, texture_id: usize, transform: [[f32; 4]; 4], tint: Option<[f32; 4]>, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        let texture = Arc::clone(&self.textures[texture_id].bind_group);
-        let material = match tint
-        {
-            Some(tint) => Material::texture(texture, tint, shader_id),
-            None => Material::texture(texture, [1.0, 1.0, 1.0, 1.0], shader_id),
-        };
-
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, material: Arc::new(material), layer, uv_rect: FULL_UV_RECT });
+        self.push_command(mesh_id, transform, texture_id, tint.unwrap_or(WHITE), MODE_TEXTURE, FULL_UV_RECT, layer, z_index, shader_id);
     }
 
     pub(crate) fn build_text_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str) -> usize
@@ -1179,7 +1250,7 @@ impl Renderer
         self.draw_text_with_font_outline(device, queue, 0, text, pos, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
     }
 
-    // Only really works for a small outline width, also pushes draw count by quite a lot
+    // Only really works for a small outline width
     pub fn draw_text_with_font_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         const DIRECTIONS: [(f32, f32); 8] =
@@ -1234,41 +1305,29 @@ impl Renderer
 
     pub(crate) fn upload_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
+        self.sort_keys.clear();
+        self.layer_bounds = [0; LAYER_COUNT + 1];
+
         if self.draw_commands.is_empty()
         {
-            // self.instance_buf = None;
-            // self.instance_capacity = 0;
             return;
         }
+        debug_assert!(self.draw_commands.len() <= INDEX_MASK as usize, "more than {INDEX_MASK} draw commands in one frame");
 
-        // self.draw_commands.sort_by_key(|cmd| cmd.z_index);
-        self.draw_commands.sort_by_key(|cmd| (cmd.z_index, cmd.material.pipeline_id)); // Index is most important, inside same layer it still sorts pipeline though
+        self.sort_keys.extend(self.draw_commands.iter().enumerate().map(|(index, cmd)| cmd.sort_key(index)));
+        self.sort_keys.sort_unstable();
 
+        let keys = &self.sort_keys;
+        self.layer_bounds = std::array::from_fn(|layer| keys.partition_point(|&key| ((key >> LAYER_SHIFT) as usize) < layer));
 
-        let instances: Vec<InstanceData> = self.draw_commands.iter().map(|cmd|
+        self.instances.clear();
+        self.instances.extend(self.sort_keys.iter().map(|&key|
         {
-            let material = &cmd.material;
-            match material.kind
-            {
-                MaterialType::Color(color) => InstanceData
-                {
-                    model: cmd.transform,
-                    color: color,
-                    mode: 0,
-                    uv_rect: cmd.uv_rect
-                },
-                MaterialType::Texture(_, tint) => InstanceData
-                {
-                    model: cmd.transform,
-                    color: tint,
-                    mode: 1,
-                    uv_rect: cmd.uv_rect
-                },
+            let cmd = &self.draw_commands[(key & INDEX_MASK) as usize];
+            InstanceData { model: cmd.transform, color: cmd.color, mode: cmd.mode, uv_rect: cmd.uv_rect }
+        }));
 
-            }
-        }).collect();
-
-        let instance_size = instances.len() * std::mem::size_of::<InstanceData>();
+        let instance_size = self.instances.len() * std::mem::size_of::<InstanceData>();
 
         if instance_size > self.instance_capacity
         {
@@ -1284,20 +1343,7 @@ impl Renderer
             self.instance_capacity = new_capacity;
         }
 
-        queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&instances));
-        // if let Some(ref buf) = self.instance_buf // If it already exists, dont create it again
-        // {
-        //     queue.write_buffer(buf, 0, bytemuck::cast_slice(&instances));
-        // }
-        // else
-        // {
-        //     self.instance_buf = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor
-        //     {
-        //         label: Some("Instance Buffer"),
-        //         contents: bytemuck::cast_slice(&instances),
-        //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-        //     }));
-        // }
+        queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&self.instances));
     }
 
     pub(crate) fn set_clear_color(&mut self, color: [f64; 4])
@@ -1342,42 +1388,7 @@ impl Renderer
         ]
     }
 
-    // pos in pixels, size as in 1.0 is default scale, rotation in radians (all for 2D, would work for 3D, but this is 2D)
-    // pub fn to_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    // {
-    //     let aspect = self.window_size.0/self.window_size.1;
-    //     let scale = 1./aspect;
 
-    //     let cos = rotation.cos();
-    //     let sin = rotation.sin();
-
-    //     [
-    //         [scale*cos*size.0, sin*size.0, 0.0, 0.0],
-    //         [scale*-sin*size.1, cos*size.1, 0.0, 0.0],
-    //         [0.0, 0.0, 1.0, 0.0],
-    //         [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
-    //     ]
-    // }
-
-    // Size in pixels now too
-    // Always stays the same size, even if screen gets resized (so always 100px big for example), so not relative says but static
-    // pub fn pixel_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    // {
-    //     let aspect = self.window_size.0/self.window_size.1;
-    //     let scale = 1./aspect;
-
-    //     let cos = rotation.cos();
-    //     let sin = rotation.sin();
-
-    //     let pixel_size = ((size.0/self.window_size.1)*2.0, (size.1/self.window_size.1)*2.0);
-
-    //     [
-    //         [scale*cos*pixel_size.0, sin*pixel_size.0, 0.0, 0.0],
-    //         [scale*-sin*pixel_size.1, cos*pixel_size.1, 0.0, 0.0],
-    //         [0.0, 0.0, 1.0, 0.0],
-    //         [(pos.0/self.window_size.0)*2.0-1.0, -((pos.1/self.window_size.1)*2.0-1.0), 0.0, 1.0]
-    //     ]
-    // }
     pub fn pixel_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
         let to_virtual = (self.virtual_size.0 / self.window_size.0, self.virtual_size.1 / self.window_size.1);
@@ -1402,24 +1413,6 @@ impl Renderer
     // Still draws with pixels, but this time everything gets drawn like it looks with the original screen-size, so resized looks the same (in relation to each other)
     // If using this, when trying to use the windowsize, use virtual_size instead of window_size
     // Because everything here is in relation to the original "virtual" size, not the actual window size
-    // pub fn matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    // {
-    //     let aspect = self.window_size.0/self.window_size.1;
-    //     let scale = 1./aspect;
-
-    //     let cos = rotation.cos();
-    //     let sin = rotation.sin();
-
-    //     let scale_x = (size.0/self.virtual_size.1)*2.0;
-    //     let scale_y = (size.1/self.virtual_size.1)*2.0;
-
-    //     [
-    //         [scale*cos*scale_x, sin*scale_x, 0.0, 0.0],
-    //         [scale*-sin*scale_y, cos*scale_y, 0.0, 0.0],
-    //         [0.0, 0.0, 1.0, 0.0],
-    //         [(pos.0/self.virtual_size.0)*2.0-1.0, -((pos.1/self.virtual_size.1)*2.0-1.0), 0.0, 1.0]
-    //     ]
-    // }
     pub fn matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
         let cos = rotation.cos();

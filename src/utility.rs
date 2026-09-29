@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -50,26 +50,6 @@ pub enum DrawType
 {
     Color([f32; 4]),
     Texture(u32)
-}
-
-pub enum MaterialType
-{
-    Color([f32; 4]),
-    Texture(std::sync::Arc<wgpu::BindGroup>, [f32; 4])
-}
-
-// #[derive(Copy, Clone)]
-pub struct DrawCommand
-{
-    pub mesh_id: usize,
-    pub transform: [[f32; 4]; 4], // 4x4 model matrix
-    // pub kind: DrawType,
-    pub z_index: u32,
-    pub material: Arc<Material>,
-    pub layer: DrawLayer,
-    // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
-    // meshes with baked in uv, should leave this at default
-    pub uv_rect: [f32; 4]
 }
 
 pub const FULL_UV_RECT: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
@@ -188,45 +168,6 @@ impl MeshData
     pub fn add_triangle(&mut self, a: u16, b: u16, c: u16)
     {
         self.indices.extend_from_slice(&[a, b, c]);
-    }
-}
-
-
-pub struct Material
-{
-    // pub shader: Arc<Shader>, // Will do it later
-    // pub texture: Option<Arc<Texture>>
-    pub pipeline_id: u8, // 0 for base, 1 for the next and so on (not sure if this is the best way, but works for now I think)
-    pub kind: MaterialType
-}
-
-impl Material
-{
-    // pub fn new(shader: Arc<Shader>, texture: Option<Arc<Texture>>) -> Self
-    // {
-    //     Material
-    //     {
-    //         // shader,
-    //         // texture
-
-    //     }
-    // }
-    pub fn color(color: [f32; 4], pipeline_id: u8) -> Self
-    {
-        Material
-        {
-            kind: MaterialType::Color(color),
-            pipeline_id
-        }
-    }
-
-    pub fn texture(texture: Arc<wgpu::BindGroup>, tint: [f32; 4], pipeline_id: u8) -> Self
-    {
-        Material
-        {
-            kind: MaterialType::Texture(texture, tint),
-            pipeline_id
-        }
     }
 }
 
