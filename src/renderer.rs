@@ -45,6 +45,7 @@ const Z_SHIFT: u32 = PIPELINE_SHIFT + 8;
 const LAYER_SHIFT: u32 = Z_SHIFT + 32;
 const LAYER_COUNT: usize = 2; // World, UI
 
+const SURFACE_SLOT: usize = 0;
 
 #[derive(Copy, Clone)]
 pub(crate) struct DrawCommand
@@ -76,10 +77,88 @@ impl DrawCommand
     }
 }
 
+struct PipelineSource
+{
+    layout: wgpu::PipelineLayout,
+    vertex: ShaderModuleHandle,
+    fragment: ShaderModuleHandle,
+}
+
+impl PipelineSource
+{
+    fn create(&self, device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline
+    {
+        create_render_pipeline(device, &self.layout, &self.vertex.module, &self.vertex.entry, &self.fragment.module, &self.fragment.entry, format)
+    }
+}
+
+pub(crate) struct PipelineEntry
+{
+    source: PipelineSource,
+    variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc)
+    uniforms: Option<PipelineUniforms>
+}
+
+impl PipelineEntry
+{
+    fn variant(&self, format_slot: usize) -> &wgpu::RenderPipeline
+    {
+        &self.variants[format_slot]
+    }
+}
+
+fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, vertex_module: &wgpu::ShaderModule, vertex_entry: &str, fragment_module: &wgpu::ShaderModule, fragment_entry: &str, format: wgpu::TextureFormat) -> wgpu::RenderPipeline
+{
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+    {
+        label: Some("Render Pipeline"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState
+        {
+            module: vertex_module,
+            entry_point: Some(vertex_entry),
+            buffers: &[Vertex::desc(), InstanceData::desc()],
+            compilation_options: wgpu::PipelineCompilationOptions::default()
+        },
+        fragment: Some(wgpu::FragmentState
+        {
+            module: fragment_module,
+            entry_point: Some(fragment_entry),
+            targets: &[Some(wgpu::ColorTargetState
+            {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default()
+        }),
+        primitive: wgpu::PrimitiveState
+        {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
+            unclipped_depth: false,
+            conservative: false
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState
+        {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false
+        },
+        multiview: None,
+        cache: None
+    })
+}
+
 pub struct Renderer
 {
     // pub pipeline: wgpu::RenderPipeline,
-    pub(crate) pipelines: Vec<wgpu::RenderPipeline>,
+    pipelines: Vec<PipelineEntry>,
+    formats: Vec<wgpu::TextureFormat>,
     pub(crate) draw_commands: Vec<DrawCommand>,
     sort_keys: Vec<u64>,
     layer_bounds: [usize; LAYER_COUNT + 1],
@@ -94,8 +173,6 @@ pub struct Renderer
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
     default_vertex: ShaderModuleHandle,
     default_fragment: ShaderModuleHandle,
-    // diffuse_bind_group: wgpu::BindGroup,
-    // texture_bind_groups: Vec<wgpu::BindGroup>
     pub camera_pos: (f32, f32),
     camera_buf: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -106,7 +183,6 @@ pub struct Renderer
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
     free_mesh_ids: Vec<usize>,
     // Same size as 'pipelines', just None for any that have no Uniforms
-    pipeline_uniforms: Vec<Option<PipelineUniforms>>,
     uniform_values: HashMap<String, UniformValue>
 }
 
@@ -155,10 +231,9 @@ impl Renderer
             }]
         });
 
-
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        let default_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
-            label: Some("Render Pipeline Layout"),
+            label: Some("Default Pipeline Layout"),
             bind_group_layouts:
             &[
                 &camera_bind_group_layout,
@@ -167,49 +242,13 @@ impl Renderer
             push_constant_ranges: &[]
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        let default_source = PipelineSource { layout: default_layout, vertex: default_vertex.clone(), fragment: default_fragment.clone() };
+        let default_pipeline = PipelineEntry
         {
-            label: Some("Render Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState
-            {
-                module: &default_vertex.module,
-                entry_point: Some(&default_vertex.entry),
-                buffers: &[Vertex::desc(), InstanceData::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState
-            {
-                module: &default_fragment.module,
-                entry_point: Some(&default_fragment.entry),
-                targets: &[Some(wgpu::ColorTargetState
-                {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState
-            {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,//Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None,
-            cache: None
-        });
+            variants: vec![default_source.create(device, config.format)],
+            source: default_source,
+            uniforms: None,
+        };
 
         let fullscreen_instance = InstanceData { model: IDENTITY, color: WHITE, mode: MODE_TEXTURE, uv_rect: FULL_UV_RECT };
         let fullscreen_instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
@@ -257,7 +296,8 @@ impl Renderer
 
         Self
         {
-            pipelines: vec![pipeline],
+            pipelines: vec![default_pipeline],
+            formats: vec![config.format],
             draw_commands: Vec::new(),
             sort_keys: Vec::new(),
             layer_bounds: [0; LAYER_COUNT + 1],
@@ -280,12 +320,47 @@ impl Renderer
             fonts: vec![default_font],
             text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
             free_mesh_ids: Vec::new(),
-            pipeline_uniforms: vec![None],
             uniform_values: HashMap::new()
         }
     }
 
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
+    fn format_slot(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat) -> usize
+    {
+        match self.formats.iter().position(|&f| f == format)
+        {
+            Some(slot) => slot,
+            None =>
+            {
+                self.formats.push(format);
+                for pipeline_id in 0..self.pipelines.len()
+                {
+                    self.fill_variant(device, pipeline_id);
+                }
+                self.formats.len() - 1
+            }
+        }
+    }
+
+    fn fill_variant(&mut self, device: &wgpu::Device, pipeline_id: usize)
+    {
+        let entry = &mut self.pipelines[pipeline_id];
+
+        for &format in &self.formats[entry.variants.len()..]
+        {
+            entry.variants.push(entry.source.create(&device, format));
+        }
+    }
+
+    fn base_bind_group_layouts(&self, pipeline_type: &PipeLineType) -> Vec<&wgpu::BindGroupLayout>
+    {
+        match pipeline_type
+        {
+            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
+            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
+        }
+    }
+
+    fn build_entry(&self, device: &wgpu::Device, queue: Option<&wgpu::Queue>, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>) -> PipelineEntry
     {
         let vertex = match vertex_path
         {
@@ -299,11 +374,37 @@ impl Renderer
             None => self.default_fragment.clone()
         };
 
-        let bind_group_layouts = match pipeline_type
+        let uniform_setup = uniforms.map(|uniforms|
         {
-            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
-            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
-        };
+            let (offsets, buffer_size) = Self::compute_uniform_layout(uniforms);
+
+            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+            {
+                label: Some("Custom Uniform Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry
+                {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer
+                    {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None
+                    },
+                    count: None
+                }],
+            });
+
+            (offsets, buffer_size, layout)
+        });
+
+        let mut bind_group_layouts = self.base_bind_group_layouts(&pipeline_type);
+        let group_index = bind_group_layouts.len() as u32;
+
+        if let Some((_, _, layout)) = &uniform_setup
+        {
+            bind_group_layouts.push(layout);
+        }
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -312,56 +413,76 @@ impl Renderer
             push_constant_ranges: &[]
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        let uniforms = uniform_setup.map(|(offsets, buffer_size, layout)|
         {
-            label: Some("Render Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor
             {
-                module: &vertex.module,
-                entry_point: Some(&vertex.entry),
-                buffers: &[Vertex::desc(), InstanceData::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState
+                label: Some("Custom Uniform Buffer"),
+                size: buffer_size as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false
+            });
+
+            // If any uniforms got set before this pipeline exists for some reason, otherwise buffers will be initialized with the default
+            for (name, (offset, _)) in &offsets
             {
-                module: &fragment.module,
-                entry_point: Some(&fragment.entry),
-                targets: &[Some(wgpu::ColorTargetState
+                if let (Some(value), Some(queue)) = (self.uniform_values.get(name), queue)
                 {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState
+                    Self::write_uniform(&buffer, queue, *offset, value);
+                }
+            }
+
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
             {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,//Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill, //::Line only work with required_features: wgpu::Features::POLYGON_MODE_LINE in request device
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None,
-            cache: None
+                label: Some("Custom Uniform Bind Group"),
+                layout: &layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }]
+            });
+
+            PipelineUniforms { buffer, bind_group, group_index, offsets }
         });
+
+        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms }
+    }
+
+    fn push_entry(&mut self, device: &wgpu::Device, entry: PipelineEntry) -> usize
+    {
         let id = self.pipelines.len();
-        self.pipelines.push(pipeline);
-        self.pipeline_uniforms.push(None);
+        self.pipelines.push(entry);
+        self.fill_variant(device, id);
         id
     }
 
-    // Two lists ('pipeline' and 'pipeline_uniforms') must be the same for it to work
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
+    {
+        let entry = self.build_entry(device, None, fragment_path, vertex_path, pipeline_type, None);
+        self.push_entry(device, entry)
+    }
+
+    // Same as 'add_pipeline', but with uniforms
+    // An example usage:
+    // struct CustomUniforms { time: f32, color: vec4<f32> };
+    // @group(2) @binding(0) var<uniform> custom: CustomUniforms;
+    // In rust:
+    // renderer.add_pipeline_with_uniforms(device, queue, config, Some(path), None, PipeLineType::Normal, &[("time", UniformType::Float), ("color", UniformType::Mat4)]);
+    // Has to have the same order in rust as in the shader
+    // Names technically dont have to match
+    // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
+    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    {
+        let entry = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
+        self.push_entry(device, entry)
+    }
+
+    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    {
+        // silently skips if not exisiting for now
+        if pipeline_id >= self.pipelines.len() { return; }
+
+        self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
+        self.fill_variant(device, pipeline_id);
+    }
+
     // algined by wgsls uniform rules
     fn compute_uniform_layout(uniforms: &[(&str, UniformType)]) -> (HashMap<String, (usize, UniformType)>, usize)
     {
@@ -380,265 +501,6 @@ impl Renderer
         let total_size = (((cursor+15)/16)*16).max(16);
 
         (offsets, total_size)
-    }
-
-    // Same as 'add_pipeline', but with uniforms
-    // An example usage:
-    // struct CustomUniforms { time: f32, color: vec4<f32> };
-    // @group(2) @binding(0) var<uniform> custom: CustomUniforms;
-    // In rust:
-    // renderer.add_pipeline_with_uniforms(device, queue, config, Some(path), None, PipeLineType::Normal, &[("time", UniformType::Float), ("color", UniformType::Mat4)]);
-    // Has to have the same order in rust as in the shader
-    // Names technically dont have to match
-    // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
-    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
-    {
-        let vertex = match vertex_path
-        {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "vs_main"),
-            None => self.default_vertex.clone()
-        };
-
-        let fragment = match fragment_path
-        {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
-            None => self.default_fragment.clone()
-        };
-
-        let mut bind_group_layouts = match pipeline_type
-        {
-            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
-            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
-        };
-
-        let group_index = bind_group_layouts.len() as u32;
-
-        let (offsets, buffer_size) = Self::compute_uniform_layout(uniforms);
-
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
-        {
-            label: Some("Custom Uniform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry
-            {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer
-                {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None
-                },
-                count: None
-            }],
-        });
-
-        bind_group_layouts.push(&uniform_bind_group_layout);
-
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
-        {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &bind_group_layouts,
-            push_constant_ranges: &[]
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
-        {
-            label: Some("Render Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState
-            {
-                module: &vertex.module,
-                entry_point: Some(&vertex.entry),
-                buffers: &[Vertex::desc(), InstanceData::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState
-            {
-                module: &fragment.module,
-                entry_point: Some(&fragment.entry),
-                targets: &[Some(wgpu::ColorTargetState
-                {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState
-            {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None,
-            cache: None
-        });
-
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("Custom Uniform Buffer"),
-            size: buffer_size as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false
-        });
-
-        // If any uniforms got set before this pipeline exists for some reason, otherwise buffers will be initialized with the default
-        for (name, (offset, _)) in &offsets
-        {
-            if let Some(value) = self.uniform_values.get(name)
-            {
-                Self::write_uniform(&buffer, queue, *offset, value);
-            }
-        }
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            label: Some("Custom Uniform Bind Group"),
-            layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }]
-        });
-
-        let id = self.pipelines.len();
-        self.pipelines.push(pipeline);
-        self.pipeline_uniforms.push(Some(PipelineUniforms { buffer, bind_group, group_index, offsets }));
-        id
-    }
-
-    // simply copy-pasted, should combine them later
-    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
-    {
-        // silently skips if not exisiting for now
-        if pipeline_id >= self.pipelines.len() { return; }
-
-        let vertex = match vertex_path
-        {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "vs_main"),
-            None => self.default_vertex.clone()
-        };
-
-        let fragment = match fragment_path
-        {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
-            None => self.default_fragment.clone()
-        };
-
-        let mut bind_group_layouts = match pipeline_type
-        {
-            PipeLineType::Normal => vec![&self.camera_bind_group_layout, &self.texture_bindgroup_layout],
-            PipeLineType::PostProcess => vec![&self.texture_bindgroup_layout]
-        };
-
-        let group_index = bind_group_layouts.len() as u32;
-
-        let (offsets, buffer_size) = Self::compute_uniform_layout(uniforms);
-
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
-        {
-            label: Some("Custom Uniform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry
-            {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer
-                {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None
-                },
-                count: None
-            }],
-        });
-
-        bind_group_layouts.push(&uniform_bind_group_layout);
-
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
-        {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &bind_group_layouts,
-            push_constant_ranges: &[]
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
-        {
-            label: Some("Render Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState
-            {
-                module: &vertex.module,
-                entry_point: Some(&vertex.entry),
-                buffers: &[Vertex::desc(), InstanceData::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState
-            {
-                module: &fragment.module,
-                entry_point: Some(&fragment.entry),
-                targets: &[Some(wgpu::ColorTargetState
-                {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState
-            {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState
-            {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None,
-            cache: None
-        });
-
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("Custom Uniform Buffer"),
-            size: buffer_size as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false
-        });
-
-        // If any uniforms got set before this pipeline exists for some reason, otherwise buffers will be initialized with the default
-        for (name, (offset, _)) in &offsets
-        {
-            if let Some(value) = self.uniform_values.get(name)
-            {
-                Self::write_uniform(&buffer, queue, *offset, value);
-            }
-        }
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            label: Some("Custom Uniform Bind Group"),
-            layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }]
-        });
-
-        self.pipelines[pipeline_id] = pipeline;
-        self.pipeline_uniforms[pipeline_id] = Some(PipelineUniforms { buffer, bind_group, group_index, offsets });
     }
 
     fn write_uniform(buffer: &wgpu::Buffer, queue: &wgpu::Queue, offset: usize, value: &UniformValue)
@@ -660,7 +522,7 @@ impl Renderer
             None => { self.uniform_values.insert(name.to_string(), value); }
         }
 
-        for pipeline_uniforms in self.pipeline_uniforms.iter().flatten()
+        for pipeline_uniforms in self.pipelines.iter().filter_map(|entry| entry.uniforms.as_ref())
         {
             if let Some(&(offset, expected_kind)) = pipeline_uniforms.offsets.get(name)
             {
@@ -960,9 +822,10 @@ impl Renderer
             if pipeline_id != bound_pipeline
             {
                 bound_pipeline = pipeline_id;
-                render_pass.set_pipeline(&self.pipelines[pipeline_id]);
+                let entry = &self.pipelines[pipeline_id];
+                render_pass.set_pipeline(entry.variant(SURFACE_SLOT));
 
-                if let Some(pipeline_uniform) = &self.pipeline_uniforms[pipeline_id]
+                if let Some(pipeline_uniform) = &entry.uniforms
                 {
                     render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
                 }
@@ -1007,7 +870,8 @@ impl Renderer
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&self.pipelines[pipeline_id]); // Post Processing Shader, then just draws full-screen texture with it
+        let entry = &self.pipelines[pipeline_id];
+        render_pass.set_pipeline(entry.variant(SURFACE_SLOT)); // Post Processing Shader, then just draws full-screen texture with it
 
         let mesh = &self.meshes[0]; // Just a quad
         render_pass.set_vertex_buffer(1, self.fullscreen_instance_buf.slice(..));
@@ -1016,7 +880,7 @@ impl Renderer
 
         render_pass.set_bind_group(0, texture, &[]);
 
-        if let Some(pipeline_uniform) = &self.pipeline_uniforms[pipeline_id]
+        if let Some(pipeline_uniform) = &entry.uniforms
         {
             render_pass.set_bind_group(pipeline_uniform.group_index, &pipeline_uniform.bind_group, &[]);
         }
