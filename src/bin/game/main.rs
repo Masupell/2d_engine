@@ -15,6 +15,8 @@ use rand::Rng;
 type ActionFn = fn(&mut App, &mut UpdateContext);
 type RenderFn = fn(&App, &mut RenderContext);
 
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
 #[derive(Copy, Clone, PartialEq)]
 enum GameState
 {
@@ -22,7 +24,7 @@ enum GameState
     MainMenuSettings,
     Playing,
     Paused,
-    Dead,
+    Dead
 }
 impl GameState { const COUNT: usize = 5; }
 
@@ -33,7 +35,7 @@ const GAME_UPDATE_TABLE: [ActionFn; GameState::COUNT] =
     App::update_menu_settings,
     App::update_world,
     App::update_pause_menu,
-    App::update_dead,
+    App::update_dead
 ];
 
 const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
@@ -42,7 +44,7 @@ const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
     App::draw_main_menu_settings,
     App::draw_playing,
     App::draw_paused,
-    App::draw_dead,
+    App::draw_dead
 ];
 
 const fn base_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
@@ -76,6 +78,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     actions[Action::SelectWallShaderFast as usize] = App::wall_shader_fast;
     actions[Action::SelectLavaShaderComplex as usize] = App::lava_shader_complex;
     actions[Action::SelectLavaShaderSimple as usize] = App::lava_shader_simple;
+    actions[Action::ToggleBloom as usize] = App::toggle_bloom;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
     used[Action::SelectWallShaderCracks as usize] = true;
@@ -83,6 +86,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     used[Action::SelectWallShaderFast as usize] = true;
     used[Action::SelectLavaShaderComplex as usize] = true;
     used[Action::SelectLavaShaderSimple as usize] = true;
+    used[Action::ToggleBloom as usize] = true;
     (actions, used)
 }
 
@@ -142,7 +146,7 @@ const ACTION_TABLES: [[ActionFn; Action::COUNT]; GameState::COUNT] =
     MAIN_MENU_SETTINGS.0,
     PLAYING.0,
     PAUSED.0,
-    DEAD.0,
+    DEAD.0
 ];
 
 const USED_TABLE: [[bool; Action::COUNT]; GameState::COUNT] =
@@ -151,25 +155,40 @@ const USED_TABLE: [[bool; Action::COUNT]; GameState::COUNT] =
     MAIN_MENU_SETTINGS.1,
     PLAYING.1,
     PAUSED.1,
-    DEAD.1,
+    DEAD.1
 ];
 
+// Render Targets + pipelines
+// Targets are drawn in order of creation (currently), therefore eventhough, as example:
+// u8 is the same size and format as d8, I could not draw into d8 after drawing into d16, as it would combine all d8's
+// Also, they are ordererd this way, because of the drawing based on creation time, so d2 will be drawn before u2
+#[derive(Copy, Clone)]
+struct PostEffects
+{
+    scene: TargetHandle, // For the world (things like the player, wall, etc) get drawn on to this target
+    d2: TargetHandle, // bloom down sampling, 1/2
+    d4: TargetHandle, // 1/4
+    d8: TargetHandle, // 1/8
+    d16: TargetHandle, // 1/16
+    u8: TargetHandle, // bloom up sampling: 1/8
+    u4: TargetHandle, // 1/4
+    u2: TargetHandle, // 1/2
+    extract: u8,
+    down: u8,
+    up: u8,
+    composite: u8,
+    blur: u8,
+    vignette: u8
+}
 
-// const ACTION_TABLE: [ActionFn; Action::COUNT] =
-// [
-//     App::toggle_fullscreen,
-//     App::escape,
-//     App::mouse_left_pressed,
-//     App::mouse_left_released,
-//     App::mouse_left_hold,
-//     App::toggle_wall_shader,
-//     App::player_place_checkpoint,
-//     App::player_start_falling,
-//     App::player_move_up,
-//     App::player_move_left,
-//     App::player_move_right,
-//     App::toggle_rope_extending
-// ];
+impl PostEffects
+{
+    fn placeholder() -> Self
+    {
+        let target = TargetHandle { id: 0, texture_id: 0 };
+        Self { scene: target, d2: target, d4: target, d8: target, d16: target, u8: target, u4: target, u2: target, extract: 0, down: 0, up: 0, composite: 0, blur: 0, vignette: 0 }
+    }
+}
 
 struct App
 {
@@ -187,8 +206,6 @@ struct App
     blur_texture: usize,
     death_g_force: f32,
     menu_climb: f32,
-    vignette_id: usize,
-    blur_id: usize,
     setting_button: no_if::button::Button,
     quit_button: no_if::button::Button,
     fade_alpha: f32,
@@ -204,7 +221,10 @@ struct App
     dash_hud: DashHud,
     elapsed: f32,
     lava: Lava,
-    lava_shader_dropdown: Dropdown
+    lava_shader_dropdown: Dropdown,
+    bloom_checkbox: Checkbox,
+    bloom: bool,
+    post: PostEffects
 }
 
 impl App
@@ -217,32 +237,26 @@ impl App
         self.fullscreen_checkbox.set_checked(ctx.context.is_fullscreen());
     }
 
-    fn start_game(&mut self, ctx: &mut UpdateContext)
+    fn start_game(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::Playing;
-        ctx.context.set_post_process_pipeline(self.vignette_id);
     }
 
     fn open_settings(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenuSettings; }
 
-    fn back_to_main_menu(&mut self, ctx: &mut UpdateContext)
+    fn back_to_main_menu(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::MainMenu;
-        ctx.context.set_post_process_pipeline(self.blur_id);
-        ctx.context.add_post_process_pipeline(self.vignette_id);
     }
 
-    fn resume_game(&mut self, ctx: &mut UpdateContext)
+    fn resume_game(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::Playing;
-        ctx.context.set_post_process_pipeline(self.vignette_id);
     }
 
-    fn pause_game(&mut self, ctx: &mut UpdateContext)
+    fn pause_game(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::Paused;
-        ctx.context.set_post_process_pipeline(self.blur_id);
-        ctx.context.add_post_process_pipeline(self.vignette_id);
     }
 
     fn restart_game(&mut self, ctx: &mut UpdateContext)
@@ -257,13 +271,10 @@ impl App
     }
 
     fn no_state_change(&mut self, _ctx: &mut UpdateContext) {}
-    fn kill_player(&mut self, ctx: &mut UpdateContext)
+    fn kill_player(&mut self, _ctx: &mut UpdateContext)
     {
         self.death_g_force = self.player.last_deceleration / 1960.0;
         self.game_state = GameState::Dead;
-
-        ctx.context.set_post_process_pipeline(self.blur_id);
-        ctx.context.add_post_process_pipeline(self.vignette_id);
     }
 
 
@@ -384,6 +395,79 @@ impl App
     {
         self.player.dash();
     }
+
+    fn toggle_bloom(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.bloom = !self.bloom;
+    }
+}
+
+// Screen Effects
+impl App
+{
+    // set target to scene, draw world on it
+    // bloom, if bloom is on
+    // set target to screen, draw blur (if in menu) + vignette, plus all ui stuff later on top
+    fn draw_scene(&self, render_ctx: &mut RenderContext, world: RenderFn, blur: bool)
+    {
+        render_ctx.graphics.renderer.set_target(self.post.scene);
+        world(self, render_ctx);
+
+        const BLOOM_TABLE: [RenderFn; 2] = [App::draw_nothing, App::draw_bloom];
+        BLOOM_TABLE[self.bloom as usize](self, render_ctx);
+
+        render_ctx.graphics.renderer.set_screen_target();
+        render_ctx.graphics.renderer.draw_fullscreen(self.post.scene.texture_id, WHITE, 0, 0);
+
+        const BLUR_TABLE: [RenderFn; 2] = [App::draw_nothing, App::draw_blur];
+        BLUR_TABLE[blur as usize](self, render_ctx);
+
+        render_ctx.graphics.renderer.draw_fullscreen(0, WHITE, 31, self.post.vignette);
+    }
+
+    fn draw_nothing(&self, _render_ctx: &mut RenderContext) {}
+
+    fn draw_blur(&self, render_ctx: &mut RenderContext)
+    {
+        render_ctx.graphics.renderer.draw_fullscreen(0, WHITE, 30, self.post.blur);
+    }
+
+    // d2 is before u2, that is fixed, by the ordering, so here writing them the other way around would not change anything
+    fn draw_bloom(&self, render_ctx: &mut RenderContext)
+    {
+        let renderer = &mut *render_ctx.graphics.renderer;
+        let post = &self.post;
+
+        // Extract bright parts of the scene, draw it on half resolution
+        renderer.set_target(post.d2);
+        renderer.draw_fullscreen(post.scene.texture_id, WHITE, 0, post.extract);
+
+        // Down sampling chain
+        renderer.set_target(post.d4);
+        renderer.draw_fullscreen(post.d2.texture_id, WHITE, 0, post.down);
+        renderer.set_target(post.d8);
+        renderer.draw_fullscreen(post.d4.texture_id, WHITE, 0, post.down);
+        renderer.set_target(post.d16);
+        renderer.draw_fullscreen(post.d8.texture_id, WHITE, 0, post.down);
+
+        // Up sampling chain
+        // smaller target as input texture, current target (which is twice as big as the previous one) as screen reading texture
+        renderer.set_target(post.u8);
+        renderer.draw_fullscreen(post.d8.texture_id, WHITE, 0, 0);
+        renderer.draw_fullscreen(post.d16.texture_id, WHITE, 1, post.up);
+
+        renderer.set_target(post.u4);
+        renderer.draw_fullscreen(post.d4.texture_id, WHITE, 0, 0);
+        renderer.draw_fullscreen(post.u8.texture_id, WHITE, 1, post.up);
+
+        renderer.set_target(post.u2);
+        renderer.draw_fullscreen(post.d2.texture_id, WHITE, 0, 0);
+        renderer.draw_fullscreen(post.u4.texture_id, WHITE, 1, post.up);
+
+        // draw the final glow on the screen, z-index of 1, as the z-indices of before where for the other targets, and now it is 0, basically
+        renderer.set_screen_target();
+        renderer.draw_fullscreen(post.u2.texture_id, WHITE, 1, post.composite);
+    }
 }
 
 // Seperation, just all game-state functions
@@ -421,6 +505,7 @@ impl App
         self.lava_shader_dropdown.update(ctx.input);
 
         self.fullscreen_checkbox.update(ctx.input);
+        self.bloom_checkbox.update(ctx.input);
     }
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
@@ -497,12 +582,16 @@ impl App
         self.begin_fade_transition(App::restart_game);
     }
 
-    fn draw_main_menu(&self, render_ctx: &mut RenderContext)
+    fn draw_menu_world(&self, render_ctx: &mut RenderContext)
     {
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
+    }
 
-        // render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, [0.5, 0.5, 0.5, 1.0], 3, 0);
+    fn draw_main_menu(&self, render_ctx: &mut RenderContext)
+    {
+        self.draw_scene(render_ctx, App::draw_menu_world, true);
+
         let title_rotation = (self.menu_climb*2.0).sin() * 0.05;
         let text_rotation = (self.menu_climb*5.0+2.0).sin() * 0.01;
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Climber?", (275.0, 360.0), 128.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, title_rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
@@ -515,8 +604,7 @@ impl App
 
     fn draw_main_menu_settings(&self, render_ctx: &mut RenderContext)
     {
-        self.wall.draw(render_ctx, 1);
-        self.decorations.draw(render_ctx, 2, 0);
+        self.draw_scene(render_ctx, App::draw_menu_world, true);
 
         render_ctx.graphics.renderer.draw_texture_ui(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1083.0, 586.0), 0.0), self.settings_background_texture, 0, 0);
 
@@ -529,6 +617,7 @@ impl App
         self.lava_shader_dropdown.draw(render_ctx, 2);
 
         self.fullscreen_checkbox.draw(render_ctx, 1);
+        self.bloom_checkbox.draw(render_ctx, 1);
     }
 
     fn draw_world(&self, render_ctx: &mut RenderContext)
@@ -555,13 +644,13 @@ impl App
 
     fn draw_playing(&self, render_ctx: &mut RenderContext)
     {
-        self.draw_world(render_ctx);
+        self.draw_scene(render_ctx, App::draw_world, false);
         self.draw_hud(render_ctx);
     }
 
     fn draw_paused(&self, render_ctx: &mut RenderContext)
     {
-        self.draw_world(render_ctx);
+        self.draw_scene(render_ctx, App::draw_world, true);
 
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Paused", (640.0, 100.0), 120.0, [0.7, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
         self.pause_menu_button.draw(render_ctx, 1, 0);
@@ -570,9 +659,7 @@ impl App
 
     fn draw_dead(&self, render_ctx: &mut RenderContext)
     {
-        self.draw_world(render_ctx);
-
-        // render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), self.blur_texture, 5, 0);
+        self.draw_scene(render_ctx, App::draw_world, true);
 
         let score_str = format!("Score: {}", self.player.score);
         let g_force_str = format!("G-force: {}", self.death_g_force);
@@ -583,8 +670,6 @@ impl App
 
         let rotation = (self.menu_climb*2.0).sin() * 0.05;
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Press any key to restart", (640.0, 600.0), 48.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
-
-        // self.restart_button.draw(render_ctx, 6, 0);
     }
 
     fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
@@ -595,7 +680,7 @@ impl App
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
+    fn setup(&mut self, _ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
         register_keys(input);
 
@@ -648,14 +733,10 @@ impl EngineEvent for App
         graphics.set_uniform("seed", UniformValue::Float(rng.random()));
         self.wall.set_rock_shader(rock_shader as u8);
 
-        let vignette_pipeline = graphics.load_shader(Some("src/shaders/post_process.wgsl"), Some("src/shaders/post_process.wgsl"), PipeLineType::PostProcess);
-        self.vignette_id = vignette_pipeline;
-        ctx.set_post_process_pipeline(vignette_pipeline);
+        let vignette = graphics.load_shader(Some("src/shaders/vignette.wgsl"), None, PipeLineType::NormalWithScreen) as u8;
 
         graphics.set_uniform("radius", UniformValue::Float(3.0));
-        let blur_pipeline = graphics.load_shader_with_uniform(Some("src/shaders/blur_post_process.wgsl"), Some("src/shaders/blur_post_process.wgsl"), PipeLineType::PostProcess, &[("radius", UniformType::Float)]);
-        self.blur_id = blur_pipeline;
-        ctx.add_post_process_pipeline(blur_pipeline);
+        let blur = graphics.load_shader_with_uniform(Some("src/shaders/blur.wgsl"), None, PipeLineType::NormalWithScreen, &[("radius", UniformType::Float)]) as u8;
 
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
@@ -677,6 +758,40 @@ impl EngineEvent for App
 
         let lava_shader = graphics.load_shader_with_uniform(Some("src/shaders/lava_shader/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)]) as u8;
         self.lava.set_shader(lava_shader);
+
+        // Bloom
+        // extract/down are 'Normal' and read only their texture
+        // up/composite are 'NormalWithScreen' and also read the screen
+        let extract = graphics.load_shader_with_uniform(Some("src/shaders/bloom/extract.wgsl"), None, PipeLineType::Normal, &[("bloom_threshold", UniformType::Float), ("bloom_knee", UniformType::Float)]) as u8;
+        let down = graphics.load_shader(Some("src/shaders/bloom/down.wgsl"), None, PipeLineType::Normal) as u8;
+        let up = graphics.load_shader_with_uniform(Some("src/shaders/bloom/up.wgsl"), None, PipeLineType::NormalWithScreen, &[("bloom_radius", UniformType::Float), ("bloom_spread", UniformType::Float)]) as u8;
+        let composite = graphics.load_shader_with_uniform(Some("src/shaders/bloom/composite.wgsl"), None, PipeLineType::NormalWithScreen, &[("bloom_intensity", UniformType::Float)]) as u8;
+
+        graphics.set_uniform("bloom_threshold", UniformValue::Float(0.4));
+        graphics.set_uniform("bloom_knee", UniformValue::Float(0.2));
+        graphics.set_uniform("bloom_radius", UniformValue::Float(2.0));
+        graphics.set_uniform("bloom_spread", UniformValue::Float(0.6));
+        graphics.set_uniform("bloom_intensity", UniformValue::Float(0.3));
+
+        let format = graphics.surface_format();
+        let hdr = graphics.hdr_format();
+        self.post = PostEffects
+        {
+            scene: graphics.create_render_target(1.0, format),
+            d2: graphics.create_render_target(0.5, hdr),
+            d4: graphics.create_render_target(0.25, hdr),
+            d8: graphics.create_render_target(0.125, hdr),
+            d16: graphics.create_render_target(0.0625, hdr),
+            u8: graphics.create_render_target(0.125, hdr),
+            u4: graphics.create_render_target(0.25, hdr),
+            u2: graphics.create_render_target(0.5, hdr),
+            extract,
+            down,
+            up,
+            composite,
+            blur,
+            vignette,
+        };
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -687,7 +802,6 @@ impl EngineEvent for App
         let actions = update_ctx.input.actions().to_vec();
         for action in actions
         {
-            // ACTION_TABLE[action as usize](self, update_ctx);
             ACTION_TABLES[self.game_state as usize][action as usize](self, update_ctx);
         }
     }
@@ -748,6 +862,10 @@ impl App
         let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
         fullscreen_checkbox.set_pos((162.0, 330.0));
 
+        let mut bloom_checkbox = Checkbox::new((25.0, 25.0), "Bloom", Action::ToggleBloom, Action::ToggleBloom);
+        bloom_checkbox.set_pos((162.0, 370.0));
+        bloom_checkbox.set_checked(true);
+
         Self
         {
             x: 0.0,
@@ -764,8 +882,6 @@ impl App
             blur_texture: 0,
             death_g_force: 0.0,
             menu_climb: 0.0,
-            vignette_id: 0,
-            blur_id: 0,
             setting_button,
             quit_button,
             fade_alpha: 0.0,
@@ -781,7 +897,10 @@ impl App
             dash_hud: DashHud::new(),
             elapsed: 0.0,
             lava: Lava::new(700.0),
-            lava_shader_dropdown
+            lava_shader_dropdown,
+            bloom_checkbox,
+            bloom: true,
+            post: PostEffects::placeholder()
         }
     }
 }
@@ -789,7 +908,7 @@ impl App
 pub fn register_keys(input: &mut Input)
 {
     input.add_key_binding(Key::Space, Some(Action::PlaceCheckPoint), None, None);
-    // input.add_mouse_binding(Button::Left, Some(Action::PlaceCheckPoint), None, None);
+    input.add_mouse_binding(Button::Left, Some(Action::PlaceCheckPoint), None, None);
     input.add_key_binding(Key::KeyF, None, Some(Action::StartFalling), None);
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));

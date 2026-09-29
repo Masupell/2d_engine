@@ -205,6 +205,12 @@ impl<'a> GraphicsContext<'a>
         self.renderer.surface_format()
     }
 
+    // supports values above 1.0, more precision
+    pub fn hdr_format(&self) -> wgpu::TextureFormat
+    {
+        wgpu::TextureFormat::Rgba16Float
+    }
+
     pub fn supports_format(&self, format: wgpu::TextureFormat) -> bool
     {
         format_is_usable(format, self.device.features())

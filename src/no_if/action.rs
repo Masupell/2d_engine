@@ -34,6 +34,8 @@ pub enum Action
     SelectWallShaderFast,
 
     SelectLavaShaderComplex,
-    SelectLavaShaderSimple
+    SelectLavaShaderSimple,
+
+    ToggleBloom
 }
-impl Action { pub const COUNT: usize = 23; }
+impl Action { pub const COUNT: usize = 24; }
