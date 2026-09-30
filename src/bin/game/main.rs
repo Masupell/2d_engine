@@ -9,7 +9,7 @@ pub mod lava;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::Wall};
+use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::{NO_SUMMIT, Wall}};
 use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -224,7 +224,9 @@ struct App
     lava_shader_dropdown: Dropdown,
     bloom_checkbox: Checkbox,
     bloom: bool,
-    post: PostEffects
+    post: PostEffects,
+    endless: bool,
+    reached_summit: bool
 }
 
 impl App
@@ -266,6 +268,8 @@ impl App
         self.dash_hud.reset();
         self.hazards.reset();
         self.lava.reset();
+        self.reached_summit = false;
+        self.apply_mode();
 
         self.start_game(ctx);
     }
@@ -399,6 +403,27 @@ impl App
     fn toggle_bloom(&mut self, _ctx: &mut UpdateContext)
     {
         self.bloom = !self.bloom;
+    }
+
+    fn apply_mode(&mut self)
+    {
+        let summit_y = [-2.0 * 200.0, NO_SUMMIT][self.endless as usize];
+
+        self.wall.set_summit_y(summit_y);
+        self.hazards.set_summit_y(summit_y);
+        self.lava.set_ceiling(summit_y + 200.0);
+    }
+
+    fn set_endless(&mut self, endless: bool)
+    {
+        self.endless = endless;
+        self.apply_mode();
+    }
+
+    fn reached_summit(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.reached_summit = true;
+        self.hazards.set_spawning(false);
     }
 }
 
@@ -557,6 +582,10 @@ impl App
         self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
         let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
 
+        let reached = (self.player.collision.pos.y < self.wall.summit_y()) & alive & !self.reached_summit;
+        const SUMMIT_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::reached_summit];
+        SUMMIT_TABLE[reached as usize](self, update_ctx);
+
         const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
         let should_die = (self.player.is_beyond_recovery() | in_lava) & alive;
         DEATH_TABLE[should_die as usize](self, update_ctx);
@@ -626,7 +655,7 @@ impl App
         self.decorations.draw(render_ctx, 2, 0);
         self.collectibles.draw(render_ctx, 2);
         self.player.draw(render_ctx, 3, 0);
-        self.rope.draw(render_ctx, 3, 1);
+        self.rope.draw(render_ctx, 3);
         self.hazards.draw(render_ctx, 3, 0);
         self.lava.draw(render_ctx, 4);
     }
@@ -714,8 +743,8 @@ impl EngineEvent for App
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
         self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0);
-        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 2.0, 5.0, 0.5);
-        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 2.0, 5.0, 0.5);
+        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
+        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -726,7 +755,8 @@ impl EngineEvent for App
 
         self.blur_texture = graphics.load_texture("src/bin/game/assets/blur.png", FilterMode::Linear, FilterMode::Linear);
 
-        graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        let rope_shader = graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        self.rope.set_rope_shader(rope_shader as u8);
         let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
         graphics.set_uniform("band_height", UniformValue::Float(200.0));
@@ -734,6 +764,9 @@ impl EngineEvent for App
         let mut rng = rand::rng();
         graphics.set_uniform("seed", UniformValue::Float(rng.random()));
         self.wall.set_rock_shader(rock_shader as u8);
+        let cap_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/summit_cap.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
+        self.wall.set_cap_shader(cap_shader);
+        self.apply_mode();
 
         let vignette = graphics.load_shader(Some("src/shaders/vignette.wgsl"), None, PipeLineType::NormalWithScreen) as u8;
 
@@ -902,7 +935,9 @@ impl App
             lava_shader_dropdown,
             bloom_checkbox,
             bloom: true,
-            post: PostEffects::placeholder()
+            post: PostEffects::placeholder(),
+            endless: false,
+            reached_summit: false
         }
     }
 }

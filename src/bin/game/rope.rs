@@ -16,6 +16,8 @@ pub struct Rope
     pub min_anchor_spacing: f32,
     // from 0..1, closer to 0 is slower, how fast the anchor moves
     pub straighten_smoothing: f32,
+
+    rope_shader: u8
 }
 
 impl Rope
@@ -38,7 +40,13 @@ impl Rope
             max_active_points: 25,
             min_anchor_spacing: 5.0,
             straighten_smoothing: 0.05,
+            rope_shader: 0
         }
+    }
+
+    pub fn set_rope_shader(&mut self, shader_id: u8)
+    {
+        self.rope_shader = shader_id;
     }
 
     fn compute_view_bounds(player_pos: Vec2, buffer: f32) -> (Vec2, Vec2)
@@ -222,10 +230,10 @@ impl Rope
         previous.end_anchor = removed.end_anchor;
     }
 
-    pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32, shader_id: u8)
+    pub fn draw(&self, render_ctx: &mut crate::RenderContext, z_index: u32)
     {
         let (view_min, view_max) = self.view_bounds;
-        self.segments.iter().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.draw(render_ctx, z_index, shader_id));
+        self.segments.iter().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.draw(render_ctx, z_index, self.rope_shader));
     }
 
     // Only builds meshes for newly added segements
@@ -244,16 +252,6 @@ impl Rope
         self.segments.iter_mut().filter(|segment| segment.in_view(view_min, view_max)).for_each(|segment| segment.update_mesh(renderer, device, queue, width));
     }
 
-    // pub fn reset_rope(&mut self, top_point: Vec2)
-    // {
-    //     let segment_length = 30.0;
-    //     let angle: f32 = 0.4;
-    //     let direction = Vec2::new(angle.cos(), angle.sin());
-
-    //     self.segments.clear();
-    //     self.segments = vec![RopeSegment::new(top_point, direction, segment_length, 1)];
-    //     self.view_bounds = (top_point, top_point);
-    // }
     pub fn reset_rope(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, top_point: Vec2)
     {
         let segment_length = 30.0;

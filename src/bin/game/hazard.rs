@@ -3,7 +3,7 @@ use std::f32;
 use engine::*;
 use rand::Rng;
 
-use crate::{player::Player, wall::Wall};
+use crate::{player::Player, wall::{NO_SUMMIT, Wall}};
 
 
 #[derive(Copy, Clone)]
@@ -246,7 +246,7 @@ fn setup_fall_from_top(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &m
 
 fn setup_shoot_from_left(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
-    let y = sample_flat_distribution(rng, player_pos.y-90.0, 300.0, 0.2);
+    let y = sample_flat_distribution(rng, player_pos.y, 300.0, 0.2);
     let pos = Vec2::new(bounds.0 - 30.0, y);
 
     (pos, Vec2::new(speed, 0.0))
@@ -254,11 +254,13 @@ fn setup_shoot_from_left(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: 
 
 fn setup_shoot_from_right(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
-    let y = sample_flat_distribution(rng, player_pos.y-90.0, 300.0, 0.2);
+    let y = sample_flat_distribution(rng, player_pos.y, 300.0, 0.2);
     let pos = Vec2::new(bounds.1 + 30.0, y);
 
     (pos, Vec2::new(-speed, 0.0))
 }
+
+const BLOCKED_NEAR_SUMMIT: [bool; HazardMovement::COUNT] = [true, false, false];
 
 pub struct HazardSpawner
 {
@@ -270,6 +272,9 @@ pub struct HazardSpawner
     highest_altitude: f32,
     pub max_spawn_rate: f32,
     pub half_distance_difficulty: f32, // px after safe zone to get halfway to max_spawn_rate
+    summit_y: f32,
+    summit_clear_distance: f32, // top spawners stop when summit is this close to the player
+    spawning: bool
 }
 
 impl HazardSpawner
@@ -285,8 +290,21 @@ impl HazardSpawner
             spawn_timers: Vec::new(),
             highest_altitude: 0.0,
             max_spawn_rate: 4.0,
-            half_distance_difficulty: 4000.0 // 20m
+            half_distance_difficulty: 4000.0, // 20m
+            summit_y: NO_SUMMIT,
+            summit_clear_distance: 1100.0,
+            spawning: true
         }
+    }
+
+    pub fn set_spawning(&mut self, spawning: bool)
+    {
+        self.spawning = spawning;
+    }
+
+    pub fn set_summit_y(&mut self, summit_y: f32)
+    {
+        self.summit_y = summit_y;
     }
 
     pub fn set_hazard_texture(&mut self, texture_id: usize)
@@ -328,6 +346,7 @@ impl HazardSpawner
     {
         let mut rng = rand::rng();
 
+        self.spawning = true;
         self.pool.iter_mut().for_each(|h| h.state = HazardState::Inactive);
         self.highest_altitude = 0.0;
         self.kinds.iter().zip(self.spawn_timers.iter_mut()).for_each(|(kind, timer)| *timer = kind.roll_interval(&mut rng));
@@ -423,20 +442,22 @@ impl HazardSpawner
         };
     }
 
-    // Right now all hazards use same spawn timer
     pub fn maintain(&mut self, wall: &Wall, player_pos: Vec2, dt: f32)
     {
-         self.highest_altitude = self.highest_altitude.max(-player_pos.y);
+        self.highest_altitude = self.highest_altitude.max(-player_pos.y);
 
-         let past_safe_zone = (self.highest_altitude > SAFE_ALTITUDE) as u32 as f32;
-         let tick = dt * self.spawn_rate() * past_safe_zone;
+        let past_safe_zone = (self.highest_altitude > SAFE_ALTITUDE) as u32 as f32;
+        let tick = dt * self.spawn_rate() * past_safe_zone * self.spawning as u32 as f32;
 
         const SPAWN_TABLE: [fn(&mut HazardSpawner, &Wall, Vec2, usize); 2] = [HazardSpawner::skip_spawn, HazardSpawner::spawn_kind];
+
+        let near_summit = (player_pos.y - self.summit_y) < self.summit_clear_distance;
 
         for i in 0..self.kinds.len()
         {
             self.spawn_timers[i] -= tick;
-            let should_spawn = (self.spawn_timers[i] < 0.0) as usize;
+            let blocked = near_summit & BLOCKED_NEAR_SUMMIT[self.kinds[i].movement as usize];
+            let should_spawn = ((self.spawn_timers[i] < 0.0) & !blocked) as usize;
             SPAWN_TABLE[should_spawn](self, wall, player_pos, i);
         }
 

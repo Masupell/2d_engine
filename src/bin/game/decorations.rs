@@ -190,8 +190,10 @@ impl DecorationSpawner
         let near = player_pos.y + dir * distance_from_player;
         let far = near + dir * spread;
 
-        let y_min = near.min(far);
+        let limit = wall.summit_y() + 100.0 + footprint.1 * 0.5;
+
         let y_max = near.max(far);
+        let y_min = near.min(far).max(limit).min(y_max-1.0);
 
         const FLIP_TABLE: [f32; 2] = [1.0, -1.0];
         let flip_x = FLIP_TABLE[rng.random_range(0..2)];
@@ -208,7 +210,11 @@ impl DecorationSpawner
 
         let despawned = self.pool.iter_mut().filter(|d| d.active & (((d.pos.y - player_pos.y) * dir) < -distance_from_player)).map(|d| d.active = false).count();
 
-        let deficit = target_count.saturating_sub(self.active_count());
+        let near = player_pos.y + dir * distance_from_player;
+        let far = near + dir * spread;
+        let has_room = near.max(far) > wall.summit_y() + 100.0;
+
+        let deficit = target_count.saturating_sub(self.active_count()) * has_room as usize;
 
         let needs_rebuild = (despawned > 0) | (deficit > 0);
         (0..needs_rebuild as usize).for_each(|_| self.rebuild_grid());

@@ -331,11 +331,16 @@ impl CollectibleManager
         let index = self.next_entry_index();
         let entry = self.entries[index];
         let pos = random_spawn_pos(wall, player_pos, SPAWN_STD_DEV, spread);
+        let above = pos.y < (wall.summit_y() + 150.0);
 
-        self.spawn(entry, pos);
+        const SPAWN_TABLE: [fn(&mut CollectibleManager, &SpawnEntry, Vec2); 2] = [CollectibleManager::spawn, CollectibleManager::no_spawn];
+        SPAWN_TABLE[above as usize](self, &entry, pos);
+        // self.spawn(&entry, pos);
     }
 
-    fn spawn(&mut self, entry: SpawnEntry, pos: Vec2)
+    fn no_spawn(&mut self, _entry: &SpawnEntry, _pos: Vec2) {}
+
+    fn spawn(&mut self, entry: &SpawnEntry, pos: Vec2)
     {
         // Either reuses the first Inactive collectible, or if no exist adds a new one
         // No filter(), to avoid borrowing issues
@@ -344,7 +349,7 @@ impl CollectibleManager
             self.pool.push(Collectible::inactive());
             self.pool.len() - 1
         });
-        self.pool[index].activate(&entry, pos);
+        self.pool[index].activate(entry, pos);
     }
 
     pub fn amount(&self) -> usize
@@ -366,7 +371,7 @@ fn random_spawn_pos(wall: &Wall, player_pos: Vec2, std_dev: f32, spread: f32) ->
 
     let raw_x = sample_gaussian(&mut rng, player_pos.x, std_dev);
     let x = raw_x.clamp(bounds.0 + WALL_MARGIN, bounds.1 - WALL_MARGIN);
-    let y = player_pos.y - rng.random_range(0.0_f32..spread) - SPAWN_ABOVE_SCREEN;
+    let y = (player_pos.y - rng.random_range(0.0_f32..spread) - SPAWN_ABOVE_SCREEN).max(wall.summit_y()+100.0); // makes it so all spawn at the top right now at the end
 
     Vec2::new(x, y)
 }

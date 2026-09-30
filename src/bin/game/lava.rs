@@ -1,5 +1,7 @@
 use engine::*;
 
+use crate::wall::NO_SUMMIT;
+
 const WAVE_MARGIN: f32 = 240.0;
 const SCREEN_MARGIN: f32 = 40.0;
 
@@ -19,7 +21,8 @@ pub struct Lava
     shader_id: u8,
     time: f32, // same time as in main
     splashes: [[f32; 4]; SPLASH_SLOTS], // (x, start_time, strength, unused)
-    next_splash: usize // ringbuffer, always replaces oldest splash
+    next_splash: usize, // ringbuffer, always replaces oldest splash
+    ceiling: f32
 }
 
 impl Lava
@@ -36,8 +39,14 @@ impl Lava
             shader_id: 0,
             time: 0.0,
             splashes: [EMPTY_SPLASH; SPLASH_SLOTS],
-            next_splash: 0
+            next_splash: 0,
+            ceiling: NO_SUMMIT
         }
+    }
+
+    pub fn set_ceiling(&mut self, ceiling_y: f32)
+    {
+        self.ceiling = ceiling_y;
     }
 
     pub fn set_shader(&mut self, shader_id: u8)
@@ -75,7 +84,7 @@ impl Lava
 
         let rise = self.rise_speed * dt * rising as u32 as f32;
 
-        self.surface_y = (self.surface_y - rise).min(self.highest_player_y + self.max_lag);
+        self.surface_y = (self.surface_y - rise).min(self.highest_player_y + self.max_lag).max(self.ceiling);
     }
 
     pub fn check_entry(&mut self, pos: Vec2, velocity: Vec2, radius: f32, mass: f32, dt: f32)
