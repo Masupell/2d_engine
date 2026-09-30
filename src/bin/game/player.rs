@@ -5,6 +5,8 @@ const JIGGLE_DURATION: f32 = 0.3;
 const JIGGLE_FREQUENCY: f32 = 60.0;
 const JIGGLE_AMPLITUDE: f32 = 8.0;
 
+const MAX_FALL_SPEED: f32 = 5000.0;
+
 // Climbing: Move up, left and right
 // Falling: Swing using left and right, press up when at bottom, to climb again
 #[derive(Copy, Clone, PartialEq)]
@@ -16,7 +18,7 @@ enum MovementState
 }
 impl MovementState { const COUNT: usize = 3; }
 
-type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32), &[(Vec2, (f32, f32))]);
+type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32), &[(Vec2, (f32, f32))], bool);
 
 const STATE_UPDATE_TABLE: [StateUpdateFn; MovementState::COUNT] =
 [
@@ -199,7 +201,7 @@ impl Player
         self.dash_timer -= step;
     }
 
-    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
+    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], in_lava: bool)
     {
         let awake = !self.stunned();
         self.move_input = self.move_input * (awake as u32 as f32);
@@ -208,7 +210,7 @@ impl Player
         self.dash_request();
         self.apply_dash(dt);
 
-        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds, nearby_solids);
+        STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds, nearby_solids, in_lava);
         self.update_tilt(dt);
         self.move_input = Vec2::ZERO;
         self.jiggle_timer = (self.jiggle_timer - dt).max(0.0);
@@ -263,7 +265,7 @@ impl Player
         slack_deficit
     }
 
-    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
+    fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], _in_lava: bool)
     {
         let input_len = self.move_input.length();
         let move_dir = self.move_input * (1.0 / input_len.max(1.0));
@@ -279,7 +281,7 @@ impl Player
         nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
     }
 
-    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
+    fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], _in_lava: bool)
     {
         let offset = self.collision.pos - rope_anchor;
         let distance = offset.length();
@@ -310,13 +312,14 @@ impl Player
         self.state = RECOVERY_TABLE[recover as usize];
     }
 
-    fn update_on_ground(&mut self, dt: f32, _rope_anchor: Vec2, _rope_max_reach: f32, _wall_bounds: (f32, f32), _nearby_solids: &[(Vec2, (f32, f32))])
+    fn update_on_ground(&mut self, dt: f32, _rope_anchor: Vec2, _rope_max_reach: f32, _wall_bounds: (f32, f32), _nearby_solids: &[(Vec2, (f32, f32))], in_lava: bool)
     {
         let half_height = self.height * 0.5;
         let previous_feet = self.collision.pos.y + half_height;
 
         self.velocity.x = self.move_input.x.clamp(-1.0, 1.0) * self.walk_speed;
-        self.velocity.y += self.gravity * dt;
+        let in_lava_speed = [1.0, 0.04][in_lava as usize];
+        self.velocity.y = (self.velocity.y + self.gravity * dt).min(MAX_FALL_SPEED * in_lava_speed);
         self.collision.change_pos(self.velocity * dt);
 
         let over_ledge = (self.collision.pos.x.abs() <= self.ground_half_width) as u32 as f32;

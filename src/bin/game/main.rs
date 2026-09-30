@@ -550,7 +550,8 @@ impl App
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
         let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
-        self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby);
+        let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
+        self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava);
 
         self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
@@ -587,7 +588,6 @@ impl App
         self.lava.check_entry(self.player.collision.pos, self.player.velocity(), self.player.hit_radius(), 70.0, dt);
         let lava = &mut self.lava;
         self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
-        let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
 
         let reached = (self.player.collision.pos.y < self.wall.summit_y()) & alive & !self.reached_summit;
         const SUMMIT_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::reached_summit];
