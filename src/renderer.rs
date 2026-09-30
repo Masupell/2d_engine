@@ -1152,6 +1152,11 @@ impl Renderer
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect, target });
     }
 
+    pub fn texture_size(&self, texture_id: usize) -> (f32, f32)
+    {
+        self.textures[texture_id].size
+    }
+
     // no anti-aliasing right now
     pub fn draw_rect_outline(&mut self, center: (f32, f32), size: (f32, f32), thickness: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
