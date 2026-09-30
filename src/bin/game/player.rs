@@ -73,7 +73,9 @@ pub struct Player
     ground_half_width: f32,
     walk_speed: f32,
     climp_up_speed: f32, // px/s, when the player gets lifted over the edge
-    settling: bool
+    settling: bool,
+
+    no_grip: bool
 }
 
 impl Player
@@ -125,8 +127,14 @@ impl Player
             ground_half_width: 0.0,
             walk_speed: 220.0,
             climp_up_speed: 160.0,
-            settling: false
+            settling: false,
+            no_grip: false
         }
+    }
+
+    pub fn set_no_grip(&mut self, no_grip: bool)
+    {
+        self.no_grip = no_grip;
     }
 
     pub fn set_action(&mut self, event: ButtonEvent, action: Action)
@@ -290,6 +298,12 @@ impl Player
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
 
         nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
+
+        let dashing = self.dash_timer > 0.0;
+        let lose_grip = self.no_grip & !dashing;
+
+        const GRIP_TABLE: [MovementState; 2] = [MovementState::Climbing, MovementState::Falling];
+        self.state = GRIP_TABLE[lose_grip as usize];
     }
 
     fn update_falling(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], _in_lava: bool)
@@ -318,7 +332,7 @@ impl Player
         let recoverable_speed = self.velocity.length() < self.max_recoverable_vel;
         let w_pressed = self.move_input.y < 0.0;
         let in_wall = (self.collision.pos.x >= wall_bounds.0) & (self.collision.pos.x <= wall_bounds.1);
-        let recover = recoverable_speed & w_pressed & in_wall;
+        let recover = recoverable_speed & w_pressed & in_wall & !self.no_grip;
 
         self.state = RECOVERY_TABLE[recover as usize];
     }
@@ -477,6 +491,7 @@ impl Player
         self.jiggle_timer = 0.0;
         self.stun_timer = 0.0;
         self.settling = false;
+        self.no_grip = false;
     }
 }
 

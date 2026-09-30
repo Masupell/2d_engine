@@ -30,6 +30,10 @@ fn stun_hit_effect(player: &mut Player, strength: f32)
 
 const SAFE_ALTITUDE: f32 = 300.0; // 1.5m
 
+const DESPAWN_DISTANCE: f32 = 1200.0;
+const AREA_DESPAWN_BELOW: f32 = 1200.0;
+const AREA_GRIP_SCALE: f32 = 0.64; // size of area where you fall compared to drawn size
+
 #[derive(Copy, Clone)]
 pub enum HazardState
 {
@@ -46,8 +50,12 @@ pub enum HazardMovement
     FallFromTop,
     ShootFromLeft,
     ShootFromRight,
+    WallBreak
 }
-impl HazardMovement { const COUNT: usize = 3; }
+impl HazardMovement { const COUNT: usize = 4; }
+
+const IS_AREA: [bool; HazardMovement::COUNT] = [false, false, false, true];
+const BLOCKED_NEAR_SUMMIT: [bool; HazardMovement::COUNT] = [true, false, false, true];
 
 #[derive(Copy, Clone)]
 struct HazardKind
@@ -72,6 +80,18 @@ impl HazardKind
     fn roll_interval(&self, rng: &mut impl Rng) -> f32
     {
         rng.random_range(self.min_interval..=self.max_interval)
+    }
+
+    fn size(&self) -> (f32, f32)
+    {
+        let (_, rect_size) = self.active_rect;
+        let aspect = rect_size.0 / rect_size.1;
+        (self.draw_height * aspect, self.draw_height)
+    }
+
+    fn is_area(&self) -> bool
+    {
+        IS_AREA[self.movement as usize]
     }
 }
 
@@ -140,6 +160,7 @@ impl Hazard
 
     fn update_active(&mut self, kind: &HazardKind, _camera_pos: (f32, f32), dt: f32)
     {
+        self.warning_progress += dt; // Only used by the area
         self.velocity.y += kind.gravity * dt;
         self.pos += self.velocity * dt;
     }
@@ -154,7 +175,9 @@ impl Hazard
 
     fn draw(&self, render_ctx: &mut RenderContext, normal_tex_id: usize, warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
     {
-        const DRAW_TABLE: [fn(&Hazard, &mut RenderContext, usize, usize, &HazardKind, u32, u8); HazardState::COUNT] =
+        type DrawFn = fn(&Hazard, &mut RenderContext, usize, usize, &HazardKind, u32, u8);
+
+        const OBJECT_DRAW_TABLE: [DrawFn; HazardState::COUNT] =
         [
             Hazard::draw_nothing,
             Hazard::draw_warning,
@@ -162,7 +185,17 @@ impl Hazard
             Hazard::draw_tumbling
         ];
 
-        DRAW_TABLE[self.state as usize](self, render_ctx, normal_tex_id, warning_tex_id, kind, z_index, shader_id);
+        const AREA_DRAW_TABLE: [DrawFn; HazardState::COUNT] =
+        [
+            Hazard::draw_nothing,
+            Hazard::draw_area,
+            Hazard::draw_area,
+            Hazard::draw_area
+        ];
+
+        const DRAW_TABLES: [[DrawFn; HazardState::COUNT]; 2] = [OBJECT_DRAW_TABLE, AREA_DRAW_TABLE];
+
+        DRAW_TABLES[kind.is_area() as usize][self.state as usize](self, render_ctx, normal_tex_id, warning_tex_id, kind, z_index, shader_id);
     }
 
     fn draw_nothing(&self, _render_ctx: &mut RenderContext, _normal_tex_id: usize, _warning_tex_id: usize, _kind: &HazardKind, _z_index: u32, _shader_id: u8) {}
@@ -174,6 +207,7 @@ impl Hazard
             warning_pos_fall_from_top,
             warning_pos_shoot_from_left,
             warning_pos_shoot_from_right,
+            warning_pos_at_hazard
         ];
 
         // let progress = self.warning_progress / kind.warning_duration;
@@ -198,9 +232,7 @@ impl Hazard
     fn draw_active(&self, render_ctx: &mut RenderContext, normal_tex_id: usize, _warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
     {
         let (rect_pos, rect_size) = kind.active_rect;
-        let aspect = rect_size.0 / rect_size.1;
-        let size = (kind.draw_height * aspect, kind.draw_height);
-
+        let size = kind.size();
         let rotation = self.velocity.y.atan2(self.velocity.x);
 
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, rotation), normal_tex_id, rect_pos, rect_size, z_index, shader_id);
@@ -213,6 +245,17 @@ impl Hazard
         let size = (kind.draw_height * aspect, kind.draw_height);
 
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), size, self.rotation), normal_tex_id, rect_pos, rect_size, z_index, shader_id);
+    }
+
+    fn draw_area(&self, render_ctx: &mut RenderContext, _normal_tex_id: usize, _warning_tex_id: usize, kind: &HazardKind, z_index: u32, shader_id: u8)
+    {
+        let cracks = (self.warning_progress / kind.warning_duration).min(1.0);
+        let open = ((self.warning_progress - kind.warning_duration) / 0.1).clamp(0.0, 1.0);
+        let seed = (self.pos.x * 0.0137 + self.pos.y * 0.0071).rem_euclid(1.0);
+        let since_open = (self.warning_progress - kind.warning_duration).max(0.0);
+
+        let transform = render_ctx.graphics.renderer.matrix((self.pos.x, self.pos.y), kind.size(), 0.0);
+        render_ctx.graphics.renderer.draw_tinted_texture(0, transform, 0, [cracks, open, seed, since_open], z_index, shader_id);
     }
 }
 
@@ -234,6 +277,11 @@ fn warning_pos_shoot_from_right(hazard_pos: Vec2, _highest_y: f32, camera: (f32,
     Vec2::new(camera.0 + virtual_size.0 * 0.5 - draw_size.0/2.0 - margin, hazard_pos.y)
 }
 
+fn warning_pos_at_hazard(hazard_pos: Vec2, _highest_y: f32, _camera: (f32, f32), _virtual_size: (f32, f32), _draw_size: (f32, f32)) -> Vec2
+{
+    hazard_pos
+}
+
 
 fn setup_fall_from_top(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
@@ -244,29 +292,39 @@ fn setup_fall_from_top(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &m
     (pos, Vec2::new(0.0, speed))
 }
 
-fn setup_shoot_from_left(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
+fn setup_shoot_from_left(player_pos: Vec2, _bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
     let y = sample_flat_distribution(rng, player_pos.y, 300.0, 0.2);
-    let pos = Vec2::new(bounds.0 - 30.0, y);
+    let x = player_pos.x - 700.0;
+    let pos = Vec2::new(x, y);
 
     (pos, Vec2::new(speed, 0.0))
 }
 
-fn setup_shoot_from_right(player_pos: Vec2, bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
+fn setup_shoot_from_right(player_pos: Vec2, _bounds: (f32, f32), speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
 {
     let y = sample_flat_distribution(rng, player_pos.y, 300.0, 0.2);
-    let pos = Vec2::new(bounds.1 + 30.0, y);
+    let x = player_pos.x + 700.0;
+    let pos = Vec2::new(x, y);
 
     (pos, Vec2::new(-speed, 0.0))
 }
 
-const BLOCKED_NEAR_SUMMIT: [bool; HazardMovement::COUNT] = [true, false, false];
+fn setup_wall_break(player_pos: Vec2, bounds: (f32, f32), _speed: f32, rng: &mut rand::rngs::ThreadRng) -> (Vec2, Vec2)
+{
+    let margin = 150.0;
+    let x = fold(sample_flat_distribution(rng, player_pos.x, 900.0, 0.2), bounds.0 + margin, bounds.1 - margin);
+    let above = sample_flat_distribution(rng, 0.0, 200.0, 0.2).abs();
+
+    (Vec2::new(x, player_pos.y - above), Vec2::ZERO)
+}
 
 pub struct HazardSpawner
 {
     pool: Vec<Hazard>,
     normal_texture_id: usize,
     warning_texture_id: usize,
+    area_shader: u8,
     kinds: Vec<HazardKind>,
     spawn_timers: Vec<f32>,
     highest_altitude: f32,
@@ -286,6 +344,7 @@ impl HazardSpawner
             pool: Vec::new(),
             normal_texture_id: 0,
             warning_texture_id: 0,
+            area_shader: 0,
             kinds: Vec::new(),
             spawn_timers: Vec::new(),
             highest_altitude: 0.0,
@@ -315,6 +374,11 @@ impl HazardSpawner
     pub fn set_warning_texture(&mut self, texture_id: usize)
     {
         self.warning_texture_id = texture_id;
+    }
+
+    pub fn set_area_shader(&mut self, shader_id: u8)
+    {
+        self.area_shader = shader_id;
     }
 
     pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32, mass: f32) -> usize
@@ -354,7 +418,16 @@ impl HazardSpawner
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
-        self.pool.iter().for_each(|h| h.draw(render_ctx, self.normal_texture_id, self.warning_texture_id, &self.kinds[h.kind_index], z_index, shader_id));
+        for hazard in self.pool.iter()
+        {
+            let kind = &self.kinds[hazard.kind_index];
+            let is_area = kind.is_area();
+
+            let z = z_index - is_area as u32;
+            let shader = [shader_id, self.area_shader][is_area as usize];
+
+            hazard.draw(render_ctx, self.normal_texture_id, self.warning_texture_id, kind, z, shader);
+        }
     }
 
     // true if player is hit (only simple distance check)
@@ -365,8 +438,8 @@ impl HazardSpawner
 
         let hit_index = (0..self.pool.len()).find(|&i|
         {
-            let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit;
             let kind = self.kinds[self.pool[i].kind_index];
+            let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit &!kind.is_area();
             let in_range = (self.pool[i].pos - player_pos).length() < kind.hit_radius + player_radius;
 
             is_active & in_range
@@ -391,6 +464,24 @@ impl HazardSpawner
         });
 
         (hit_index.is_some(), away_from_hazard)
+    }
+
+    pub fn area_contains(&self, point: Vec2) -> bool
+    {
+        self.pool.iter().any(|h|
+        {
+            let kind = &self.kinds[h.kind_index];
+            let (width, height) = kind.size();
+
+            let offset = h.pos - point;
+            let nx = offset.x / (width * 0.5);
+            let ny = offset.y / (height * 0.5);
+            let inside = nx * nx + ny * ny < AREA_GRIP_SCALE;
+
+            let opened = (h.state as usize) == HazardState::Active as usize;
+
+            kind.is_area() & opened & inside
+        })
     }
 
     // 1.0 after safe zone, after that it approaches the max_spawn_rate with height of player, by half every time
@@ -418,6 +509,7 @@ impl HazardSpawner
             setup_fall_from_top,
             setup_shoot_from_left,
             setup_shoot_from_right,
+            setup_wall_break
         ];
 
         let (pos, velocity) = SETUP_TABLE[kind.movement as usize](player_pos, bounds, kind.speed, &mut rng);
@@ -456,8 +548,10 @@ impl HazardSpawner
         for i in 0..self.kinds.len()
         {
             self.spawn_timers[i] -= tick;
-            let blocked = near_summit & BLOCKED_NEAR_SUMMIT[self.kinds[i].movement as usize];
-            let should_spawn = ((self.spawn_timers[i] < 0.0) & !blocked) as usize;
+            let kind = self.kinds[i];
+            let blocked_by_summit = near_summit & BLOCKED_NEAR_SUMMIT[kind.movement as usize];
+            // let already_there = kind.is_area() & self.pool.iter().any(|h| ((h.state as usize) > 0) & (h.kind_index == i));
+            let should_spawn = ((self.spawn_timers[i] < 0.0) & !blocked_by_summit /*& !already_there*/) as usize;
             SPAWN_TABLE[should_spawn](self, wall, player_pos, i);
         }
 
@@ -467,9 +561,16 @@ impl HazardSpawner
             self.pool[i].update(&kind, (player_pos.x, player_pos.y), dt); // here also camera, but is player for now
         };
 
-        const DESPAWN_DISTANCE: f32 = 1200.0;
+        let kinds = &self.kinds;
+        self.pool.iter_mut().filter(|h|
+        {
+            let offset = h.pos - player_pos;
+            let far_away = offset.length() > DESPAWN_DISTANCE;
+            let far_below_player = offset.y > AREA_DESPAWN_BELOW;
+            let gone = [far_away, far_below_player][kinds[h.kind_index].is_area() as usize];
 
-        self.pool.iter_mut().filter(|h| (h.state as usize > 0) & ((h.pos - player_pos).length() > DESPAWN_DISTANCE)).for_each(|h| h.state = HazardState::Inactive);
+            ((h.state as usize) > 0) & gone
+        }).for_each(|h| h.state = HazardState::Inactive);
     }
 
     // Only active, or tumbling (for now only tumbling) ones: position, velocity, radius

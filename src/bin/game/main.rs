@@ -588,6 +588,7 @@ impl App
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
         let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
         let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
+        self.player.set_no_grip(self.hazards.area_contains(self.player.collision.pos));
         self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava);
 
         let stuck = self.player.out_of_rope(rope_anchor, rope_max_reach, self.rope.segment_length) & !self.reached_summit;
@@ -808,12 +809,15 @@ impl EngineEvent for App
 
         let hazard_texture = graphics.load_texture("src/bin/game/assets/hazard_items.png", FilterMode::Linear, FilterMode::Linear);
         let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
+        let wall_break_shader = graphics.load_shader(Some("src/shaders/wall_break.wgsl"), None, PipeLineType::Normal) as u8;
+        self.hazards.set_area_shader(wall_break_shader);
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
         self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0);
         self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
         self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
+        self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 10.0, 20.0, 0.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
