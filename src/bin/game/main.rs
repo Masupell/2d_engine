@@ -24,9 +24,10 @@ enum GameState
     MainMenuSettings,
     Playing,
     Paused,
-    Dead
+    Dead,
+    Win
 }
-impl GameState { const COUNT: usize = 5; }
+impl GameState { const COUNT: usize = 6; }
 
 
 const GAME_UPDATE_TABLE: [ActionFn; GameState::COUNT] =
@@ -35,7 +36,8 @@ const GAME_UPDATE_TABLE: [ActionFn; GameState::COUNT] =
     App::update_menu_settings,
     App::update_world,
     App::update_pause_menu,
-    App::update_dead
+    App::update_dead,
+    App::update_win
 ];
 
 const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
@@ -44,7 +46,8 @@ const GAME_RENDER_TABLE: [RenderFn; GameState::COUNT] =
     App::draw_main_menu_settings,
     App::draw_playing,
     App::draw_paused,
-    App::draw_dead
+    App::draw_dead,
+    App::draw_win
 ];
 
 const fn base_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
@@ -134,11 +137,28 @@ const fn dead_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     (actions, used)
 }
 
+const fn win_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
+{
+    let (mut actions, mut used) = base_table();
+    actions[Action::RestartGame as usize] = App::game_restart_transition;
+    used[Action::RestartGame as usize] = true;
+    actions[Action::MoveUp as usize] = App::player_move_up;
+    actions[Action::MoveLeft as usize] = App::player_move_left;
+    actions[Action::MoveRight as usize] = App::player_move_right;
+    actions[Action::Dash as usize] = App::player_dash;
+    used[Action::MoveUp as usize] = true;
+    used[Action::MoveLeft as usize] = true;
+    used[Action::MoveRight as usize] = true;
+    used[Action::Dash as usize] = true;
+    (actions, used)
+}
+
 const MAIN_MENU: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = main_menu_table();
 const MAIN_MENU_SETTINGS: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = main_menu_settings_table();
 const PLAYING: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = play_table();
 const PAUSED: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = paused_table();
 const DEAD: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = dead_table();
+const WIN: ([ActionFn; Action::COUNT], [bool; Action::COUNT]) = win_table();
 
 const ACTION_TABLES: [[ActionFn; Action::COUNT]; GameState::COUNT] =
 [
@@ -146,7 +166,8 @@ const ACTION_TABLES: [[ActionFn; Action::COUNT]; GameState::COUNT] =
     MAIN_MENU_SETTINGS.0,
     PLAYING.0,
     PAUSED.0,
-    DEAD.0
+    DEAD.0,
+    WIN.0
 ];
 
 const USED_TABLE: [[bool; Action::COUNT]; GameState::COUNT] =
@@ -155,7 +176,8 @@ const USED_TABLE: [[bool; Action::COUNT]; GameState::COUNT] =
     MAIN_MENU_SETTINGS.1,
     PLAYING.1,
     PAUSED.1,
-    DEAD.1
+    DEAD.1,
+    WIN.1
 ];
 
 // Render Targets + pipelines
@@ -421,7 +443,7 @@ impl App
         self.apply_mode();
     }
 
-    fn reached_summit(&mut self, ctx: &mut UpdateContext)
+    fn reach_summit(&mut self, ctx: &mut UpdateContext)
     {
         self.reached_summit = true;
         self.hazards.set_spawning(false);
@@ -429,6 +451,8 @@ impl App
         let _ = self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
         self.summit_anchor = Vec2::new(self.player.collision.pos.x, self.wall.summit_y());
         self.player.stand_on(self.wall.summit_y(), self.wall.cap_half_width());
+
+        self.game_state = GameState::Win;
     }
 }
 
@@ -590,7 +614,7 @@ impl App
         self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
 
         let reached = (self.player.collision.pos.y < self.wall.summit_y()) & alive & !self.reached_summit;
-        const SUMMIT_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::reached_summit];
+        const SUMMIT_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::reach_summit];
         SUMMIT_TABLE[reached as usize](self, update_ctx);
 
         const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
@@ -605,6 +629,15 @@ impl App
     }
 
     fn update_dead(&mut self, ctx: &mut UpdateContext)
+    {
+        self.update_world(ctx);
+        self.menu_climb += ctx.dt as f32;
+        self.restart_button.update(ctx.input);
+        const PLAY_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_op, App::game_restart_transition];
+        PLAY_TABLE[self.free_input_pressed(ctx.input) as usize](self, ctx);
+    }
+
+    fn update_win(&mut self, ctx: &mut UpdateContext)
     {
         self.update_world(ctx);
         self.menu_climb += ctx.dt as f32;
@@ -706,6 +739,16 @@ impl App
 
         let rotation = (self.menu_climb*2.0).sin() * 0.05;
         render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Press any key to restart", (640.0, 600.0), 48.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
+    }
+
+    fn draw_win(&self, render_ctx: &mut RenderContext)
+    {
+        self.draw_scene(render_ctx, App::draw_world, false);
+
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "You Reached the Top", (640.0, 200.0), 115.0, [0.43, 0.09, 0.09, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, 0.0, CoordSpace::Screen, DrawLayer::UI, 6, 0);
+
+        let rotation = (self.menu_climb*2.0).sin() * 0.05;
+        render_ctx.graphics.renderer.draw_text_centered_outline(render_ctx.graphics.device, render_ctx.graphics.queue, "Press any key to restart", (640.0, 690.0), 48.0, [0.2, 0.15, 0.9, 1.0], [0.0, 0.0, 0.0, 1.0], 2.0, rotation, CoordSpace::Screen, DrawLayer::UI, 5, 0);
     }
 
     fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
