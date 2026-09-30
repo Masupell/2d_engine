@@ -271,6 +271,36 @@ impl Rope
         self.segments = vec![segment];
         self.view_bounds = (top_point, top_point);
     }
+
+
+    pub fn remove_anchors_where(&mut self, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue, inside: impl Fn(Vec2) -> bool) -> usize
+    {
+        const REMOVE_TABLE: [fn(&mut Rope, usize, &mut crate::Renderer, &wgpu::Device, &wgpu::Queue) -> usize; 2] = [Rope::keep_anchor, Rope::remove_anchor];
+
+        let mut removed = 0;
+        let mut index = 1;
+
+        while index < self.segments.len()
+        {
+            let segment = &self.segments[index];
+            let hit = !segment.auto_split & inside(segment.anchor_pos);
+
+            let advance = REMOVE_TABLE[hit as usize](self, index, renderer, device, queue);
+            index += advance;
+            removed += 1 - advance;
+        }
+
+        removed
+    }
+
+    fn keep_anchor(&mut self, _index: usize, _renderer: &mut crate::Renderer, _device: &wgpu::Device, _queue: &wgpu::Queue) -> usize { 1 }
+    fn remove_anchor(&mut self, index: usize, renderer: &mut crate::Renderer, device: &wgpu::Device, queue: &wgpu::Queue) -> usize
+    {
+        let width = self.width;
+        self.merge_with_previous(index, renderer);
+        self.segments[index - 1].build_mesh(renderer, device, queue, width);
+        0
+    }
 }
 
 pub struct RopeSegment

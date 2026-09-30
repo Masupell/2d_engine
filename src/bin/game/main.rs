@@ -298,6 +298,7 @@ impl App
         self.reached_summit = false;
         self.apply_mode();
         self.rescue_timer = 0.0;
+        self.collectibles.restart(&self.wall, Vec2::ZERO);
 
         self.start_game(ctx);
     }
@@ -588,6 +589,8 @@ impl App
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
         let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
         let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
+        let removed = self.rope.remove_anchors_where(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue, |anchor| self.hazards.area_contains(anchor));
+        self.player.score += 3 * removed as i32;
         self.player.set_no_grip(self.hazards.area_contains(self.player.collision.pos));
         self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava);
 

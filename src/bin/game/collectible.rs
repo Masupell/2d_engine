@@ -385,6 +385,12 @@ impl CollectibleManager
     {
         self.pool.iter().filter(|c| c.state == CollectibleState::Idle).count()
     }
+
+    pub fn restart(&mut self, wall: &Wall, player_pos: Vec2)
+    {
+        self.pool.clear();
+        self.initialize_spawn(wall, player_pos, 13, 2000.0);
+    }
 }
 
 // Very basic spawning
