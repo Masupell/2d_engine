@@ -12,9 +12,9 @@ enum MovementState
 {
     Climbing,
     Falling,
+    OnGround
 }
-
-impl MovementState { const COUNT: usize = 2; }
+impl MovementState { const COUNT: usize = 3; }
 
 type StateUpdateFn = fn(&mut Player, f32, Vec2, f32, (f32, f32), &[(Vec2, (f32, f32))]);
 
@@ -22,6 +22,7 @@ const STATE_UPDATE_TABLE: [StateUpdateFn; MovementState::COUNT] =
 [
     Player::update_climbing,
     Player::update_falling,
+    Player::update_on_ground
 ];
 
 pub struct Player
@@ -64,7 +65,13 @@ pub struct Player
     jiggle_timer: f32,
 
     stun_timer: f32,
-    stun_shader: u8
+    stun_shader: u8,
+
+    ground_y: f32,
+    ground_half_width: f32,
+    walk_speed: f32,
+    climp_up_speed: f32, // px/s, when the player gets lifted over the edge
+    settling: bool
 }
 
 impl Player
@@ -111,7 +118,12 @@ impl Player
             dash_timer: 0.0,
             jiggle_timer: 0.0,
             stun_timer: 0.0,
-            stun_shader: 0
+            stun_shader: 0,
+            ground_y: 0.0,
+            ground_half_width: 0.0,
+            walk_speed: 220.0,
+            climp_up_speed: 160.0,
+            settling: false
         }
     }
 
@@ -232,6 +244,25 @@ impl Player
         });
     }
 
+    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32, dt: f32) -> f32
+    {
+        let offset = self.collision.pos - anchor;
+        let distance = offset.length();
+        let radial_dir = offset * (1.0 / distance.max(0.0001));
+
+        let slack_deficit = distance - max_reach;
+        let excess = slack_deficit.max(0.0);
+        self.collision.change_pos(radial_dir * -excess);
+
+        let beyond_limit = (slack_deficit > 0.0) as u32 as f32;
+        let outward_speed = (self.velocity.x * radial_dir.x + self.velocity.y * radial_dir.y).max(0.0);
+        let removed_speed = outward_speed * beyond_limit;
+        self.velocity -= radial_dir * removed_speed;
+        self.last_deceleration = removed_speed / dt.max(0.0001);
+
+        slack_deficit
+    }
+
     fn update_climbing(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))])
     {
         let input_len = self.move_input.length();
@@ -279,24 +310,38 @@ impl Player
         self.state = RECOVERY_TABLE[recover as usize];
     }
 
-    fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32, dt: f32) -> f32
+    fn update_on_ground(&mut self, dt: f32, _rope_anchor: Vec2, _rope_max_reach: f32, _wall_bounds: (f32, f32), _nearby_solids: &[(Vec2, (f32, f32))])
     {
-        let offset = self.collision.pos - anchor;
-        let distance = offset.length();
-        let radial_dir = offset * (1.0 / distance.max(0.0001));
+        let half_height = self.height * 0.5;
+        let previous_feet = self.collision.pos.y + half_height;
 
-        let slack_deficit = distance - max_reach;
-        let excess = slack_deficit.max(0.0);
-        self.collision.change_pos(radial_dir * -excess);
+        self.velocity.x = self.move_input.x.clamp(-1.0, 1.0) * self.walk_speed;
+        self.velocity.y += self.gravity * dt;
+        self.collision.change_pos(self.velocity * dt);
 
-        let beyond_limit = (slack_deficit > 0.0) as u32 as f32;
-        let outward_speed = (self.velocity.x * radial_dir.x + self.velocity.y * radial_dir.y).max(0.0);
-        let removed_speed = outward_speed * beyond_limit;
-        self.velocity -= radial_dir * removed_speed;
-        self.last_deceleration = removed_speed / dt.max(0.0001);
+        let over_ledge = (self.collision.pos.x.abs() <= self.ground_half_width) as u32 as f32;
 
-        slack_deficit
+        let from_above = (previous_feet <= self.ground_y + 0.5) as u32 as f32;
+        let can_touch = over_ledge * from_above.max(self.settling as u32 as f32);
+
+        let penetration = (self.collision.pos.y + half_height - self.ground_y).max(0.0) * can_touch;
+
+        self.collision.pos.y -= penetration.min(self.climp_up_speed * dt);
+        self.velocity.y *= (penetration <= 0.0) as u32 as f32;
+
+        self.settling &= penetration > 0.0;
     }
+
+    pub fn stand_on(&mut self, ground_y: f32, half_width: f32)
+    {
+        self.state = MovementState::OnGround;
+        self.ground_y = ground_y;
+        self.ground_half_width = half_width;
+        self.velocity = Vec2::ZERO;
+        self.last_deceleration = 0.0;
+        self.settling = true;
+    }
+
 
     pub fn move_up(&mut self)
     {
@@ -417,6 +462,7 @@ impl Player
         self.dash_timer = 0.0;
         self.jiggle_timer = 0.0;
         self.stun_timer = 0.0;
+        self.settling = false;
     }
 }
 

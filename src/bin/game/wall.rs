@@ -51,7 +51,6 @@ impl Wall
         self.cap_shader = shader_id;
     }
 
-    // NO_SUMMIT for endless
     pub fn set_summit_y(&mut self, summit_y: f32)
     {
         self.summit_y = summit_y;
@@ -60,6 +59,11 @@ impl Wall
     pub fn summit_y(&self) -> f32
     {
         self.summit_y
+    }
+
+    pub fn cap_half_width(&self) -> f32
+    {
+        self.width * 0.5 + BORDER_WIDTH + CAP_OVERHANG
     }
 
     // left and right side of horizontal
@@ -73,9 +77,7 @@ impl Wall
         self.bounds.contains_x(pos.x as f64)
     }
 
-    // The part of a vertical strip [top, bottom] that is below the summit.
-    // Returns (center_y, height, cut) where cut is the fraction (0..1) cut off at the top.
-    // Endless: summit is far above everything, so nothing gets cut.
+    // part of the border that is below the summit, cut is the fraction cut off at the top (0..1)
     fn clip_to_summit(&self, top: f32, bottom: f32) -> (f32, f32, f32)
     {
         let visible_top = top.max(self.summit_y);
@@ -92,7 +94,6 @@ impl Wall
         let left_x = -self.width * 0.5 - BORDER_WIDTH * 0.5;
         let right_x = self.width * 0.5 + BORDER_WIDTH * 0.5;
 
-        // Everything still follows the camera, but nothing goes above the summit
         let (center_y, height, _) = self.clip_to_summit(camera.1 - SEGMENT_HEIGHT * 0.5, camera.1 + SEGMENT_HEIGHT * 0.5);
 
         // Left border

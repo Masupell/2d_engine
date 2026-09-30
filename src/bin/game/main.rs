@@ -226,7 +226,8 @@ struct App
     bloom: bool,
     post: PostEffects,
     endless: bool,
-    reached_summit: bool
+    reached_summit: bool,
+    summit_anchor: Vec2,
 }
 
 impl App
@@ -420,10 +421,14 @@ impl App
         self.apply_mode();
     }
 
-    fn reached_summit(&mut self, _ctx: &mut UpdateContext)
+    fn reached_summit(&mut self, ctx: &mut UpdateContext)
     {
         self.reached_summit = true;
         self.hazards.set_spawning(false);
+
+        let _ = self.rope.add_anchor(ctx.graphics.renderer, ctx.graphics.device, ctx.graphics.queue, 1);
+        self.summit_anchor = Vec2::new(self.player.collision.pos.x, self.wall.summit_y());
+        self.player.stand_on(self.wall.summit_y(), self.wall.cap_half_width());
     }
 }
 
@@ -544,7 +549,8 @@ impl App
 
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
         let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
-        self.player.update(dt as f32, rope_anchor, rope_max_reach, self.wall.get_bounds(), &nearby);
+        let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
+        self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby);
 
         self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
@@ -560,10 +566,11 @@ impl App
 
         const GROWTH_TABLE: [fn(&mut App, &mut UpdateContext, f32); 2] = [App::skip_rope_growth, App::do_rope_growth];
         let (has_rope, difference) = self.player.try_consume_rope_for_growth(rope_anchor, rope_max_reach, self.rope.segment_length);
-        let should_grow = has_rope & self.rope_extending;
+        let should_grow = has_rope & self.rope_extending & !self.reached_summit;
         GROWTH_TABLE[should_grow as usize](self, update_ctx, difference);
 
-        self.rope.update(980.0, self.player.collision.pos, dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
+        let rope_end = [self.player.collision.pos, self.summit_anchor][self.reached_summit as usize];
+        self.rope.update(980.0, rope_end, dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
         self.rope.reclaim_visible_splits(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
@@ -937,7 +944,8 @@ impl App
             bloom: true,
             post: PostEffects::placeholder(),
             endless: false,
-            reached_summit: false
+            reached_summit: false,
+            summit_anchor: Vec2::ZERO
         }
     }
 }
