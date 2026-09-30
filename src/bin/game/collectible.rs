@@ -108,6 +108,7 @@ pub struct Collectible
     aspect: f32,
     idle_phase: f32,
     collect_timer: f32,
+    fall_speed: f32
 }
 
 impl Collectible
@@ -124,7 +125,8 @@ impl Collectible
             shader_id: 0,
             aspect: 1.0,
             idle_phase: 0.0,
-            collect_timer: 0.0
+            collect_timer: 0.0,
+            fall_speed: 0.0
         }
     }
 
@@ -139,11 +141,20 @@ impl Collectible
         self.state = CollectibleState::Idle;
         self.idle_phase = 0.0;
         self.collect_timer = 0.0;
+        self.fall_speed = 0.0;
     }
 
     fn deactivate(&mut self)
     {
         self.state = CollectibleState::Inactive;
+    }
+
+    fn fall(&mut self, player_pos: Vec2, dt: f32)
+    {
+        let moving = ((self.state == CollectibleState::Idle) & (self.fall_speed > 0.0)) as u32 as f32;
+
+        self.pos.y += self.fall_speed * dt * moving;
+        self.pos.x += (player_pos.x - self.pos.x) * (1.0 - 0.02_f32.powf(dt)) * moving;
     }
 
     fn update(&mut self, dt: f32)
@@ -278,9 +289,22 @@ impl CollectibleManager
 
         self.pool.iter_mut().filter(|c| (c.state == CollectibleState::Idle) & (c.pos.y > player_pos.y + DESPAWN_MARGIN)).for_each(|c| c.deactivate());
 
+        self.pool.iter_mut().for_each(|c| c.fall(player_pos, dt));
+
         let deficit = TARGET_ACTIVE.saturating_sub(self.active_amount()) * self.can_spawn() as usize;
 
         (0..deficit).for_each(|_| self.spawn_next(wall, player_pos, spread));
+    }
+
+    pub fn drop_towards_player(&mut self, kind: CollectibleKind, pos: Vec2, fall_speed: f32)
+    {
+        let entry = self.entries.iter().copied().find(|e| e.kind == kind);
+
+        entry.into_iter().for_each(|entry|
+        {
+            let index = self.spawn(&entry, pos);
+            self.pool[index].fall_speed = fall_speed;
+        });
     }
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32)
@@ -333,14 +357,13 @@ impl CollectibleManager
         let pos = random_spawn_pos(wall, player_pos, SPAWN_STD_DEV, spread);
         let above = pos.y < (wall.summit_y() + 150.0);
 
-        const SPAWN_TABLE: [fn(&mut CollectibleManager, &SpawnEntry, Vec2); 2] = [CollectibleManager::spawn, CollectibleManager::no_spawn];
+        const SPAWN_TABLE: [fn(&mut CollectibleManager, &SpawnEntry, Vec2) -> usize; 2] = [CollectibleManager::spawn, CollectibleManager::no_spawn];
         SPAWN_TABLE[above as usize](self, &entry, pos);
         // self.spawn(&entry, pos);
     }
 
-    fn no_spawn(&mut self, _entry: &SpawnEntry, _pos: Vec2) {}
-
-    fn spawn(&mut self, entry: &SpawnEntry, pos: Vec2)
+    fn no_spawn(&mut self, _entry: &SpawnEntry, _pos: Vec2) -> usize { 0 }
+    fn spawn(&mut self, entry: &SpawnEntry, pos: Vec2) -> usize
     {
         // Either reuses the first Inactive collectible, or if no exist adds a new one
         // No filter(), to avoid borrowing issues
@@ -350,6 +373,7 @@ impl CollectibleManager
             self.pool.len() - 1
         });
         self.pool[index].activate(entry, pos);
+        index
     }
 
     pub fn amount(&self) -> usize

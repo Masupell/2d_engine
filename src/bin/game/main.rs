@@ -17,6 +17,9 @@ type RenderFn = fn(&App, &mut RenderContext);
 
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
+const RESCUE_DELAY: f32 = 2.0;
+const RESCUE_DROP_HEIGHT: f32 = 450.0;
+
 #[derive(Copy, Clone, PartialEq)]
 enum GameState
 {
@@ -250,6 +253,7 @@ struct App
     endless: bool,
     reached_summit: bool,
     summit_anchor: Vec2,
+    rescue_timer: f32
 }
 
 impl App
@@ -293,6 +297,7 @@ impl App
         self.lava.reset();
         self.reached_summit = false;
         self.apply_mode();
+        self.rescue_timer = 0.0;
 
         self.start_game(ctx);
     }
@@ -430,7 +435,7 @@ impl App
 
     fn apply_mode(&mut self)
     {
-        let summit_y = [-2.0 * 200.0, NO_SUMMIT][self.endless as usize];
+        let summit_y = [-20.0 * 200.0, NO_SUMMIT][self.endless as usize];
 
         self.wall.set_summit_y(summit_y);
         self.hazards.set_summit_y(summit_y);
@@ -453,6 +458,14 @@ impl App
         self.player.stand_on(self.wall.summit_y(), self.wall.cap_half_width());
 
         self.game_state = GameState::Win;
+    }
+
+    fn no_rescue(&mut self) {}
+    fn drop_rescue_coil(&mut self)
+    {
+        let pos = Vec2::new(self.player.collision.pos.x, self.player.collision.pos.y - RESCUE_DROP_HEIGHT);
+        self.collectibles.drop_towards_player(CollectibleKind::RopeCoil, pos, 600.0);
+        self.rescue_timer = 0.0;
     }
 }
 
@@ -576,6 +589,12 @@ impl App
         let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
         let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
         self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava);
+
+        let stuck = self.player.out_of_rope(rope_anchor, rope_max_reach, self.rope.segment_length) & !self.reached_summit;
+        self.rescue_timer = (self.rescue_timer + dt) * stuck as u32 as f32;
+
+        const RESCUE_TABLE: [fn(&mut App); 2] = [App::no_rescue, App::drop_rescue_coil];
+        RESCUE_TABLE[(self.rescue_timer >= RESCUE_DELAY) as usize](self);
 
         self.collectibles.update(&self.wall, self.player.collision.pos, 800.0, dt as f32);
         self.collectibles.check_collection(&mut self.player, 100.0);
@@ -988,7 +1007,8 @@ impl App
             post: PostEffects::placeholder(),
             endless: false,
             reached_summit: false,
-            summit_anchor: Vec2::ZERO
+            summit_anchor: Vec2::ZERO,
+            rescue_timer: 0.0
         }
     }
 }

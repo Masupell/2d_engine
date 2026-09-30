@@ -144,12 +144,23 @@ impl Player
         let distance = (self.collision.pos - anchor).length();
 
         let pushing_against_limit = distance > (max_reach - self.rope_grow_tolerance);
-        let is_climbing = !self.is_falling();
+        let is_climbing = self.state == MovementState::Climbing;
         let has_reserve = self.rope_reserve > segment_length;
 
         let should_grow = pushing_against_limit & is_climbing & has_reserve;
 
         (should_grow, segment_length * (should_grow as u32 as f32))
+    }
+
+    pub fn out_of_rope(&self, anchor: Vec2, max_reach: f32, segment_length: f32) -> bool
+    {
+        let distance = (self.collision.pos - anchor).length();
+
+        let at_limit = distance > (max_reach - self.rope_grow_tolerance);
+        let climbing = self.state == MovementState::Climbing;
+        let no_reserve = self.rope_reserve <= segment_length;
+
+        at_limit & climbing & no_reserve
     }
 
     pub fn dash(&mut self)
