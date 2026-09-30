@@ -550,8 +550,8 @@ impl HazardSpawner
             self.spawn_timers[i] -= tick;
             let kind = self.kinds[i];
             let blocked_by_summit = near_summit & BLOCKED_NEAR_SUMMIT[kind.movement as usize];
-            // let already_there = kind.is_area() & self.pool.iter().any(|h| ((h.state as usize) > 0) & (h.kind_index == i));
-            let should_spawn = ((self.spawn_timers[i] < 0.0) & !blocked_by_summit /*& !already_there*/) as usize;
+            let already_there = kind.is_area() & self.pool.iter().any(|h| ((h.state as usize) > 0) & (h.kind_index == i));
+            let should_spawn = ((self.spawn_timers[i] < 0.0) & !blocked_by_summit & !already_there) as usize;
             SPAWN_TABLE[should_spawn](self, wall, player_pos, i);
         }
 
