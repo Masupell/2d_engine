@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::{Context, RenderContext, renderer::Renderer, texture::Texture, utility::DrawLayer};
+use crate::{Context, RenderContext, renderer::Renderer};
 
 pub struct State<'a>
 {

@@ -218,7 +218,8 @@ pub struct Renderer
     text_cache: TextCache,
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
     free_mesh_ids: Vec<usize>,
-    uniform_values: HashMap<String, UniformValue>
+    uniform_values: HashMap<String, UniformValue>,
+    pub(crate) screen_viewport: (f32, f32, f32, f32)
 }
 
 impl Renderer
@@ -379,7 +380,8 @@ impl Renderer
             fonts: vec![default_font],
             text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
             free_mesh_ids: Vec::new(),
-            uniform_values: HashMap::new()
+            uniform_values: HashMap::new(),
+            screen_viewport: letterbox(screen_size, window_size)
         }
     }
 
@@ -849,6 +851,7 @@ impl Renderer
     pub(crate) fn resize_targets(&mut self, device: &wgpu::Device, width: u32, height: u32)
     {
         self.screen_size = (width.max(1), height.max(1));
+        self.screen_viewport = letterbox(self.screen_size, self.virtual_size); // doing it here for now
 
         for target in &mut self.targets
         {
@@ -1023,15 +1026,18 @@ impl Renderer
                 encoder.copy_texture_to_texture(texture.as_image_copy(), snapshot.texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 });
             }
 
-            let snapshot_bind_group = snapshot.map(|snapshot| snapshot.entry.bind_group.as_ref());
-            self.draw_range(encoder, view, format_slot, segment.load, segment.start..segment.end, snapshot_bind_group);
+            let full = (0.0, 0.0, size.0 as f32, size.1 as f32);
+            let viewport = [full, self.screen_viewport][(segment.target == SCREEN_TARGET) as usize];
 
-            if self.screen_to_canvas
+            let snapshot_bind_group = snapshot.map(|snapshot| snapshot.entry.bind_group.as_ref());
+            self.draw_range(encoder, view, format_slot, segment.load, segment.start..segment.end, snapshot_bind_group, viewport);
+        }
+
+        if self.screen_to_canvas
+        {
+            if let Some(canvas) = &self.screen_canvas
             {
-                if let Some(canvas) = &self.screen_canvas
-                {
-                    self.blit(encoder, canvas.entry.bind_group.as_ref(), surface_view);
-                }
+                self.blit(encoder, canvas.entry.bind_group.as_ref(), surface_view);
             }
         }
     }
@@ -1066,7 +1072,7 @@ impl Renderer
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
 
-    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>, snapshot: Option<&wgpu::BindGroup>)
+    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>, snapshot: Option<&wgpu::BindGroup>, viewport: (f32, f32, f32, f32))
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -1085,6 +1091,9 @@ impl Renderer
             occlusion_query_set: None,
             timestamp_writes: None,
         });
+
+        let (x, y, width, height) = viewport;
+        render_pass.set_viewport(x, y, width, height, 0.0, 1.0);
 
         let Some(instance_buf) = &self.instance_buf else { return; };
         if range.is_empty() { return; }
@@ -1580,4 +1589,18 @@ fn rotate_point_around(point: (f32, f32), pivot: (f32, f32), rotation: f32) -> (
     let dy = point.1 - pivot.1;
 
     (pivot.0 + dx * cos - dy * sin, pivot.1 + dx * sin + dy * cos)
+}
+
+fn letterbox(size: (u32, u32), virtual_size: (f32, f32)) -> (f32, f32, f32, f32)
+{
+    let size = (size.0 as f32, size.1 as f32);
+    let scale = (size.0 / virtual_size.0).min(size.1 / virtual_size.1);
+
+    let width = (virtual_size.0 * scale).floor().min(size.0);
+    let height = (virtual_size.1 * scale).floor().min(size.1);
+
+    let x = ((size.0 - width) * 0.5).floor();
+    let y = ((size.1 - height) * 0.5).floor();
+
+    (x, y, width, height)
 }
