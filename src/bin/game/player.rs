@@ -144,7 +144,7 @@ impl Player
             climp_up_speed: 160.0,
             settling: false,
             no_grip: false,
-            skin: PlayerSkin::CaterPillar,
+            skin: PlayerSkin::Climber,
             body: Caterpillar::new(center),
             body_shader: 0,
             look_target: Vec2::ZERO
@@ -511,7 +511,7 @@ impl Player
 
     fn draw_caterpillar(&self, render_ctx: &mut RenderContext, z_index: u32, _shader_id: u8)
     {
-        self.body.draw(render_ctx, Vec2::new(self.jiggle_offset(), 0.0), self.look_target, z_index, self.body_shader);
+        self.body.draw(render_ctx, Vec2::new(self.jiggle_offset(), 0.0), self.look_target, utility::DrawLayer::World, z_index, self.body_shader);
     }
 
     pub fn set_texture(&mut self, texture_id: usize)

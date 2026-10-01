@@ -1,4 +1,4 @@
-use engine::*;
+use engine::{utility::DrawLayer, *};
 
 pub const SEGMENTS: usize = 5;
 pub const HEAD_RADIUS: f32 = 42.0;
@@ -18,7 +18,7 @@ const GROUND_FRICTION: f32 = 0.5;
 pub const NO_GROUND: f32 = 1.0e30;
 
 const BODY_CLIMB_SPEED: f32 = 220.0;
-const LIE_SPEED: f32 = 0.002; // lower is faster
+const LIE_SPEED: f32 = 0.01; // lower is faster
 const LIE_VELOCITY: f32 = 0.2;
 
 pub fn circle_rect_push(center: Vec2, radius: f32, rect_pos: Vec2, rect_size: (f32, f32)) -> Vec2
@@ -200,7 +200,7 @@ impl Caterpillar
         (min - max_radius, max + max_radius)
     }
 
-    pub fn draw(&self, render_ctx: &mut RenderContext, offset: Vec2, look_target: Vec2, z_index: u32, shader_id: u8)
+    pub fn draw(&self, render_ctx: &mut RenderContext, offset: Vec2, look_target: Vec2, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let to_target = look_target - self.head_center();
         let distance = to_target.length();
@@ -219,7 +219,7 @@ impl Caterpillar
             let part = 1.0 - not_head;
 
             let transform = render_ctx.graphics.renderer.matrix((pos.x, pos.y), (diameter, diameter), 0.0);
-            render_ctx.graphics.renderer.draw_tinted_texture(0, transform, 0, [stripe, part, look_x, look_y], z_index - 1, shader_id);
+            render_ctx.graphics.renderer.draw_mesh_transformed(0, 0, transform, Some([stripe, part, look_x, look_y]), layer, z_index - 1, shader_id);
         }
     }
 }

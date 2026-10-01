@@ -7,10 +7,11 @@ pub mod hazard;
 pub mod dash_hud;
 pub mod lava;
 pub mod caterpillar;
+pub mod character_select;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
-use crate::{collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::{NO_SUMMIT, Wall}};
+use crate::{character_select::CharacterSelect, collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::{NO_SUMMIT, Wall}};
 use rand::Rng;
 
 type ActionFn = fn(&mut App, &mut UpdateContext);
@@ -86,6 +87,9 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     actions[Action::SelectLavaShaderComplex as usize] = App::lava_shader_complex;
     actions[Action::SelectLavaShaderSimple as usize] = App::lava_shader_simple;
     actions[Action::ToggleBloom as usize] = App::toggle_bloom;
+    actions[Action::MoveLeft as usize] = App::preview_move_left;
+    actions[Action::MoveRight as usize] = App::preview_move_right;
+    actions[Action::Dash as usize] = App::preview_dash;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
     used[Action::SelectWallShaderCracks as usize] = true;
@@ -94,6 +98,9 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     used[Action::SelectLavaShaderComplex as usize] = true;
     used[Action::SelectLavaShaderSimple as usize] = true;
     used[Action::ToggleBloom as usize] = true;
+    used[Action::MoveLeft as usize] = true;
+    used[Action::MoveRight as usize] = true;
+    used[Action::Dash as usize] = true;
     (actions, used)
 }
 
@@ -256,7 +263,8 @@ struct App
     endless: bool,
     reached_summit: bool,
     summit_anchor: Vec2,
-    rescue_timer: f32
+    rescue_timer: f32,
+    character_select: CharacterSelect
 }
 
 impl App
@@ -461,6 +469,8 @@ impl App
         self.summit_anchor = Vec2::new(self.player.collision.pos.x, self.wall.summit_y());
         self.player.stand_on(self.wall.summit_y(), self.wall.cap_half_width());
 
+        self.character_select.set_caterpillar_unlocked(true);
+
         self.game_state = GameState::Win;
     }
 
@@ -471,6 +481,10 @@ impl App
         self.collectibles.drop_towards_player(CollectibleKind::RopeCoil, pos, 600.0);
         self.rescue_timer = 0.0;
     }
+
+    fn preview_move_left(&mut self, _ctx: &mut UpdateContext) { self.character_select.move_left(); }
+    fn preview_move_right(&mut self, _ctx: &mut UpdateContext) { self.character_select.move_right(); }
+    fn preview_dash(&mut self, _ctx: &mut UpdateContext) { self.character_select.dash(); }
 }
 
 // Screen Effects
@@ -577,6 +591,10 @@ impl App
 
         self.fullscreen_checkbox.update(ctx.input);
         self.bloom_checkbox.update(ctx.input);
+
+        let clicked = ctx.input.actions().contains(&Action::MouseLeftPressed);
+        self.character_select.update((self.x, self.y), clicked, ctx.dt as f32);
+        self.player.set_skin(self.character_select.skin());
     }
 
     fn update_world(&mut self, update_ctx: &mut UpdateContext)
@@ -716,6 +734,8 @@ impl App
 
         self.fullscreen_checkbox.draw(render_ctx, 1);
         self.bloom_checkbox.draw(render_ctx, 1);
+
+        self.character_select.draw(render_ctx, (self.x, self.y), 1);
     }
 
     fn draw_world(&self, render_ctx: &mut RenderContext)
@@ -912,6 +932,9 @@ impl EngineEvent for App
 
         let caterpillar_shader = graphics.load_shader(Some("src/shaders/caterpillar.wgsl"), None, PipeLineType::Normal) as u8;
         self.player.set_body_shader(caterpillar_shader);
+
+        self.character_select.set_climber_texture(player_texture);
+        self.character_select.set_body_shader(caterpillar_shader);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -994,6 +1017,9 @@ impl App
         bloom_checkbox.set_pos((162.0, 370.0));
         bloom_checkbox.set_checked(true);
 
+        let mut character_select = CharacterSelect::new();
+        character_select.set_caterpillar_unlocked(true); // unlocked for now
+
         Self
         {
             x: 0.0,
@@ -1032,7 +1058,8 @@ impl App
             endless: false,
             reached_summit: false,
             summit_anchor: Vec2::ZERO,
-            rescue_timer: 0.0
+            rescue_timer: 0.0,
+            character_select
         }
     }
 }
