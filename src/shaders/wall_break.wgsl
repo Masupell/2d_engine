@@ -1,12 +1,3 @@
-// Wall break hazard: cracks spreading during the warning, then a jagged hole opens.
-// PipeLineType::Normal, default vertex shader, no uniforms.
-// Parameters come through the tint (see Hazard::draw_area):
-//   r = cracks  (0..1, grows during the warning)
-//   g = open    (0..1, the hole opening after the warning)
-//   b = seed    (random per hazard, so every hole looks different)
-//   a = seconds since the hole opened (0 before), for the falling stones
-// Branchless: step / mix / clamp only.
-
 struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
@@ -115,7 +106,7 @@ fn stone(p: vec2<f32>, pos: vec2<f32>, size: f32) -> vec2<f32>
 
 fn falling_stone(p: vec2<f32>, t: f32, key: i32, seed: f32) -> vec2<f32>
 {
-    let angle = -(0.2 + 0.6 * hash(key, seed + 0.4)) * PI; // upper half (y points down)
+    let angle = -(0.2 + 0.6 * hash(key, seed + 0.4)) * PI;
     let direction = vec2<f32>(cos(angle), sin(angle));
     let origin = direction * hole_edge(around_of(direction, seed), seed);
 
@@ -129,10 +120,14 @@ fn falling_stone(p: vec2<f32>, t: f32, key: i32, seed: f32) -> vec2<f32>
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
 {
-    let crack_progress = in.color.r;
+    let crack_progress = in.color.r; // 0..1, grows
     let open = in.color.g;
     let seed = in.color.b;
     let since_open = in.color.a;
+    //   r = cracks  (0..1, grows during the warning)
+    //   g = open    (0..1, the hole opening after the warning)
+    //   b = seed    (random per hazard, so every hole looks different)
+    //   a = seconds since the hole opened (0 before), for the falling stones
 
     let base_p = in.tex_coords * 2.0 - 1.0;
 
@@ -146,7 +141,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
     let edge = hole_edge(around, seed) * open;
 
     let inside = step(r, edge);
-    let depth = r / max(edge, 0.0001); // 0 center, 1 at the edge
+    let depth = r / max(edge, 0.0001);
     let hole_color = mix(mix(HOLE_CORE, HOLE_DEEP, step(0.45, depth)), HOLE_WALL, step(0.78, depth));
 
     let rim = step(r, edge + RIM_WIDTH * open) - inside;

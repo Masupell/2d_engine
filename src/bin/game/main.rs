@@ -9,7 +9,7 @@ pub mod lava;
 pub mod caterpillar;
 pub mod character_select;
 
-use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
+use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown, input_field::{InputField, digits_charset}}, utility::DrawLayer, *};
 
 use crate::{character_select::CharacterSelect, collectible::{CollectibleKind, CollectibleManager}, dash_hud::DashHud, decorations::DecorationSpawner, hazard::{HazardMovement, HazardSpawner, HazardState, HitEffect}, lava::Lava, player::Player, rope::Rope, wall::{NO_SUMMIT, Wall}};
 use rand::Rng;
@@ -91,6 +91,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     actions[Action::MoveRight as usize] = App::preview_move_right;
     actions[Action::Dash as usize] = App::preview_dash;
     actions[Action::ToggleEndless as usize] = App::toggle_endless;
+    actions[Action::SubmitSummitHeight as usize] = App::apply_summit_height;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
     used[Action::SelectWallShaderCracks as usize] = true;
@@ -103,6 +104,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     used[Action::MoveRight as usize] = true;
     used[Action::Dash as usize] = true;
     used[Action::ToggleEndless as usize] = true;
+    used[Action::SubmitSummitHeight as usize] = true;
     (actions, used)
 }
 
@@ -267,7 +269,9 @@ struct App
     summit_anchor: Vec2,
     rescue_timer: f32,
     character_select: CharacterSelect,
-    endless_checkbox: Checkbox
+    endless_checkbox: Checkbox,
+    height_field: InputField,
+    summit_height: f32
 }
 
 impl App
@@ -452,7 +456,7 @@ impl App
 
     fn apply_mode(&mut self, endless: bool)
     {
-        let summit_y = [-2.0 * 200.0, NO_SUMMIT][endless as usize];
+        let summit_y = [-self.summit_height * 200.0, NO_SUMMIT][endless as usize];
 
         self.wall.set_summit_y(summit_y);
         self.hazards.set_summit_y(summit_y);
@@ -462,6 +466,9 @@ impl App
     fn toggle_endless(&mut self, _ctx: &mut UpdateContext)
     {
         self.endless = !self.endless;
+
+        self.fullscreen_checkbox.set_pos((162.0, 410.0 - 40.0 * self.endless as u32 as f32));
+        self.bloom_checkbox.set_pos((162.0, 450.0 - 40.0 * self.endless as u32 as f32));
     }
 
     fn reach_summit(&mut self, ctx: &mut UpdateContext)
@@ -489,6 +496,11 @@ impl App
     fn preview_move_left(&mut self, _ctx: &mut UpdateContext) { self.character_select.move_left(); }
     fn preview_move_right(&mut self, _ctx: &mut UpdateContext) { self.character_select.move_right(); }
     fn preview_dash(&mut self, _ctx: &mut UpdateContext) { self.character_select.dash(); }
+
+    fn apply_summit_height(&mut self, _ctx: &mut UpdateContext)
+    {
+        self.summit_height = self.height_field.value::<f32>().unwrap_or(60.0);
+    }
 }
 
 // Screen Effects
@@ -594,6 +606,8 @@ impl App
         self.lava_shader_dropdown.update(ctx.input);
 
         self.endless_checkbox.update(ctx.input);
+        self.height_field.update(ctx.input, ctx.dt as f32, self.endless);
+
         self.fullscreen_checkbox.update(ctx.input);
         self.bloom_checkbox.update(ctx.input);
 
@@ -738,6 +752,8 @@ impl App
         self.lava_shader_dropdown.draw(render_ctx, 2);
 
         self.endless_checkbox.draw(render_ctx, 1);
+        self.height_field.draw(render_ctx, 1, self.endless);
+
         self.fullscreen_checkbox.draw(render_ctx, 1);
         self.bloom_checkbox.draw(render_ctx, 1);
 
@@ -749,8 +765,8 @@ impl App
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
         self.collectibles.draw(render_ctx, 2);
-        self.hazards.draw(render_ctx, 2, 0);
         self.player.draw(render_ctx, 3, 0);
+        self.hazards.draw(render_ctx, 3, 0);
         self.rope.draw(render_ctx, 4);
         self.lava.draw(render_ctx, 5);
     }
@@ -852,7 +868,7 @@ impl EngineEvent for App
         self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0);
         self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
         self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
-        self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 10.0, 20.0, 0.0);
+        self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 1.0, 2.0, 0.0);//10.0, 20.0, 0.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -1019,11 +1035,18 @@ impl App
         let mut endless_checkbox = Checkbox::new((25.0, 25.0), "Endless Mode", Action::ToggleEndless, Action::ToggleEndless);
         endless_checkbox.set_pos((162.0, 330.0));
 
+        let mut height_field = InputField::new((80.0, 25.0), digits_charset());
+        height_field.set_placeholder("60m");
+        height_field.set_max_length(4);
+        height_field.set_pos((225.0, 360.0));
+        height_field.set_align(no_if::input_field::TextAlign::Center);
+        height_field.set_on_submit(Action::SubmitSummitHeight);
+
         let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
-        fullscreen_checkbox.set_pos((162.0, 370.0));
+        fullscreen_checkbox.set_pos((162.0, 410.0));
 
         let mut bloom_checkbox = Checkbox::new((25.0, 25.0), "Bloom", Action::ToggleBloom, Action::ToggleBloom);
-        bloom_checkbox.set_pos((162.0, 410.0));
+        bloom_checkbox.set_pos((162.0, 450.0));
         bloom_checkbox.set_checked(true);
 
         let mut character_select = CharacterSelect::new();
@@ -1069,7 +1092,9 @@ impl App
             summit_anchor: Vec2::ZERO,
             rescue_timer: 0.0,
             character_select,
-            endless_checkbox
+            endless_checkbox,
+            height_field,
+            summit_height: 60.0
         }
     }
 }

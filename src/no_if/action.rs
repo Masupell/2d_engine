@@ -37,6 +37,7 @@ pub enum Action
     SelectLavaShaderSimple,
 
     ToggleBloom,
-    ToggleEndless
+    ToggleEndless,
+    SubmitSummitHeight
 }
-impl Action { pub const COUNT: usize = 25; }
+impl Action { pub const COUNT: usize = 26; }

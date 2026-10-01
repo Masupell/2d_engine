@@ -24,9 +24,11 @@ pub struct Input
     pending_typed: String,
     pending_backspaces: u32,
     pending_enter: bool,
+    pending_esc: bool,
     typed: String,
     backspaces: u32, // amount of presses
     enter_pressed: bool,
+    esc_pressed: bool,
     capture_requested: bool, // a text field wants the keyboard input
     capturing_text: bool // disables keybindings while true
 }
@@ -62,9 +64,11 @@ impl Input
             pending_typed: String::new(),
             pending_backspaces: 0,
             pending_enter: false,
+            pending_esc: false,
             typed: String::new(),
             backspaces: 0,
             enter_pressed: false,
+            esc_pressed: false,
             capture_requested: false,
             capturing_text: false
         }
@@ -94,6 +98,7 @@ impl Input
                 {
                     Key::Named(NamedKey::Backspace) => self.pending_backspaces += 1,
                     Key::Named(NamedKey::Enter) => self.pending_enter = true,
+                    Key::Named(NamedKey::Escape) => self.pending_esc = true,
                     _ => {}
                 }
             }
@@ -119,6 +124,7 @@ impl Input
         self.typed.push_str(&std::mem::take(&mut self.pending_typed));
         self.backspaces += std::mem::take(&mut self.pending_backspaces);
         self.enter_pressed |= std::mem::take(&mut self.pending_enter);
+        self.esc_pressed |= std::mem::take(&mut self.pending_esc);
 
         self.generate_actions();
         self.prev_keys_pressed = self.keys_pressed.clone();
@@ -135,6 +141,7 @@ impl Input
         self.typed.clear();
         self.backspaces = 0;
         self.enter_pressed = false;
+        self.esc_pressed = false;
 
         self.capturing_text = self.capture_requested;
         self.capture_requested = false;
@@ -298,6 +305,7 @@ impl Input
     pub fn typed_text(&self) -> &str { &self.typed }
     pub fn backspaces(&self) -> u32 { self.backspaces }
     pub fn enter_pressed(&self) -> bool { self.enter_pressed }
+    pub fn esc_pressed(&self) -> bool { self.esc_pressed }
 
     pub fn request_text_capture(&mut self) { self.capture_requested = true; }
 }

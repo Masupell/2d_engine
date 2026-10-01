@@ -1153,6 +1153,11 @@ impl Renderer
             }
 
             let mesh = &self.meshes[cmd.mesh_id];
+            if mesh.index_count == 0
+            {
+                start = end;
+                continue;
+            }
             if cmd.mesh_id != bound_mesh
             {
                 bound_mesh = cmd.mesh_id;
@@ -1343,12 +1348,12 @@ impl Renderer
         mesh_id
     }
 
-    pub fn text_bounds(&self, text: &str, pos: (f32, f32), height_px: f32) -> ((f32, f32), f32, f32)
+    pub fn text_size(&self, text: &str, height_px: f32) -> (f32, f32)
     {
-        self.text_bounds_with_font(0, text, pos, height_px)
+        self.text_size_with_font(0, text, height_px)
     }
 
-    pub fn text_bounds_with_font(&self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32) -> ((f32, f32), f32, f32)
+    pub fn text_size_with_font(&self, font_id: usize, text: &str, height_px: f32) -> (f32, f32)
     {
         let atlas = &self.fonts[font_id];
         let scale = height_px / atlas.native_size;
@@ -1359,7 +1364,7 @@ impl Renderer
         let scaled_line_height = atlas.line_height * scale;
         let height = height_px + (line_count - 1) as f32 * scaled_line_height;
 
-        (pos, width, height)
+        (width, height)
     }
 
     pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
@@ -1379,7 +1384,7 @@ impl Renderer
         let baseline_pos = (pos.0, pos.1 + ascent * scale);
 
         // to rotate around center point
-        let (_, width, height) = self.text_bounds_with_font(font_id, text, pos, height_px);
+        let (width, height) = self.text_size_with_font(font_id, text, height_px);
         let center = (pos.0 + width * 0.5, pos.1 + height * 0.5);
         let pivoted_pos = rotate_point_around(baseline_pos, center, rotation);
 
