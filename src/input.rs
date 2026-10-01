@@ -9,7 +9,7 @@ pub struct Input
     prev_keys_pressed: HashSet<KeyCode>,
     mouse_pressed: HashSet<MouseButton>,
     prev_mouse_pressed: HashSet<MouseButton>,
-    mouse_position: Option<(f64, f64)>,
+    mouse_position: (f64, f64),
     window_size: (f64, f64),
     view_size: (f64, f64),
     virtual_size: (f64, f64),
@@ -41,7 +41,7 @@ impl Input
             prev_keys_pressed: HashSet::new(),
             mouse_pressed: HashSet::new(),
             prev_mouse_pressed: HashSet::new(),
-            mouse_position: None,
+            mouse_position: (window_size.0/2.0, window_size.1/2.0),
             window_size,
             view_size: window_size,
             virtual_size: window_size,
@@ -89,7 +89,7 @@ impl Input
 
         if let WindowEvent::CursorMoved { position, ..} = event
         {
-            self.mouse_position = Some((position.x, position.y));
+            self.mouse_position = (position.x, position.y);
         }
     }
 
@@ -109,23 +109,19 @@ impl Input
 
     pub fn actual_mouse_position(&self) -> (f64, f64)
     {
-        if let Some(mouse_pos) = self.mouse_position
-        {
-            return mouse_pos;
-        }
-        return (0.0, 0.0);
+        self.mouse_position
     }
 
     pub fn actual_mouse_position_f32(&self) -> (f32, f32)
     {
-        let (x, y) = self.actual_mouse_position();
+        let (x, y) = self.mouse_position;
         (x as f32, y as f32)
     }
 
     // centered virtual_size inside of view_size, left and above goes negative, to the right and bottom higher than virtual_size
     pub fn mouse_position(&self) -> (f64, f64)
     {
-        let (px, py) = self.mouse_position.unwrap_or((0.0, 0.0));
+        let (px, py) = self.mouse_position;
         let (vx, vy, vw, vh) = self.viewport;
 
         let x = (px - vx) * (self.view_size.0 / vw) - (self.view_size.0 - self.virtual_size.0) * 0.5;
@@ -140,9 +136,10 @@ impl Input
         (x as f32, y as f32)
     }
 
+    // 0..1 across the whole window including bars
     pub fn mouse_position_normalized(&self) -> (f64, f64)
     {
-        let (x, y) = self.mouse_position.unwrap_or((0.0, 0.0));
+        let (x, y) = self.mouse_position;
         (x / self.window_size.0, y / self.window_size.1)
     }
 
