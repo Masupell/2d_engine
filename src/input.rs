@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use winit::{event::{ElementState, KeyEvent, MouseButton, WindowEvent}, keyboard::{KeyCode, PhysicalKey}};
+use winit::{event::{ElementState, MouseButton, WindowEvent}, keyboard::{Key, KeyCode, NamedKey, PhysicalKey}};
 use crate::no_if::action::Action;
 
 pub struct Input
@@ -14,10 +14,21 @@ pub struct Input
     view_size: (f64, f64),
     virtual_size: (f64, f64),
     viewport: (f64, f64, f64, f64),
-    actions: Vec<Action>,
+    once_actions: Vec<Action>,
+    hold_actions: Vec<Action>,
+    actions: Vec<Action>, // only for the gamee
     key_bindings: HashMap<KeyCode, KeyBinding>,
     mouse_bindings: HashMap<MouseButton, MouseBinding>,
-    any_press: bool
+    any_press: bool,
+
+    pending_typed: String,
+    pending_backspaces: u32,
+    pending_enter: bool,
+    typed: String,
+    backspaces: u32, // amount of presses
+    enter_pressed: bool,
+    capture_requested: bool, // a text field wants the keyboard input
+    capturing_text: bool // disables keybindings while true
 }
 
 impl Input
@@ -26,10 +37,6 @@ impl Input
     {
         let mut key_bindings = HashMap::new();
         key_bindings.insert(KeyCode::F11, KeyBinding { pressed: Some(Action::ToggleFullScreen), released: None, hold: None});
-        // key_bindings.insert(KeyCode::KeyQ, Action::ToggleVSync);
-        // key_bindings.insert(KeyCode::KeyA, Action::MoveLeft);
-        // key_bindings.insert(KeyCode::KeyD, Action::MoveRight);
-        // key_bindings.insert(KeyCode::Escape, Action::Esc);
 
         let mut mouse_bindings = HashMap::new();
         mouse_bindings.insert(MouseButton::Left, MouseBinding { pressed: Some(Action::MouseLeftPressed), released: Some(Action::MouseLeftReleased), hold: Some(Action::MouseLeftHold)});
@@ -46,39 +53,53 @@ impl Input
             view_size: window_size,
             virtual_size: window_size,
             viewport: (0.0, 0.0, window_size.0, window_size.1),
+            once_actions: Vec::new(),
+            hold_actions: Vec::new(),
             actions: Vec::new(),
             key_bindings,
             mouse_bindings,
-            any_press: false
+            any_press: false,
+            pending_typed: String::new(),
+            pending_backspaces: 0,
+            pending_enter: false,
+            typed: String::new(),
+            backspaces: 0,
+            enter_pressed: false,
+            capture_requested: false,
+            capturing_text: false
         }
     }
 
     pub(crate) fn update_inputs(&mut self, event: &WindowEvent)
     {
-        if let WindowEvent::KeyboardInput
-            {
-                event: KeyEvent
-                {
-                    state,
-                    physical_key: PhysicalKey::Code(key),
-                    ..
-                },
-                ..
-            } = event
+        if let WindowEvent::KeyboardInput { event: key_event, ..} = event
         {
-            match state
+            if let PhysicalKey::Code(key) = key_event.physical_key
             {
-                ElementState::Pressed => { self.keys_pressed.insert(*key); }
-                ElementState::Released => { self.keys_pressed.remove(key); }
+                match key_event.state
+                {
+                    ElementState::Pressed => { self.keys_pressed.insert(key); }
+                    ElementState::Released => { self.keys_pressed.remove(&key); }
+                }
+            }
+
+            if key_event.state == ElementState::Pressed
+            {
+                if let Some(text) = &key_event.text
+                {
+                    self.pending_typed.extend(text.chars().filter(|c| !c.is_control()));
+                }
+
+                match key_event.logical_key
+                {
+                    Key::Named(NamedKey::Backspace) => self.pending_backspaces += 1,
+                    Key::Named(NamedKey::Enter) => self.pending_enter = true,
+                    _ => {}
+                }
             }
         }
 
-        if let WindowEvent::MouseInput
-            {
-                state,
-                button,
-                ..
-            } = event
+        if let WindowEvent::MouseInput {state, button, ..} = event
         {
             match state
             {
@@ -95,9 +116,28 @@ impl Input
 
     pub(crate) fn prev_update(&mut self)
     {
+        self.typed.push_str(&std::mem::take(&mut self.pending_typed));
+        self.backspaces += std::mem::take(&mut self.pending_backspaces);
+        self.enter_pressed |= std::mem::take(&mut self.pending_enter);
+
         self.generate_actions();
         self.prev_keys_pressed = self.keys_pressed.clone();
         self.prev_mouse_pressed = self.mouse_pressed.clone();
+    }
+
+    pub(crate) fn consume_once(&mut self)
+    {
+        self.once_actions.clear();
+        self.any_press = false;
+        self.actions.clear();
+        self.actions.extend_from_slice(&self.hold_actions);
+
+        self.typed.clear();
+        self.backspaces = 0;
+        self.enter_pressed = false;
+
+        self.capturing_text = self.capture_requested;
+        self.capture_requested = false;
     }
 
     pub(crate) fn update_screen(&mut self, size: (f64, f64), viewport: (f32, f32, f32, f32), view_size: (f32, f32))
@@ -151,11 +191,13 @@ impl Input
 
     pub fn generate_actions(&mut self)
     {
-        self.actions.clear();
+        self.hold_actions.clear();
 
-        self.any_press = self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key)) || self.mouse_pressed.iter().any(|button| !self.prev_mouse_pressed.contains(button));
+        self.any_press |= self.keys_pressed.iter().any(|key| !self.prev_keys_pressed.contains(key)) || self.mouse_pressed.iter().any(|button| !self.prev_mouse_pressed.contains(button));
 
-        for key in &self.keys_pressed
+        let capturing = self.capturing_text;
+
+        for key in self.keys_pressed.iter().filter(|_| !capturing)
         {
             if let Some(binding) = self.key_bindings.get(key)
             {
@@ -163,18 +205,18 @@ impl Input
                 {
                     if let Some(action) = binding.pressed
                     {
-                        self.actions.push(action);
+                        self.once_actions.push(action);
                     }
                 }
 
                 if let Some(action) = binding.hold
                 {
-                    self.actions.push(action);
+                    self.hold_actions.push(action);
                 }
             }
         }
 
-        for key in &self.prev_keys_pressed
+        for key in self.prev_keys_pressed.iter().filter(|_| !capturing)
         {
             if !self.keys_pressed.contains(key)
             {
@@ -182,7 +224,7 @@ impl Input
                 {
                     if let Some(action) = binding.released
                     {
-                        self.actions.push(action);
+                        self.once_actions.push(action);
                     }
                 }
             }
@@ -196,13 +238,13 @@ impl Input
                 {
                     if let Some(action) = binding.pressed
                     {
-                        self.actions.push(action);
+                        self.once_actions.push(action);
                     }
                 }
 
                 if let Some(action) = binding.hold
                 {
-                    self.actions.push(action);
+                    self.hold_actions.push(action);
                 }
             }
         }
@@ -215,11 +257,15 @@ impl Input
                 {
                     if let Some(action) = binding.released
                     {
-                        self.actions.push(action);
+                        self.once_actions.push(action);
                     }
                 }
             }
         }
+
+        self.actions.clear();
+        self.actions.extend_from_slice(&self.once_actions);
+        self.actions.extend_from_slice(&self.hold_actions);
     }
 
     pub fn add_key_binding(&mut self, key: KeyCode, pressed: Option<Action>, released: Option<Action>, held: Option<Action>)
@@ -247,6 +293,13 @@ impl Input
         let claimed = self.actions.iter().any(|&action| is_used(action));
         self.any_press && !claimed
     }
+
+
+    pub fn typed_text(&self) -> &str { &self.typed }
+    pub fn backspaces(&self) -> u32 { self.backspaces }
+    pub fn enter_pressed(&self) -> bool { self.enter_pressed }
+
+    pub fn request_text_capture(&mut self) { self.capture_requested = true; }
 }
 
 struct KeyBinding

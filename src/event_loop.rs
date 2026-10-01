@@ -111,6 +111,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             {
                                 let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                                 game.physics_update(&mut fixed_ctx);
+                                input.consume_once();
                                 fixed_accumulator -= fixed_dt;
                             }
 
