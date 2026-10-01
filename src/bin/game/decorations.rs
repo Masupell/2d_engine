@@ -147,6 +147,18 @@ impl DecorationSpawner
         self.nearby_indices(pos).filter(|&index| self.pool[index].solid).map(|index| (self.pool[index].pos, self.pool[index].draw_size))
     }
 
+    // for caterpillar
+    pub fn solid_rects_in_box(&self, min: Vec2, max: Vec2) -> impl Iterator<Item = (Vec2, (f32, f32))> + '_
+    {
+        let (x0, y0) = Self::cell_coord(min);
+        let (x1, y1) = Self::cell_coord(max);
+
+        ((y0 - 1)..=(y1 + 1)).flat_map(move |cell_y|
+        {
+            ((x0 - 1)..=(x1 + 1)).filter_map(move |cell_x| self.grid.get(&(cell_x, cell_y)))
+        }).flatten().copied().filter(|&index| self.pool[index].solid).map(|index| (self.pool[index].pos, self.pool[index].draw_size))
+    }
+
     fn spawn(&mut self, pos: Vec2, variant: Variant, scale: f32, flip_x: f32)
     {
         let index = self.pool.iter().position(|d| !d.active).unwrap_or_else(||

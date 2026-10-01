@@ -1,11 +1,21 @@
 use engine::{no_if::vector::Vec2, *};
 
+use crate::caterpillar::{Caterpillar, HEAD_LIFT, HEAD_RADIUS, NO_GROUND, SEGMENTS, circle_rect_push};
+
 
 const JIGGLE_DURATION: f32 = 0.3;
 const JIGGLE_FREQUENCY: f32 = 60.0;
 const JIGGLE_AMPLITUDE: f32 = 8.0;
 
 const MAX_FALL_SPEED: f32 = 5000.0;
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum PlayerSkin
+{
+    Climber,
+    CaterPillar
+}
+impl PlayerSkin { pub const COUNT: usize = 2; }
 
 // Climbing: Move up, left and right
 // Falling: Swing using left and right, press up when at bottom, to climb again
@@ -75,7 +85,12 @@ pub struct Player
     climp_up_speed: f32, // px/s, when the player gets lifted over the edge
     settling: bool,
 
-    no_grip: bool
+    no_grip: bool,
+
+    skin: PlayerSkin,
+    body: Caterpillar,
+    body_shader: u8,
+    look_target: Vec2
 }
 
 impl Player
@@ -128,8 +143,27 @@ impl Player
             walk_speed: 220.0,
             climp_up_speed: 160.0,
             settling: false,
-            no_grip: false
+            no_grip: false,
+            skin: PlayerSkin::CaterPillar,
+            body: Caterpillar::new(center),
+            body_shader: 0,
+            look_target: Vec2::ZERO
         }
+    }
+
+    pub fn set_look_target(&mut self, target: Vec2)
+    {
+        self.look_target = target;
+    }
+
+    pub fn set_skin(&mut self, skin: PlayerSkin)
+    {
+        self.skin = skin;
+    }
+
+    pub fn set_body_shader(&mut self, shader_id: u8)
+    {
+        self.body_shader = shader_id;
     }
 
     pub fn set_no_grip(&mut self, no_grip: bool)
@@ -242,6 +276,10 @@ impl Player
         self.score_progress -= 200.0 * point as f32;
 
         self.stun_timer = (self.stun_timer - dt).max(0.0);
+
+        let on_ground = self.state == MovementState::OnGround;
+        let body_ground = [NO_GROUND, self.ground_y][on_ground as usize];
+        self.body.update(self.collision.pos, self.gravity, dt, nearby_solids, body_ground, self.ground_half_width); // just updating it regardless of being used or not for now
     }
 
     fn update_tilt(&mut self, dt: f32)
@@ -263,6 +301,21 @@ impl Player
             self.velocity += push_dir * inward_amount;
             self.last_deceleration = inward_amount / dt.max(0.0001);
         });
+    }
+
+    fn resolve_solid_circle(&mut self, rect_pos: Vec2, rect_size: (f32, f32), dt: f32)
+    {
+        let push = circle_rect_push(self.collision.pos - Vec2::new(0.0, HEAD_LIFT), HEAD_RADIUS, rect_pos, rect_size);
+        self.collision.change_pos(push);
+
+        let length = push.length();
+        let hit = (length > 0.0) as u32 as f32;
+        let push_dir = push * (1.0 / length.max(0.0001));
+
+        let inward_amount = (-self.velocity.dot(push_dir)).max(0.0) * hit;
+        self.velocity += push_dir * inward_amount;
+
+        self.last_deceleration = self.last_deceleration * (1.0 - hit) + (inward_amount / dt.max(0.0001)) * hit;
     }
 
     fn constrain_to_rope(&mut self, anchor: Vec2, max_reach: f32, dt: f32) -> f32
@@ -297,7 +350,9 @@ impl Player
         self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
         self.collision.pos.x = self.collision.pos.x.clamp(wall_bounds.0, wall_bounds.1);
 
-        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
+        const SOLID_TABLE: [fn(&mut Player, Vec2, (f32, f32), f32); PlayerSkin::COUNT] = [Player::resolve_solid_collision, Player::resolve_solid_circle];
+        let resolve = SOLID_TABLE[self.skin as usize];
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| resolve(self, rect_pos, rect_size, dt));
 
         let dashing = self.dash_timer > 0.0;
         let lose_grip = self.no_grip & !dashing;
@@ -326,7 +381,9 @@ impl Player
 
         self.constrain_to_rope(rope_anchor, rope_max_reach, dt);
 
-        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| self.resolve_solid_collision(rect_pos, rect_size, dt));
+        const SOLID_TABLE: [fn(&mut Player, Vec2, (f32, f32), f32); PlayerSkin::COUNT] = [Player::resolve_solid_collision, Player::resolve_solid_circle];
+        let resolve = SOLID_TABLE[self.skin as usize];
+        nearby_solids.iter().for_each(|&(rect_pos, rect_size)| resolve(self, rect_pos, rect_size, dt));
 
         const RECOVERY_TABLE: [MovementState; 2] = [MovementState::Falling, MovementState::Climbing];
         let recoverable_speed = self.velocity.length() < self.max_recoverable_vel;
@@ -339,7 +396,7 @@ impl Player
 
     fn update_on_ground(&mut self, dt: f32, _rope_anchor: Vec2, _rope_max_reach: f32, _wall_bounds: (f32, f32), _nearby_solids: &[(Vec2, (f32, f32))], in_lava: bool)
     {
-        let half_height = self.height * 0.5;
+        let half_height = [self.height * 0.5, HEAD_RADIUS - HEAD_LIFT][self.skin as usize];
         let previous_feet = self.collision.pos.y + half_height;
 
         self.velocity.x = self.move_input.x.clamp(-1.0, 1.0) * self.walk_speed;
@@ -358,6 +415,22 @@ impl Player
         self.velocity.y *= (penetration <= 0.0) as u32 as f32;
 
         self.settling &= penetration > 0.0;
+    }
+
+    pub fn hit_circles(&self) -> ([(Vec2, f32); SEGMENTS], usize)
+    {
+        let mut climber = [(self.collision.pos, 0.0); SEGMENTS];
+        climber[0] = (self.collision.pos, self.hit_radius());
+
+        [(climber, 1), (self.body.circles(), SEGMENTS)][self.skin as usize]
+    }
+
+    pub fn collision_bounds(&self) -> (Vec2, Vec2)
+    {
+        let reach = Vec2::new(self.width, self.height) * 0.5;
+        let climber = (self.collision.pos - reach, self.collision.pos + reach);
+
+        [climber, self.body.bounds()][self.skin as usize]
     }
 
     pub fn stand_on(&mut self, ground_y: f32, half_width: f32)
@@ -415,9 +488,9 @@ impl Player
 
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
     {
-        let draw_x = self.collision.pos.x + self.jiggle_offset();
+        const SKIN_DRAW_TABLE: [fn(&Player, &mut RenderContext, u32, u8); PlayerSkin::COUNT] = [Player::draw_climber, Player::draw_caterpillar];
+        SKIN_DRAW_TABLE[self.skin as usize](self, render_ctx, z_index, shader_id);
 
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((draw_x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
         render_ctx.graphics.set_camera_pos((self.collision.pos.x, self.collision.pos.y)); // Basic Camera
 
         const STARS_SIZE: (f32, f32) = (150.0, 75.0);
@@ -429,6 +502,17 @@ impl Player
         render_ctx.graphics.renderer.draw_tinted_texture(0, render_ctx.graphics.renderer.matrix(stars_pos, STARS_SIZE, self.collision.rotation), 0, [1.0, 1.0, 1.0, fade], z_index+1, self.stun_shader);
     }
 
+    fn draw_climber(&self, render_ctx: &mut RenderContext, z_index: u32, shader_id: u8)
+    {
+        let draw_x = self.collision.pos.x + self.jiggle_offset();
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.matrix((draw_x, self.collision.pos.y), (self.width, self.height), self.collision.rotation), self.texture_id, z_index, shader_id);
+    }
+
+    fn draw_caterpillar(&self, render_ctx: &mut RenderContext, z_index: u32, _shader_id: u8)
+    {
+        self.body.draw(render_ctx, Vec2::new(self.jiggle_offset(), 0.0), self.look_target, z_index, self.body_shader);
+    }
+
     pub fn set_texture(&mut self, texture_id: usize)
     {
         self.texture_id = texture_id;
@@ -437,6 +521,7 @@ impl Player
     pub fn set_pos(&mut self, pos: Vec2)
     {
         self.collision.pos = pos;
+        self.body.reset(pos);
     }
 
     // Would not change collision, so dont do that yet

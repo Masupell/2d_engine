@@ -6,6 +6,7 @@ pub mod decorations;
 pub mod hazard;
 pub mod dash_hud;
 pub mod lava;
+pub mod caterpillar;
 
 use engine::{no_if::{check_box::Checkbox, drop_down::Dropdown}, utility::DrawLayer, *};
 
@@ -436,7 +437,7 @@ impl App
 
     fn apply_mode(&mut self)
     {
-        let summit_y = [-20.0 * 200.0, NO_SUMMIT][self.endless as usize];
+        let summit_y = [-2.0 * 200.0, NO_SUMMIT][self.endless as usize];
 
         self.wall.set_summit_y(summit_y);
         self.hazards.set_summit_y(summit_y);
@@ -586,9 +587,12 @@ impl App
         update_ctx.graphics.set_uniform("lava_splashes", UniformValue::Mat4(self.lava.splash_uniform()));
 
         let (rope_anchor, rope_max_reach) = self.rope.current_reach();
-        let nearby: Vec<_> = self.decorations.nearby_solid_rects(self.player.collision.pos).collect();
+        let (box_min, box_max) = self.player.collision_bounds();
+        let nearby: Vec<_> = self.decorations.solid_rects_in_box(box_min, box_max).collect();
         let player_reach = [rope_max_reach, f32::MAX][self.reached_summit as usize];
-        let in_lava = self.lava.touches(self.player.collision.pos, self.player.hit_radius());
+
+        let (circles, count) = self.player.hit_circles();
+        let in_lava = circles[..count].iter().any(|&(center, radius)| self.lava.touches(center, radius));
         let removed = self.rope.remove_anchors_where(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue, |anchor| self.hazards.area_contains(anchor));
         self.player.score += 3 * removed as i32;
         self.player.set_no_grip(self.hazards.area_contains(self.player.collision.pos));
@@ -717,10 +721,10 @@ impl App
         self.wall.draw(render_ctx, 1);
         self.decorations.draw(render_ctx, 2, 0);
         self.collectibles.draw(render_ctx, 2);
+        self.hazards.draw(render_ctx, 2, 0);
         self.player.draw(render_ctx, 3, 0);
-        self.rope.draw(render_ctx, 3);
-        self.hazards.draw(render_ctx, 3, 0);
-        self.lava.draw(render_ctx, 4);
+        self.rope.draw(render_ctx, 4);
+        self.lava.draw(render_ctx, 5);
     }
 
     fn draw_hud(&self, render_ctx: &mut RenderContext)
@@ -903,6 +907,9 @@ impl EngineEvent for App
             blur,
             vignette,
         };
+
+        let caterpillar_shader = graphics.load_shader(Some("src/shaders/caterpillar.wgsl"), None, PipeLineType::Normal) as u8;
+        self.player.set_body_shader(caterpillar_shader);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -921,6 +928,14 @@ impl EngineEvent for App
     {
         self.x = update_ctx.input.mouse_position().0 as f32;
         self.y = update_ctx.input.mouse_position().1 as f32;
+
+        let mouse_world = Vec2::new
+        (
+            update_ctx.graphics.renderer.camera_pos.0 + self.x - update_ctx.graphics.renderer.virtual_size.0 * 0.5,
+            update_ctx.graphics.renderer.camera_pos.1 + self.y - update_ctx.graphics.renderer.virtual_size.1 * 0.5,
+        );
+
+        self.player.set_look_target(mouse_world);
     }
 
     fn render(&self, render_ctx: &mut RenderContext)

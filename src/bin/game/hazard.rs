@@ -434,13 +434,15 @@ impl HazardSpawner
     pub fn check_hit(&mut self, player: &mut Player) -> (bool, Vec2)
     {
         let player_pos = player.collision.pos;
-        let player_radius = player.hit_radius();
+        let (circles, count) = player.hit_circles();
+        let circles = &circles[..count];
 
         let hit_index = (0..self.pool.len()).find(|&i|
         {
+            let pos = self.pool[i].pos;
             let kind = self.kinds[self.pool[i].kind_index];
             let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit &!kind.is_area();
-            let in_range = (self.pool[i].pos - player_pos).length() < kind.hit_radius + player_radius;
+            let in_range = circles.iter().any(|&(center, radius)| (pos - center).length() < kind.hit_radius + radius);
 
             is_active & in_range
         });
