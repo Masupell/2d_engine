@@ -280,6 +280,7 @@ impl App
     fn start_game(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::Playing;
+        self.set_endless(self.endless);
     }
 
     fn open_settings(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenuSettings; }
@@ -287,6 +288,7 @@ impl App
     fn back_to_main_menu(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::MainMenu;
+        self.set_endless(true);
     }
 
     fn resume_game(&mut self, _ctx: &mut UpdateContext)
@@ -802,7 +804,7 @@ impl App
 
     fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix((render_ctx.graphics.renderer.view_size.0, render_ctx.graphics.renderer.view_size.1), render_ctx.graphics.renderer.view_size, 0.0), [0.0, 0.0, 0.0, self.fade_alpha], 20, 0);
+        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix((render_ctx.graphics.renderer.view_size.0/2.0, render_ctx.graphics.renderer.view_size.1/2.0), render_ctx.graphics.renderer.view_size, 0.0), [0.0, 0.0, 0.0, self.fade_alpha], 20, 0);
     }
 }
 
@@ -868,7 +870,7 @@ impl EngineEvent for App
         self.wall.set_rock_shader(rock_shader as u8);
         let cap_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/summit_cap.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.wall.set_cap_shader(cap_shader);
-        self.apply_mode();
+        self.set_endless(true);
 
         let vignette = graphics.load_shader(Some("src/shaders/vignette.wgsl"), None, PipeLineType::NormalWithScreen) as u8;
 
