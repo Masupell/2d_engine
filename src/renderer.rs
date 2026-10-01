@@ -182,6 +182,17 @@ struct Segment
     load: wgpu::LoadOp<wgpu::Color>
 }
 
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum ScaleMode
+{
+    Letterbox, // bars on top/bottom or left right
+    ExpandHorizontal, // top/bottom bars, wider screen show more
+    ExpandVertical, // left/right bars, taller screens show more
+    Expand, // both directions
+}
+impl ScaleMode { pub const COUNT: usize = 4; }
+
 pub struct Renderer
 {
     pipelines: Vec<PipelineEntry>,
@@ -219,7 +230,9 @@ pub struct Renderer
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
     free_mesh_ids: Vec<usize>,
     uniform_values: HashMap<String, UniformValue>,
-    pub(crate) screen_viewport: (f32, f32, f32, f32)
+    pub(crate) screen_viewport: (f32, f32, f32, f32),
+    scale_mode: ScaleMode,
+    pub view_size: (f32, f32) // like virtual size, but can be bigger, same scale as virtual size (so can be bigger/smaller than window size)
 }
 
 impl Renderer
@@ -381,7 +394,9 @@ impl Renderer
             text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
             free_mesh_ids: Vec::new(),
             uniform_values: HashMap::new(),
-            screen_viewport: letterbox(screen_size, window_size)
+            screen_viewport: letterbox(screen_size, window_size),
+            scale_mode: ScaleMode::Letterbox,
+            view_size: window_size
         }
     }
 
@@ -851,7 +866,8 @@ impl Renderer
     pub(crate) fn resize_targets(&mut self, device: &wgpu::Device, width: u32, height: u32)
     {
         self.screen_size = (width.max(1), height.max(1));
-        self.screen_viewport = letterbox(self.screen_size, self.virtual_size); // doing it here for now
+        self.view_size = view_size(self.screen_size, self.virtual_size, self.scale_mode);
+        self.screen_viewport = letterbox(self.screen_size, self.view_size); // doing it here for now
 
         for target in &mut self.targets
         {
@@ -1202,7 +1218,7 @@ impl Renderer
     // basically for a post-proceses effect with a NormalWithScreen pipeline
     pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
     {
-        let transform = self.ui_matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.virtual_size, 0.0);
+        let transform = self.ui_matrix((self.view_size.0 * 0.5, self.view_size.1 * 0.5), self.view_size, 0.0);
         self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
     }
 
@@ -1513,8 +1529,8 @@ impl Renderer
     // uses virtual size
     fn camera_matrix(&self) -> [[f32; 4]; 4]
     {
-        let width = self.virtual_size.0;
-        let height = self.virtual_size.1;
+        let width = self.view_size.0;
+        let height = self.view_size.1;
 
         let left = self.camera_pos.0 - width * 0.5;
         let right = self.camera_pos.0 + width * 0.5;
@@ -1541,6 +1557,18 @@ impl Renderer
         self.ui_matrix(virtual_pos, virtual_size, rotation)
     }
 
+    // to position ui-elements at the actual view_screen borders (if not ScaleMode::LetterBox)
+    // (left, top, right, bottom)
+    pub fn ui_bounds(&self) -> (f32, f32, f32, f32)
+    {
+        let extra_x = (self.view_size.0 - self.virtual_size.0) * 0.5;
+        let extra_y = (self.view_size.1 - self.virtual_size.1) * 0.5;
+
+        (-extra_x, -extra_y, self.virtual_size.0 + extra_x, self.virtual_size.1 + extra_y)
+    }
+
+    // stays with virtual size, centered in view_size
+    // so, left of it would be negative
     pub fn ui_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
     {
         let world_pos =
@@ -1573,6 +1601,14 @@ impl Renderer
     {
         self.matrix(pos, (texture_size.0 * scale.0, texture_size.1 * scale.1), rotation)
     }
+
+    // has to set inputs view_size and viewport as well, but can't at the moment, so for now, just don't use it during game
+    pub fn set_scale_mode(&mut self, mode: ScaleMode)
+    {
+        self.scale_mode = mode;
+        self.view_size = view_size(self.screen_size, self.virtual_size, self.scale_mode);
+        self.screen_viewport = letterbox(self.screen_size, self.view_size);
+    }
 }
 
 fn default_charset() -> String
@@ -1603,4 +1639,21 @@ fn letterbox(size: (u32, u32), virtual_size: (f32, f32)) -> (f32, f32, f32, f32)
     let y = ((size.1 - height) * 0.5).floor();
 
     (x, y, width, height)
+}
+
+// How much world is visible: at least virtual_size, more along the axes the mode allows
+fn view_size(screen: (u32, u32), virtual_size: (f32, f32), mode: ScaleMode) -> (f32, f32)
+{
+    let screen_aspect = screen.0 as f32 / screen.1 as f32;
+
+    let wider = (virtual_size.1 * screen_aspect).max(virtual_size.0);
+    let taller = (virtual_size.0 / screen_aspect).max(virtual_size.1);
+
+    const EXPAND_X: [bool; ScaleMode::COUNT] = [false, true, false, true];
+    const EXPAND_Y: [bool; ScaleMode::COUNT] = [false, false, true, true];
+
+    let width = [virtual_size.0, wider][EXPAND_X[mode as usize] as usize];
+    let height = [virtual_size.1, taller][EXPAND_Y[mode as usize] as usize];
+
+    (width, height)
 }

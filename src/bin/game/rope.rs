@@ -49,18 +49,18 @@ impl Rope
         self.rope_shader = shader_id;
     }
 
-    fn compute_view_bounds(player_pos: Vec2, buffer: f32) -> (Vec2, Vec2)
+    fn compute_view_bounds(player_pos: Vec2, buffer: f32, view_size: (f32, f32)) -> (Vec2, Vec2)
     {
-        let half_extent = Vec2::new(1280.0 * 0.5 + buffer, 720.0 * 0.5 + buffer); //1280.0, 720.0 - centered on player
+        let half_extent = Vec2::new(view_size.0 * 0.5 + buffer, view_size.1 * 0.5 + buffer); //1280.0, 720.0 - centered on player
 
         (player_pos - half_extent, player_pos + half_extent)
     }
 
-    pub fn update(&mut self, gravity: f32, player_pos: Vec2, dt: f32)
+    pub fn update(&mut self, gravity: f32, player_pos: Vec2, view_size: (f32, f32), dt: f32)
     {
         let segment_length = self.segment_length;
 
-        self.view_bounds = Self::compute_view_bounds(player_pos, self.view_buffer);
+        self.view_bounds = Self::compute_view_bounds(player_pos, self.view_buffer, view_size);
         let (view_min, view_max) = self.view_bounds;
 
         self.ease_auto_anchors(player_pos, dt);

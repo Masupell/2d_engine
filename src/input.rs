@@ -11,7 +11,9 @@ pub struct Input
     prev_mouse_pressed: HashSet<MouseButton>,
     mouse_position: Option<(f64, f64)>,
     window_size: (f64, f64),
+    view_size: (f64, f64),
     virtual_size: (f64, f64),
+    viewport: (f64, f64, f64, f64),
     actions: Vec<Action>,
     key_bindings: HashMap<KeyCode, KeyBinding>,
     mouse_bindings: HashMap<MouseButton, MouseBinding>,
@@ -41,7 +43,9 @@ impl Input
             prev_mouse_pressed: HashSet::new(),
             mouse_position: None,
             window_size,
+            view_size: window_size,
             virtual_size: window_size,
+            viewport: (0.0, 0.0, window_size.0, window_size.1),
             actions: Vec::new(),
             key_bindings,
             mouse_bindings,
@@ -96,9 +100,11 @@ impl Input
         self.prev_mouse_pressed = self.mouse_pressed.clone();
     }
 
-    pub(crate) fn update_screen(&mut self, size: (f64, f64))
+    pub(crate) fn update_screen(&mut self, size: (f64, f64), viewport: (f32, f32, f32, f32), view_size: (f32, f32))
     {
         self.window_size = size;
+        self.viewport = (viewport.0 as f64, viewport.1 as f64, viewport.2 as f64, viewport.3 as f64);
+        self.view_size = (view_size.0 as f64, view_size.1 as f64);
     }
 
     pub fn actual_mouse_position(&self) -> (f64, f64)
@@ -110,22 +116,40 @@ impl Input
         return (0.0, 0.0);
     }
 
+    pub fn actual_mouse_position_f32(&self) -> (f32, f32)
+    {
+        let (x, y) = self.actual_mouse_position();
+        (x as f32, y as f32)
+    }
+
+    // centered virtual_size inside of view_size, left and above goes negative, to the right and bottom higher than virtual_size
     pub fn mouse_position(&self) -> (f64, f64)
     {
-        if let Some(mouse_pos) = self.mouse_position
-        {
-            return (mouse_pos.0/self.window_size.0*self.virtual_size.0, mouse_pos.1/self.window_size.1*self.virtual_size.1);
-        }
-        return (0.0, 0.0);
+        let (px, py) = self.mouse_position.unwrap_or((0.0, 0.0));
+        let (vx, vy, vw, vh) = self.viewport;
+
+        let x = (px - vx) * (self.view_size.0 / vw) - (self.view_size.0 - self.virtual_size.0) * 0.5;
+        let y = (py - vy) * (self.view_size.1 / vh) - (self.view_size.1 - self.virtual_size.1) * 0.5;
+
+        (x, y)
     }
 
     pub fn mouse_position_f32(&self) -> (f32, f32)
     {
-        if let Some(mouse_pos) = self.mouse_position
-        {
-            return ((mouse_pos.0/self.window_size.0*self.virtual_size.0) as f32, (mouse_pos.1/self.window_size.1*self.virtual_size.1) as f32);
-        }
-        return (0.0, 0.0);
+        let (x, y) = self.mouse_position();
+        (x as f32, y as f32)
+    }
+
+    pub fn mouse_position_normalized(&self) -> (f64, f64)
+    {
+        let (x, y) = self.mouse_position.unwrap_or((0.0, 0.0));
+        (x / self.window_size.0, y / self.window_size.1)
+    }
+
+    pub fn mouse_position_normalized_f32(&self) -> (f32, f32)
+    {
+        let (x, y) = self.mouse_position_normalized();
+        (x as f32, y as f32)
     }
 
     pub fn generate_actions(&mut self)

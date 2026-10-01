@@ -629,7 +629,7 @@ impl App
 
         // world to screen
         let camera = update_ctx.graphics.renderer.camera_pos;
-        let to_screen = (1280.0 * 0.5 - camera.0, 720.0 * 0.5 - camera.1);
+        let to_screen = (update_ctx.graphics.renderer.virtual_size.0 * 0.5 - camera.0, update_ctx.graphics.renderer.virtual_size.1 * 0.5 - camera.1);
 
         let dash_hud = &mut self.dash_hud;
         self.collectibles.collected().iter().filter(|e| e.kind == CollectibleKind::DashOrb).for_each(|e| dash_hud.launch((e.pos.x + to_screen.0, e.pos.y + to_screen.1), e.size.1));
@@ -642,7 +642,7 @@ impl App
         GROWTH_TABLE[should_grow as usize](self, update_ctx, difference);
 
         let rope_end = [self.player.collision.pos, self.summit_anchor][self.reached_summit as usize];
-        self.rope.update(980.0, rope_end, dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
+        self.rope.update(980.0, rope_end, update_ctx.graphics.renderer.view_size, dt as f32); //1960 as 200px = 1m  x980, as 100px = 1m
         self.rope.reclaim_visible_splits(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
         self.rope.update_mesh(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue);
 
@@ -802,7 +802,7 @@ impl App
 
     fn draw_fade_overlay(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (1280.0, 720.0), 0.0), [0.0, 0.0, 0.0, self.fade_alpha], 20, 0);
+        render_ctx.graphics.renderer.draw_ui(0, render_ctx.graphics.renderer.ui_matrix((render_ctx.graphics.renderer.view_size.0, render_ctx.graphics.renderer.view_size.1), render_ctx.graphics.renderer.view_size, 0.0), [0.0, 0.0, 0.0, self.fade_alpha], 20, 0);
     }
 }
 

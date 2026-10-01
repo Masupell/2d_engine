@@ -116,7 +116,7 @@ impl Lava
     pub fn draw(&self, render_ctx: &mut RenderContext, z_index: u32)
     {
         let camera = render_ctx.graphics.renderer.camera_pos;
-        let view = render_ctx.graphics.renderer.virtual_size;
+        let view = render_ctx.graphics.renderer.view_size;
 
         let top = self.surface_y - WAVE_MARGIN;
         let bottom = camera.1 + view.1 * 0.5 + SCREEN_MARGIN;

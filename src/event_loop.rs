@@ -85,7 +85,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                         {
                             surface_configured = true;
                             state.resize(*physical_size);
-                            input.update_screen((physical_size.width as f64, physical_size.height as f64));
+                            input.update_screen((physical_size.width as f64, physical_size.height as f64), state.renderer.screen_viewport, state.renderer.view_size);
                         }
                         WindowEvent::RedrawRequested =>
                         {

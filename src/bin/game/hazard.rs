@@ -223,7 +223,7 @@ impl Hazard
         let grow_size = (size.0 * grow, size.1 * grow);
 
         let camera = render_ctx.graphics.renderer.camera_pos;
-        let screen_pos = WARNING_POS_TABLE[kind.movement as usize](self.pos, self.highest_y, camera, (1280.0, 720.0), size);
+        let screen_pos = WARNING_POS_TABLE[kind.movement as usize](self.pos, self.highest_y, camera, render_ctx.graphics.renderer.view_size, size);
 
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((screen_pos.x, screen_pos.y), size, shake), warning_tex_id, rect_pos, rect_size, z_index, shader_id);
         render_ctx.graphics.renderer.draw_texture_atlas(0, render_ctx.graphics.renderer.matrix((screen_pos.x, screen_pos.y), grow_size, 0.0), warning_tex_id, rect_pos_2, rect_size, z_index, shader_id);
@@ -259,25 +259,25 @@ impl Hazard
     }
 }
 
-fn warning_pos_fall_from_top(hazard_pos: Vec2, highest_y: f32, _camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_fall_from_top(hazard_pos: Vec2, highest_y: f32, _camera: (f32, f32), view_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
-    Vec2::new(hazard_pos.x, highest_y - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)//camera.1 - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)
+    Vec2::new(hazard_pos.x, highest_y - view_size.1 * 0.5 + draw_size.1/2.0 + margin)//camera.1 - virtual_size.1 * 0.5 + draw_size.1/2.0 + margin)
 }
 
-fn warning_pos_shoot_from_left(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_shoot_from_left(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), view_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
-    Vec2::new(camera.0 - virtual_size.0 * 0.5 + draw_size.0/2.0 + margin, hazard_pos.y)
+    Vec2::new(camera.0 - view_size.0 * 0.5 + draw_size.0/2.0 + margin, hazard_pos.y)
 }
 
-fn warning_pos_shoot_from_right(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), virtual_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
+fn warning_pos_shoot_from_right(hazard_pos: Vec2, _highest_y: f32, camera: (f32, f32), view_size: (f32, f32), draw_size: (f32, f32)) -> Vec2
 {
     let margin = 10.0;
-    Vec2::new(camera.0 + virtual_size.0 * 0.5 - draw_size.0/2.0 - margin, hazard_pos.y)
+    Vec2::new(camera.0 + view_size.0 * 0.5 - draw_size.0/2.0 - margin, hazard_pos.y)
 }
 
-fn warning_pos_at_hazard(hazard_pos: Vec2, _highest_y: f32, _camera: (f32, f32), _virtual_size: (f32, f32), _draw_size: (f32, f32)) -> Vec2
+fn warning_pos_at_hazard(hazard_pos: Vec2, _highest_y: f32, _camera: (f32, f32), _view_size: (f32, f32), _draw_size: (f32, f32)) -> Vec2
 {
     hazard_pos
 }
