@@ -369,10 +369,10 @@ impl App
         self.rope_extending = !self.rope_extending;
     }
 
-    fn skip_hit(&mut self, _direction: Vec2) {}
-    fn apply_hit(&mut self, direction: Vec2)
+    fn skip_hit(&mut self, _direction: Vec2, _knockback_strength: f32) {}
+    fn apply_hit(&mut self, direction: Vec2, knockback_strength: f32)
     {
-        self.player.start_falling(direction * 800.0);
+        self.player.start_falling(direction * knockback_strength);
     }
 
     fn wall_shader_cracks(&mut self, ctx: &mut UpdateContext)
@@ -668,9 +668,9 @@ impl App
         self.decorations.maintain(&self.wall, self.player.collision.pos, self.player.direction_y(), 400.0, 720.0, 20);
         self.hazards.maintain(&self.wall, self.player.collision.pos, dt as f32);
 
-        let (player_hit, knockback_dir) = self.hazards.check_hit(&mut self.player);
-        const HIT_TABLE: [fn(&mut App, Vec2); 2] = [App::skip_hit, App::apply_hit];
-        HIT_TABLE[player_hit as usize](self, knockback_dir);
+        let (player_hit, knockback_dir, knockback_strength) = self.hazards.check_hit(&mut self.player);
+        const HIT_TABLE: [fn(&mut App, Vec2, f32); 2] = [App::skip_hit, App::apply_hit];
+        HIT_TABLE[player_hit as usize](self, knockback_dir, knockback_strength);
 
         let alive = self.game_state != GameState::Dead;
         let rising = (self.player.collision.pos.y < -300.0) & alive;
@@ -865,10 +865,10 @@ impl EngineEvent for App
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
-        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0);
-        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
-        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5);
-        self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 1.0, 2.0, 0.0);//10.0, 20.0, 0.0);
+        self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0, 800.0);
+        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 300.0);
+        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 300.0);
+        self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 10.0, 20.0, 0.0, 0.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
@@ -1049,8 +1049,8 @@ impl App
         bloom_checkbox.set_pos((162.0, 450.0));
         bloom_checkbox.set_checked(true);
 
-        let mut character_select = CharacterSelect::new();
-        character_select.set_caterpillar_unlocked(true); // unlocked for now
+        let character_select = CharacterSelect::new();
+        // character_select.set_caterpillar_unlocked(true); // unlocked for now
 
         Self
         {

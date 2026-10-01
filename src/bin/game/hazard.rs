@@ -72,7 +72,8 @@ struct HazardKind
     effect_strength: f32,
     min_interval: f32,
     max_interval: f32,
-    mass: f32 // kg
+    mass: f32, // kg
+    knockback_strength: f32
 }
 
 impl HazardKind
@@ -328,11 +329,14 @@ pub struct HazardSpawner
     kinds: Vec<HazardKind>,
     spawn_timers: Vec<f32>,
     highest_altitude: f32,
+    pub growth_per_step: f32,
+    pub difficulty_step: f32,
     pub max_spawn_rate: f32,
-    pub half_distance_difficulty: f32, // px after safe zone to get halfway to max_spawn_rate
     summit_y: f32,
     summit_clear_distance: f32, // top spawners stop when summit is this close to the player
-    spawning: bool
+    spawning: bool,
+    hit_cooldown: f32,
+    hit_grace: f32 // seconds with no hit after hit
 }
 
 impl HazardSpawner
@@ -348,12 +352,20 @@ impl HazardSpawner
             kinds: Vec::new(),
             spawn_timers: Vec::new(),
             highest_altitude: 0.0,
+            growth_per_step: 1.3,
+            difficulty_step: 4000.0,
             max_spawn_rate: 4.0,
-            half_distance_difficulty: 4000.0, // 20m
             summit_y: NO_SUMMIT,
             summit_clear_distance: 1100.0,
-            spawning: true
+            spawning: true,
+            hit_cooldown: 0.0,
+            hit_grace: 0.5
         }
+    }
+
+    pub fn cooldown_active(&self) -> bool
+    {
+        self.hit_cooldown > 0.0
     }
 
     pub fn set_spawning(&mut self, spawning: bool)
@@ -381,7 +393,7 @@ impl HazardSpawner
         self.area_shader = shader_id;
     }
 
-    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32, mass: f32) -> usize
+    pub fn add_kind(&mut self, movement: HazardMovement, active_rect_pos: (f32, f32), active_rect_size: (f32, f32), draw_height: f32, speed: f32, gravity: f32, warning_duration: f32, hit_radius: f32, on_hit: HazardState, hit_effect: HitEffect, effect_strength: f32, min_interval: f32, max_interval: f32, mass: f32, knockback_strength: f32) -> usize
     {
         let kind = HazardKind
         {
@@ -397,7 +409,8 @@ impl HazardSpawner
             effect_strength,
             min_interval,
             max_interval,
-            mass
+            mass,
+            knockback_strength
         };
 
         self.spawn_timers.push(kind.roll_interval(&mut rand::rng()));
@@ -431,7 +444,7 @@ impl HazardSpawner
     }
 
     // true if player is hit (only simple distance check)
-    pub fn check_hit(&mut self, player: &mut Player) -> (bool, Vec2)
+    pub fn check_hit(&mut self, player: &mut Player) -> (bool, Vec2, f32)
     {
         let player_pos = player.collision.pos;
         let (circles, count) = player.hit_circles();
@@ -441,19 +454,21 @@ impl HazardSpawner
         {
             let pos = self.pool[i].pos;
             let kind = self.kinds[self.pool[i].kind_index];
-            let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit &!kind.is_area();
+            let is_active = ((self.pool[i].state as usize) > 1) & !self.pool[i].hit &!kind.is_area() & (self.hit_cooldown <= 0.0);
             let in_range = circles.iter().any(|&(center, radius)| (pos - center).length() < kind.hit_radius + radius);
 
             is_active & in_range
         });
 
         let mut away_from_hazard = Vec2::ZERO;
+        let mut knockback = 0.0;
 
         hit_index.into_iter().for_each(|i|
         {
             let kind = self.kinds[self.pool[i].kind_index];
             let offset = self.pool[i].pos - player_pos;
             let away_from_player = offset * (1.0 / offset.length().max(0.0001));
+            knockback = kind.knockback_strength;
 
             HIT_EFFECT_TABLE[kind.hit_effect as usize](player, kind.effect_strength);
 
@@ -463,9 +478,10 @@ impl HazardSpawner
             self.pool[i].angular_velocity = self.pool[i].velocity.x * 0.02;
 
             away_from_hazard = away_from_player * -1.0;
+            self.hit_cooldown = self.hit_grace;
         });
 
-        (hit_index.is_some(), away_from_hazard)
+        (hit_index.is_some(), away_from_hazard, knockback)
     }
 
     pub fn area_contains(&self, point: Vec2) -> bool
@@ -490,9 +506,7 @@ impl HazardSpawner
     fn spawn_rate(&self) -> f32
     {
         let climbed = (self.highest_altitude - SAFE_ALTITUDE).max(0.0);
-        let remaining = 0.5_f32.powf(climbed/self.half_distance_difficulty);
-
-        self.max_spawn_rate - (self.max_spawn_rate - 1.0) * remaining
+        self.growth_per_step.powf(climbed / self.difficulty_step).min(self.max_spawn_rate)
     }
 
     fn skip_spawn(&mut self, _wall: &Wall, _player_pos: Vec2, _kind_index: usize) {}
@@ -539,6 +553,7 @@ impl HazardSpawner
     pub fn maintain(&mut self, wall: &Wall, player_pos: Vec2, dt: f32)
     {
         self.highest_altitude = self.highest_altitude.max(-player_pos.y);
+        self.hit_cooldown = (self.hit_cooldown - dt).max(0.0);
 
         let past_safe_zone = (self.highest_altitude > SAFE_ALTITUDE) as u32 as f32;
         let tick = dt * self.spawn_rate() * past_safe_zone * self.spawning as u32 as f32;

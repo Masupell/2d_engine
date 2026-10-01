@@ -35,7 +35,7 @@ impl Lava
             start_y,
             highest_player_y: 0.0,
             rise_speed: 35.0, // 0.175 m/s
-            max_lag: 900.0, // 4.5m below
+            max_lag: 3000.0, // 15m below
             shader_id: 0,
             time: 0.0,
             splashes: [EMPTY_SPLASH; SPLASH_SLOTS],
