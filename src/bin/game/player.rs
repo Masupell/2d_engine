@@ -225,14 +225,14 @@ impl Player
         self.dash
     }
 
-    pub fn dash_request(&mut self)
+    pub fn dash_request(&mut self, on_top: bool)
     {
         let input_len = self.move_input.length();
         let dir = self.move_input * (1.0/input_len.max(0.0001));
         let has_dir = input_len > 0.0;
         let has_charge = self.dash > 0;
 
-        let start = self.dash_requested & has_dir & has_charge;
+        let start = self.dash_requested & has_dir & (has_charge | on_top);
         let denied = self.dash_requested & !has_charge;
 
         let start_i = start as i32;
@@ -254,13 +254,13 @@ impl Player
         self.dash_timer -= step;
     }
 
-    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], in_lava: bool)
+    pub fn update(&mut self, dt: f32, rope_anchor: Vec2, rope_max_reach: f32, wall_bounds: (f32, f32), nearby_solids: &[(Vec2, (f32, f32))], in_lava: bool, on_top: bool)
     {
         let awake = !self.stunned();
         self.move_input = self.move_input * (awake as u32 as f32);
         self.dash_requested &= awake;
 
-        self.dash_request();
+        self.dash_request(on_top);
         self.apply_dash(dt);
 
         STATE_UPDATE_TABLE[self.state as usize](self, dt, rope_anchor, rope_max_reach, wall_bounds, nearby_solids, in_lava);

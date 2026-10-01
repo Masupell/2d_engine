@@ -596,7 +596,7 @@ impl App
         let removed = self.rope.remove_anchors_where(update_ctx.graphics.renderer, update_ctx.graphics.device, update_ctx.graphics.queue, |anchor| self.hazards.area_contains(anchor));
         self.player.score += 3 * removed as i32;
         self.player.set_no_grip(self.hazards.area_contains(self.player.collision.pos));
-        self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava);
+        self.player.update(dt as f32, rope_anchor, player_reach, self.wall.get_bounds(), &nearby, in_lava, self.reached_summit);
 
         let stuck = self.player.out_of_rope(rope_anchor, rope_max_reach, self.rope.segment_length) & !self.reached_summit;
         self.rescue_timer = (self.rescue_timer + dt) * stuck as u32 as f32;
