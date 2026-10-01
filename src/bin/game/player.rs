@@ -411,7 +411,8 @@ impl Player
 
         let penetration = (self.collision.pos.y + half_height - self.ground_y).max(0.0) * can_touch;
 
-        self.collision.pos.y -= penetration.min(self.climp_up_speed * dt);
+        let push = [penetration.min(self.climp_up_speed * dt), penetration][(from_above > 0.5) as usize];
+        self.collision.pos.y -= push;
         self.velocity.y *= (penetration <= 0.0) as u32 as f32;
 
         self.settling &= penetration > 0.0;

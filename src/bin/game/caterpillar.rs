@@ -17,6 +17,10 @@ const GROUND_FRICTION: f32 = 0.5;
 
 pub const NO_GROUND: f32 = 1.0e30;
 
+const BODY_CLIMB_SPEED: f32 = 220.0;
+const LIE_SPEED: f32 = 0.002; // lower is faster
+const LIE_VELOCITY: f32 = 0.2;
+
 pub fn circle_rect_push(center: Vec2, radius: f32, rect_pos: Vec2, rect_size: (f32, f32)) -> Vec2
 {
     let half = Vec2::new(rect_size.0 * 0.5, rect_size.1 * 0.5);
@@ -40,12 +44,18 @@ pub struct Caterpillar
     points: [Vec2; SEGMENTS],
     previous: [Vec2; SEGMENTS],
     crawl: f32, // head travel distance
+    facing: f32 // 1 = right; -1 = left
 }
 
 // distance between i and segment before it
 fn spacing(i: usize) -> f32
 {
     (RADII[i - 1] + RADII[i]) * OVERLAP
+}
+
+fn over_the_top(angle: f32) -> f32
+{
+    angle - std::f32::consts::TAU * (angle >= std::f32::consts::FRAC_PI_2) as u32 as f32
 }
 
 impl Caterpillar
@@ -57,6 +67,7 @@ impl Caterpillar
             points: [head; SEGMENTS],
             previous: [head; SEGMENTS],
             crawl: 0.0,
+            facing: 1.0
         };
         body.reset(head);
         body
@@ -85,6 +96,12 @@ impl Caterpillar
         let moved = head - self.points[0];
         self.crawl += moved.length();
 
+        let direction = (moved.x > 0.3) as i32 as f32 - (moved.x < -0.3) as i32 as f32;
+        self.facing = [self.facing, direction][(direction != 0.0) as usize];
+
+        let head_on_ground = ((head.y + RADII[0]) >= ground_y - 2.0) & (head.x.abs() <= ground_half_width);
+        let max_lift = BODY_CLIMB_SPEED * dt / ITERATIONS as f32;
+
         self.points[0] = head;
         self.previous[0] = head;
 
@@ -107,8 +124,30 @@ impl Caterpillar
             for i in 1..SEGMENTS
             {
                 self.collide_solids(i, solids);
-                self.collide_ground(i, ground_y, ground_half_width);
+                self.collide_ground(i, ground_y, ground_half_width, head_on_ground, max_lift);
             }
+        }
+
+        let grounded = head_on_ground as u32 as f32;
+        let lie = (1.0 - LIE_SPEED.powf(dt)) * grounded;
+
+        for i in 1..SEGMENTS
+        {
+            let parent = self.points[i - 1];
+
+            let lying = Vec2::new(-self.facing * spacing(i), RADII[i - 1] - RADII[i]);
+            let on_ledge = ((parent.x + lying.x).abs() <= ground_half_width) as u32 as f32;
+
+            let current = self.points[i] - parent;
+            let current_angle = over_the_top(current.y.atan2(current.x));
+            let target_angle = over_the_top(lying.y.atan2(lying.x));
+
+            let angle = current_angle + (target_angle - current_angle) * lie * on_ledge;
+            let rotated = parent + Vec2::new(angle.cos(), angle.sin()) * spacing(i);
+
+            let delta = (rotated - self.points[i]) * grounded;
+            self.points[i] += delta;
+            self.previous[i] += delta * (1.0 - LIE_VELOCITY);
         }
     }
 
@@ -122,17 +161,20 @@ impl Caterpillar
         }
     }
 
-    fn collide_ground(&mut self, i: usize, ground_y: f32, ground_half_width: f32)
+    fn collide_ground(&mut self, i: usize, ground_y: f32, ground_half_width: f32, head_on_ground: bool, max_lift: f32)
     {
         let radius = RADII[i];
         let over_ledge = (self.points[i].x.abs() <= ground_half_width) as u32 as f32;
         let from_above = (self.previous[i].y + radius <= ground_y + 1.0) as u32 as f32;
+        let pull_up = head_on_ground as u32 as f32;
 
-        let penetration = (self.points[i].y + radius - ground_y).max(0.0) * over_ledge * from_above;
+        let penetration = (self.points[i].y + radius - ground_y).max(0.0) * over_ledge * from_above.max(pull_up);
+
+        let push = [penetration.min(max_lift), penetration][(from_above > 0.0) as usize];
+        self.points[i].y -= push;
+
+
         let touching = (penetration > 0.0) as u32 as f32;
-
-        self.points[i].y -= penetration;
-
         self.previous[i].y = self.previous[i].y * (1.0 - touching) + self.points[i].y * touching;
         let keep_x = 1.0 - touching * (1.0 - GROUND_FRICTION);
         self.previous[i].x = self.points[i].x - (self.points[i].x - self.previous[i].x) * keep_x;
