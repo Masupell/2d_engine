@@ -233,4 +233,10 @@ impl DecorationSpawner
 
         (0..deficit).for_each(|_| self.spawn_random(wall, player_pos, dir, distance_from_player, spread));
     }
+
+    pub fn clear(&mut self)
+    {
+        self.pool.iter_mut().for_each(|d| d.active = false);
+        self.grid.clear();
+    }
 }

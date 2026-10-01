@@ -280,7 +280,9 @@ impl App
     fn start_game(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::Playing;
-        self.set_endless(self.endless);
+        self.apply_mode(self.endless);
+        self.decorations.clear();
+        self.collectibles.restart(&self.wall, self.player.collision.pos);
     }
 
     fn open_settings(&mut self, _ctx: &mut UpdateContext) { self.game_state = GameState::MainMenuSettings; }
@@ -288,7 +290,7 @@ impl App
     fn back_to_main_menu(&mut self, _ctx: &mut UpdateContext)
     {
         self.game_state = GameState::MainMenu;
-        self.set_endless(true);
+        self.apply_mode(true);
     }
 
     fn resume_game(&mut self, _ctx: &mut UpdateContext)
@@ -309,9 +311,7 @@ impl App
         self.hazards.reset();
         self.lava.reset();
         self.reached_summit = false;
-        self.apply_mode();
         self.rescue_timer = 0.0;
-        self.collectibles.restart(&self.wall, Vec2::ZERO);
 
         self.start_game(ctx);
     }
@@ -447,9 +447,9 @@ impl App
         self.bloom = !self.bloom;
     }
 
-    fn apply_mode(&mut self)
+    fn apply_mode(&mut self, endless: bool)
     {
-        let summit_y = [-2.0 * 200.0, NO_SUMMIT][self.endless as usize];
+        let summit_y = [-2.0 * 200.0, NO_SUMMIT][endless as usize];
 
         self.wall.set_summit_y(summit_y);
         self.hazards.set_summit_y(summit_y);
@@ -459,7 +459,7 @@ impl App
     fn set_endless(&mut self, endless: bool)
     {
         self.endless = endless;
-        self.apply_mode();
+        self.apply_mode(endless);
     }
 
     fn reach_summit(&mut self, ctx: &mut UpdateContext)
@@ -870,7 +870,7 @@ impl EngineEvent for App
         self.wall.set_rock_shader(rock_shader as u8);
         let cap_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/summit_cap.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.wall.set_cap_shader(cap_shader);
-        self.set_endless(true);
+        self.apply_mode(true);
 
         let vignette = graphics.load_shader(Some("src/shaders/vignette.wgsl"), None, PipeLineType::NormalWithScreen) as u8;
 
