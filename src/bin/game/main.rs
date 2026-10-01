@@ -108,6 +108,7 @@ const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     actions[Action::MoveRight as usize] = App::player_move_right;
     actions[Action::ToggleRopeExtending as usize] = App::toggle_rope_extending;
     actions[Action::Dash as usize] = App::player_dash;
+    actions[Action::MouseLeftPressed as usize] = App::player_place_checkpoint;
     used[Action::Escape as usize] = true;
     used[Action::PlaceCheckPoint as usize] = true;
     used[Action::StartFalling as usize] = true;
@@ -116,6 +117,7 @@ const fn play_table() -> ([ActionFn; Action::COUNT], [bool; Action::COUNT])
     used[Action::MoveRight as usize] = true;
     used[Action::ToggleRopeExtending as usize] = true;
     used[Action::Dash as usize] = true;
+    used[Action::MouseLeftPressed as usize] = true;
     (actions, used)
 }
 
@@ -1038,7 +1040,6 @@ impl App
 pub fn register_keys(input: &mut Input)
 {
     input.add_key_binding(Key::Space, Some(Action::PlaceCheckPoint), None, None);
-    input.add_mouse_binding(Button::Left, Some(Action::PlaceCheckPoint), None, None);
     input.add_key_binding(Key::KeyF, None, Some(Action::StartFalling), None);
     input.add_key_binding(Key::KeyW, None, None, Some(Action::MoveUp));
     input.add_key_binding(Key::KeyA, None, None, Some(Action::MoveLeft));
