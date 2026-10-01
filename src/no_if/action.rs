@@ -37,7 +37,6 @@ pub enum Action
     SelectLavaShaderSimple,
 
     ToggleBloom,
-
-    ToggleCaterPillar
+    ToggleEndless
 }
 impl Action { pub const COUNT: usize = 25; }

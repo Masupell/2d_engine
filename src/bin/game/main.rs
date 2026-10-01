@@ -90,6 +90,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     actions[Action::MoveLeft as usize] = App::preview_move_left;
     actions[Action::MoveRight as usize] = App::preview_move_right;
     actions[Action::Dash as usize] = App::preview_dash;
+    actions[Action::ToggleEndless as usize] = App::toggle_endless;
     used[Action::Escape as usize] = true;
     used[Action::BackToMainMenu as usize] = true;
     used[Action::SelectWallShaderCracks as usize] = true;
@@ -101,6 +102,7 @@ const fn main_menu_settings_table() -> ([ActionFn; Action::COUNT], [bool; Action
     used[Action::MoveLeft as usize] = true;
     used[Action::MoveRight as usize] = true;
     used[Action::Dash as usize] = true;
+    used[Action::ToggleEndless as usize] = true;
     (actions, used)
 }
 
@@ -264,7 +266,8 @@ struct App
     reached_summit: bool,
     summit_anchor: Vec2,
     rescue_timer: f32,
-    character_select: CharacterSelect
+    character_select: CharacterSelect,
+    endless_checkbox: Checkbox
 }
 
 impl App
@@ -456,10 +459,9 @@ impl App
         self.lava.set_ceiling(summit_y + 200.0);
     }
 
-    fn set_endless(&mut self, endless: bool)
+    fn toggle_endless(&mut self, _ctx: &mut UpdateContext)
     {
-        self.endless = endless;
-        self.apply_mode(endless);
+        self.endless = !self.endless;
     }
 
     fn reach_summit(&mut self, ctx: &mut UpdateContext)
@@ -591,6 +593,7 @@ impl App
 
         self.lava_shader_dropdown.update(ctx.input);
 
+        self.endless_checkbox.update(ctx.input);
         self.fullscreen_checkbox.update(ctx.input);
         self.bloom_checkbox.update(ctx.input);
 
@@ -734,6 +737,7 @@ impl App
         render_ctx.graphics.renderer.draw_text_centered(render_ctx.graphics.device, render_ctx.graphics.queue, "Lava look:", (210.0, 265.0), 30.0, [0.8, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::UI, 1, 0);
         self.lava_shader_dropdown.draw(render_ctx, 2);
 
+        self.endless_checkbox.draw(render_ctx, 1);
         self.fullscreen_checkbox.draw(render_ctx, 1);
         self.bloom_checkbox.draw(render_ctx, 1);
 
@@ -1012,11 +1016,14 @@ impl App
         lava_shader_dropdown.set_pos((390.0, 265.0));
         lava_shader_dropdown.set_selected(0);
 
+        let mut endless_checkbox = Checkbox::new((25.0, 25.0), "Endless Mode", Action::ToggleEndless, Action::ToggleEndless);
+        endless_checkbox.set_pos((162.0, 330.0));
+
         let mut fullscreen_checkbox = Checkbox::new((25.0, 25.0), "FullScreen", Action::ToggleFullScreen, Action::ToggleFullScreen);
-        fullscreen_checkbox.set_pos((162.0, 330.0));
+        fullscreen_checkbox.set_pos((162.0, 370.0));
 
         let mut bloom_checkbox = Checkbox::new((25.0, 25.0), "Bloom", Action::ToggleBloom, Action::ToggleBloom);
-        bloom_checkbox.set_pos((162.0, 370.0));
+        bloom_checkbox.set_pos((162.0, 410.0));
         bloom_checkbox.set_checked(true);
 
         let mut character_select = CharacterSelect::new();
@@ -1061,7 +1068,8 @@ impl App
             reached_summit: false,
             summit_anchor: Vec2::ZERO,
             rescue_timer: 0.0,
-            character_select
+            character_select,
+            endless_checkbox
         }
     }
 }
