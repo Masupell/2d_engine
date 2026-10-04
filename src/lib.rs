@@ -10,6 +10,7 @@ pub mod context;
 pub mod asset_manager;
 pub mod mesh_builder;
 pub mod target;
+pub mod audio;
 
 pub mod no_if;
 
@@ -29,3 +30,4 @@ pub use utility::{MeshData, CoordSpace, UniformType, UniformValue};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;
 pub use target::TargetHandle;
+pub use audio::Audio;

@@ -87,25 +87,27 @@ impl Lava
         self.surface_y = (self.surface_y - rise).min(self.highest_player_y + self.max_lag).max(self.ceiling);
     }
 
-    pub fn check_entry(&mut self, pos: Vec2, velocity: Vec2, radius: f32, mass: f32, dt: f32)
+    pub fn check_entry(&mut self, pos: Vec2, velocity: Vec2, radius: f32, mass: f32, dt: f32) -> f32
     {
         let bottom = pos.y + radius;
         let previous_bottom = bottom - velocity.y * dt;
 
         let entered = (previous_bottom <= self.surface_y) & (bottom > self.surface_y);
 
-        const SPLASH_TABLE: [fn(&mut Lava, f32, f32, f32); 2] = [Lava::no_splash, Lava::add_splash];
-        SPLASH_TABLE[entered as usize](self, pos.x, velocity.y, mass);
+        const SPLASH_TABLE: [fn(&mut Lava, f32, f32, f32) -> f32; 2] = [Lava::no_splash, Lava::add_splash];
+        SPLASH_TABLE[entered as usize](self, pos.x, velocity.y, mass)
     }
 
-    fn no_splash(&mut self, _x: f32, _speed: f32, _mass: f32) {}
-    fn add_splash(&mut self, x: f32, speed: f32, mass: f32)
+    fn no_splash(&mut self, _x: f32, _speed: f32, _mass: f32) -> f32 { 0.0 }
+    fn add_splash(&mut self, x: f32, speed: f32, mass: f32) -> f32
     {
         let momentum = mass * speed.abs(); //kg*(px/s)
         let strength = momentum.sqrt() * SPLASH_SCALE;
 
         self.splashes[self.next_splash] = [x, self.time, strength, 0.0];
         self.next_splash = (self.next_splash + 1) % SPLASH_SLOTS;
+
+        strength
     }
 
     pub fn touches(&self, pos: Vec2, radius: f32) -> bool

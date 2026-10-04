@@ -1,4 +1,4 @@
-use crate::{Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
+use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -8,7 +8,8 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     fullscreen: bool,
     fixed_dt: f64, // fixed dt
     fps: u32,
-    pub(crate) pending_actions: Vec<ContextAction>
+    pub(crate) pending_actions: Vec<ContextAction>,
+    pub audio: Audio
 }
 
 impl Context
@@ -22,7 +23,8 @@ impl Context
             fullscreen,
             fixed_dt: 1.0 / 60.0,
             fps: 0,
-            pending_actions: Vec::new()
+            pending_actions: Vec::new(),
+            audio: Audio::new()
         }
     }
 

@@ -271,7 +271,9 @@ struct App
     character_select: CharacterSelect,
     endless_checkbox: Checkbox,
     height_field: InputField,
-    summit_height: f32
+    summit_height: f32,
+    collect_sound: usize,
+    lava_fall_sound: usize
 }
 
 impl App
@@ -324,12 +326,13 @@ impl App
     }
 
     fn no_state_change(&mut self, _ctx: &mut UpdateContext) {}
-    fn kill_player(&mut self, _ctx: &mut UpdateContext)
+
+    fn no_kill(&mut self, _ctx: &mut UpdateContext, _lava: bool) {}
+    fn kill_player(&mut self, _ctx: &mut UpdateContext, lava: bool)
     {
         self.death_g_force = self.player.last_deceleration / 1960.0;
         self.game_state = GameState::Dead;
     }
-
 
     fn player_place_checkpoint(&mut self, ctx: &mut UpdateContext)
     {
@@ -503,6 +506,21 @@ impl App
     }
 }
 
+fn play_lava_splash(audio: &Audio, sound: usize, strength: f32, splash_pos: Vec2, player_pos: Vec2)
+{
+    let mut loudness = (strength / 65.0).min(1.0);
+    let pitch = 1.15 - 0.45 * loudness + rand::rng().random_range(-0.05..0.05);
+    loudness *= volume_distance(splash_pos, player_pos);
+
+    audio.play_with(sound, loudness, pitch);
+}
+
+fn volume_distance(source: Vec2, listener: Vec2) -> f32
+{
+    let excess = ((source - listener).length() - 400.0).max(0.0);
+    (-excess / 200.0).exp()
+}
+
 // Screen Effects
 impl App
 {
@@ -651,7 +669,14 @@ impl App
         let to_screen = (update_ctx.graphics.renderer.virtual_size.0 * 0.5 - camera.0, update_ctx.graphics.renderer.virtual_size.1 * 0.5 - camera.1);
 
         let dash_hud = &mut self.dash_hud;
-        self.collectibles.collected().iter().filter(|e| e.kind == CollectibleKind::DashOrb).for_each(|e| dash_hud.launch((e.pos.x + to_screen.0, e.pos.y + to_screen.1), e.size.1));
+        self.collectibles.collected().iter().for_each(|event|
+        {
+            let pitch = rand::rng().random_range(0.9..1.1);
+            update_ctx.context.audio.play_with(self.collect_sound, 0.8, pitch);
+
+            let is_orb = (event.kind == CollectibleKind::DashOrb) as usize;
+            (0..is_orb).for_each(|_| dash_hud.launch((event.pos.x + to_screen.0, event.pos.y + to_screen.1), event.size.1));
+        });
         self.dash_hud.update(dt as f32);
 
 
@@ -675,17 +700,23 @@ impl App
         let alive = self.game_state != GameState::Dead;
         let rising = (self.player.collision.pos.y < -300.0) & alive;
         self.lava.update(self.player.collision.pos, dt as f32, rising, self.elapsed);
-        self.lava.check_entry(self.player.collision.pos, self.player.velocity(), self.player.hit_radius(), 70.0, dt);
+        let player_splash_strength = self.lava.check_entry(self.player.collision.pos, self.player.velocity(), self.player.hit_radius(), 70.0, dt);
+        play_lava_splash(&update_ctx.context.audio, self.lava_fall_sound, player_splash_strength, self.player.collision.pos, self.player.collision.pos);
+
         let lava = &mut self.lava;
-        self.hazards.bodies().for_each(|(pos, velocity, radius, mass)| lava.check_entry(pos, velocity, radius, mass, dt));
+        self.hazards.bodies().for_each(|(pos, velocity, radius, mass)|
+        {
+            let strength: f32 = lava.check_entry(pos, velocity, radius, mass, dt);
+            play_lava_splash(&update_ctx.context.audio, self.lava_fall_sound, strength, pos, self.player.collision.pos);
+        });
 
         let reached = (self.player.collision.pos.y < self.wall.summit_y()) & alive & !self.reached_summit;
         const SUMMIT_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::reach_summit];
         SUMMIT_TABLE[reached as usize](self, update_ctx);
 
-        const DEATH_TABLE: [fn(&mut App, &mut UpdateContext); 2] = [App::no_state_change, App::kill_player];
+        const DEATH_TABLE: [fn(&mut App, &mut UpdateContext, bool); 2] = [App::no_kill, App::kill_player];
         let should_die = (self.player.is_beyond_recovery() | in_lava) & alive;
-        DEATH_TABLE[should_die as usize](self, update_ctx);
+        DEATH_TABLE[should_die as usize](self, update_ctx, in_lava);
     }
 
     fn update_pause_menu(&mut self, ctx: &mut UpdateContext)
@@ -830,7 +861,7 @@ impl App
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, _ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
+    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
         register_keys(input);
 
@@ -866,8 +897,8 @@ impl EngineEvent for App
         self.hazards.set_warning_texture(warning_texture);
         //4.0..=12.0 -> 1.0..=3.0
         self.hazards.add_kind(HazardMovement::FallFromTop, (0.0, 0.0), (298.0, 291.0), 256.0, 100.0, 980.0, 2.0, 128.0, HazardState::Tumbling, HitEffect::Stun, 2.0, 4.0, 12.0, 500.0, 800.0);
-        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 300.0);
-        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 300.0);
+        self.hazards.add_kind(HazardMovement::ShootFromRight, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 400.0);
+        self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 400.0);
         self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 10.0, 20.0, 0.0, 0.0);
 
         let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
@@ -957,6 +988,11 @@ impl EngineEvent for App
 
         self.character_select.set_climber_texture(player_texture);
         self.character_select.set_body_shader(caterpillar_shader);
+
+        self.collect_sound = ctx.audio.load_sound("src/bin/game/assets/pickupCoin.wav");
+        self.lava_fall_sound = ctx.audio.load_sound("src/bin/game/assets/in_lava.wav");
+
+        ctx.audio.set_master_volume(0.3);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -1094,7 +1130,9 @@ impl App
             character_select,
             endless_checkbox,
             height_field,
-            summit_height: 60.0
+            summit_height: 60.0,
+            collect_sound: 0,
+            lava_fall_sound: 0
         }
     }
 }
