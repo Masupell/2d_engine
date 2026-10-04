@@ -1,23 +1,34 @@
 // If I ever want to swap out rodio for more low-level, like cpal
 
-use std::fs::File;
-use std::io::BufReader;
+use std::borrow::Cow;
+use std::io::Cursor;
 use rodio::{Decoder, MixerDeviceSink};
 use rodio::source::{Buffered, Source};
 
+type SoundSource = Buffered<Decoder<Cursor<Cow<'static, [u8]>>>>;
+
 pub(crate) struct BackendSound
 {
-    source: Buffered<Decoder<BufReader<File>>>
+    source: SoundSource
 }
 
 impl BackendSound
 {
     pub(crate) fn load(path: &str) -> Result<Self, String>
     {
-        let file = File::open(path).map_err(|e| e.to_string())?;
-        let decoder = Decoder::new(BufReader::new(file)).map_err(|e| e.to_string())?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        Self::from_data(Cow::Owned(bytes))
+    }
 
-        Ok(Self {source: decoder.buffered() })
+    pub(crate) fn from_bytes(bytes: &'static [u8]) -> Result<Self, String>
+    {
+        Self::from_data(Cow::Borrowed(bytes))
+    }
+
+    fn from_data(data: Cow<'static, [u8]>) -> Result<Self, String>
+    {
+        let decoder = Decoder::new(Cursor::new(data)).map_err(|e| e.to_string())?;
+        Ok(Self { source: decoder.buffered() })
     }
 }
 

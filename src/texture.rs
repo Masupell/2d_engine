@@ -52,10 +52,10 @@ impl Texture
         Self::from_image(device, queue, &img, mag_filter, min_filter, None)
     }
 
-    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode, label: &str) -> Result<Self>
+    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> Result<Self>
     {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, mag_filter, min_filter, Some(label))
+        Self::from_image(device, queue, &img, mag_filter, min_filter, None)
     }
 
     pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, mag_filter: FilterMode, min_filter: FilterMode, label: Option<&str>) -> Result<Self>

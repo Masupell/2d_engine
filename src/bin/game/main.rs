@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 pub mod player;
 pub mod rope;
 pub mod wall;
@@ -380,7 +382,7 @@ impl App
 
     fn wall_shader_cracks(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.replace_shader_with_uniforms(Some(shader!("../../../src/shaders/wall_shader/wall_shader.wgsl")), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("crack_density", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
         ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
@@ -389,7 +391,7 @@ impl App
 
     fn wall_shader_bands(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.replace_shader_with_uniforms(Some(shader!("../../../src/shaders/wall_shader/wall_shader_bands.wgsl")), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("scale", UniformValue::Float(150.0));
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
         ctx.graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
@@ -397,17 +399,17 @@ impl App
 
     fn lava_shader_complex(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/lava_shader/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
+        ctx.graphics.replace_shader_with_uniforms(Some(shader!("../../../src/shaders/lava_shader/lava.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
     }
 
     fn lava_shader_simple(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/lava_shader/lava_simple.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
+        ctx.graphics.replace_shader_with_uniforms(Some(shader!("../../../src/shaders/lava_shader/lava_simple.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)], self.lava.shader_id() as usize);
     }
 
     fn wall_shader_fast(&mut self, ctx: &mut UpdateContext)
     {
-        ctx.graphics.replace_shader_with_uniforms(Some("src/shaders/wall_shader/wall_shader_fast.wgsl"), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
+        ctx.graphics.replace_shader_with_uniforms(Some(shader!("../../../src/shaders/wall_shader/wall_shader_fast.wgsl")), None, PipeLineType::Normal, &[("band_height", UniformType::Float)], self.wall.get_current_shader_id());
         ctx.graphics.set_uniform("band_height", UniformValue::Float(200.0));
     }
 
@@ -865,33 +867,33 @@ impl EngineEvent for App
     {
         register_keys(input);
 
-        let player_texture = graphics.load_texture("src/bin/game/assets/player.png", FilterMode::Linear, FilterMode::Linear);
+        let player_texture = graphics.load_texture_from_bytes(include_bytes!("assets/player.png"), FilterMode::Linear, FilterMode::Linear);
         self.player.set_texture(player_texture);
 
-        let wall_border_texture = graphics.load_texture("src/bin/game/assets/border_right.png", FilterMode::Linear, FilterMode::Linear);
+        let wall_border_texture = graphics.load_texture_from_bytes(include_bytes!("assets/border_right.png"), FilterMode::Linear, FilterMode::Linear);
         self.wall.set_border_right_texture(wall_border_texture);
 
-        let menu_button = graphics.load_texture("src/bin/game/assets/menu_button.png", FilterMode::Linear, FilterMode::Linear);
+        let menu_button = graphics.load_texture_from_bytes(include_bytes!("assets/menu_button.png"), FilterMode::Linear, FilterMode::Linear);
         self.setting_button.set_texture(menu_button);
         self.setting_button.set_atlas_rect((0.0, 0.0), (316.0, 116.0));
         self.quit_button.set_texture(menu_button);
         self.quit_button.set_atlas_rect((0.0, 116.0), (316.0, 116.0));
 
-        let pause_buttons_texture = graphics.load_texture("src/bin/game/assets/pause_button.png", FilterMode::Linear, FilterMode::Linear);
+        let pause_buttons_texture = graphics.load_texture_from_bytes(include_bytes!("assets/pause_button.png"), FilterMode::Linear, FilterMode::Linear);
         self.pause_menu_button.set_texture(pause_buttons_texture);
         self.pause_menu_button.set_atlas_rect((0.0, 0.0), (247.0, 92.0));
         self.pause_restart_button.set_texture(pause_buttons_texture);
         self.pause_restart_button.set_atlas_rect((0.0, 92.0), (247.0, 92.0));
 
-        let decorations_texture = graphics.load_texture("src/bin/game/assets/temp_decorations_atlas.png", FilterMode::Linear, FilterMode::Linear);
+        let decorations_texture = graphics.load_texture_from_bytes(include_bytes!("assets/temp_decorations_atlas.png"), FilterMode::Linear, FilterMode::Linear);
         self.decorations.set_texture(decorations_texture);
         self.decorations.add_variant((0.0, 0.0), (128.0, 128.0), 40.0, true); // rock
         self.decorations.add_variant((256.0, 0.0), (222.0, 159.0), 40.0, false); // grass 1
         self.decorations.add_variant((0.0, 256.0), (329.0, 159.0), 40.0, false); // grass 2
 
-        let hazard_texture = graphics.load_texture("src/bin/game/assets/hazard_items.png", FilterMode::Linear, FilterMode::Linear);
-        let warning_texture = graphics.load_texture("src/bin/game/assets/warning.png", FilterMode::Linear, FilterMode::Linear);
-        let wall_break_shader = graphics.load_shader(Some("src/shaders/wall_break.wgsl"), None, PipeLineType::Normal) as u8;
+        let hazard_texture = graphics.load_texture_from_bytes(include_bytes!("assets/hazard_items.png"), FilterMode::Linear, FilterMode::Linear);
+        let warning_texture = graphics.load_texture_from_bytes(include_bytes!("assets/warning.png"), FilterMode::Linear, FilterMode::Linear);
+        let wall_break_shader = graphics.load_shader(Some(shader!("../../../src/shaders/wall_break.wgsl")), None, PipeLineType::Normal) as u8;
         self.hazards.set_area_shader(wall_break_shader);
         self.hazards.set_hazard_texture(hazard_texture);
         self.hazards.set_warning_texture(warning_texture);
@@ -901,61 +903,61 @@ impl EngineEvent for App
         self.hazards.add_kind(HazardMovement::ShootFromLeft, (396.0, 0.0), (116.0, 116.0), 90.0, 500.0, 1.0, 1.0, 45.0, HazardState::Tumbling, HitEffect::None, 1.0, 6.0, 12.0, 0.5, 400.0);
         self.hazards.add_kind(HazardMovement::WallBreak, (0.0, 0.0), (360.0, 280.0), 280.0, 0.0, 0.0, 1.25, 0.0, HazardState::Active, HitEffect::None, 0.0, 10.0, 20.0, 0.0, 0.0);
 
-        let settings_texture = graphics.load_texture("src/bin/game/assets/settings_background.png", FilterMode::Linear, FilterMode::Linear);
+        let settings_texture = graphics.load_texture_from_bytes(include_bytes!("assets/settings_background.png"), FilterMode::Linear, FilterMode::Linear);
         self.settings_background_texture = settings_texture;
 
-        let settings_back_texture = graphics.load_texture("src/bin/game/assets/back.png", FilterMode::Linear, FilterMode::Linear);
+        let settings_back_texture = graphics.load_texture_from_bytes(include_bytes!("assets/back.png"), FilterMode::Linear, FilterMode::Linear);
         self.settings_back_button.set_texture(settings_back_texture);
         self.settings_back_button.set_atlas_rect((0.0, 0.0), (264.0, 107.0));
 
-        self.blur_texture = graphics.load_texture("src/bin/game/assets/blur.png", FilterMode::Linear, FilterMode::Linear);
+        self.blur_texture = graphics.load_texture_from_bytes(include_bytes!("assets/blur.png"), FilterMode::Linear, FilterMode::Linear);
 
-        let rope_shader = graphics.load_shader(Some("src/shaders/rope.wgsl"), None, PipeLineType::Normal);
+        let rope_shader = graphics.load_shader(Some(shader!("../../../src/shaders/rope.wgsl")), None, PipeLineType::Normal);
         self.rope.set_rope_shader(rope_shader as u8);
-        let rock_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/wall_shader_bands.wgsl"), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)]);
+        let rock_shader = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/wall_shader/wall_shader_bands.wgsl")), None, PipeLineType::Normal, &[("scale", UniformType::Float), ("band_height", UniformType::Float), ("tilt_strength", UniformType::Float), ("seed", UniformType::Float)]);
         graphics.set_uniform("scale", UniformValue::Float(150.0));
         graphics.set_uniform("band_height", UniformValue::Float(200.0));
         graphics.set_uniform("tilt_strength", UniformValue::Float(1.0));
         let mut rng = rand::rng();
         graphics.set_uniform("seed", UniformValue::Float(rng.random()));
         self.wall.set_rock_shader(rock_shader as u8);
-        let cap_shader = graphics.load_shader_with_uniform(Some("src/shaders/wall_shader/summit_cap.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
+        let cap_shader = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/wall_shader/summit_cap.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.wall.set_cap_shader(cap_shader);
         self.apply_mode(true);
 
-        let vignette = graphics.load_shader(Some("src/shaders/vignette.wgsl"), None, PipeLineType::NormalWithScreen) as u8;
+        let vignette = graphics.load_shader(Some(shader!("../../../src/shaders/vignette.wgsl")), None, PipeLineType::NormalWithScreen) as u8;
 
         graphics.set_uniform("radius", UniformValue::Float(3.0));
-        let blur = graphics.load_shader_with_uniform(Some("src/shaders/blur.wgsl"), None, PipeLineType::NormalWithScreen, &[("radius", UniformType::Float)]) as u8;
+        let blur = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/blur.wgsl")), None, PipeLineType::NormalWithScreen, &[("radius", UniformType::Float)]) as u8;
 
         self.rope.build_mesh(graphics.renderer, graphics.device, graphics.queue);
 
         graphics.set_clear_color([0.13, 0.4, 0.76, 1.0]);
 
 
-        let dash_orb_shader = graphics.load_shader_with_uniform(Some("src/shaders/dash_orb.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
+        let dash_orb_shader = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/dash_orb.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.dash_hud.set_shader(dash_orb_shader);
 
-        let rope_coil_texture = graphics.load_texture("src/bin/game/assets/rope_coil.png", FilterMode::Linear, FilterMode::Linear);
-        let score_texture = graphics.load_texture("src/bin/game/assets/score.png", FilterMode::Linear, FilterMode::Linear);
+        let rope_coil_texture = graphics.load_texture_from_bytes(include_bytes!("assets/rope_coil.png"), FilterMode::Linear, FilterMode::Linear);
+        let score_texture = graphics.load_texture_from_bytes(include_bytes!("assets/score.png"), FilterMode::Linear, FilterMode::Linear);
         self.collectibles.add_kind(CollectibleKind::RopeCoil, rope_coil_texture, (224.0, 224.0), 0, 300.0, 0.7);
         self.collectibles.add_kind(CollectibleKind::Score, score_texture, (256.0, 326.0), 0, 5.0, 0.1);
         self.collectibles.add_kind(CollectibleKind::DashOrb, 0, (1.0, 1.0), dash_orb_shader, 1.0, 0.2);
         self.collectibles.initialize_spawn(&self.wall, self.player.collision.pos, 13, 2000.0);
 
-        let stun_shader = graphics.load_shader_with_uniform(Some("src/shaders/stars.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
+        let stun_shader = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/stars.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float)]) as u8;
         self.player.set_stun_shader(stun_shader);
 
-        let lava_shader = graphics.load_shader_with_uniform(Some("src/shaders/lava_shader/lava.wgsl"), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)]) as u8;
+        let lava_shader = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/lava_shader/lava.wgsl")), None, PipeLineType::Normal, &[("game_time", UniformType::Float), ("lava_surface", UniformType::Float), ("lava_splashes", UniformType::Mat4)]) as u8;
         self.lava.set_shader(lava_shader);
 
         // Bloom
         // extract/down are 'Normal' and read only their texture
         // up/composite are 'NormalWithScreen' and also read the screen
-        let extract = graphics.load_shader_with_uniform(Some("src/shaders/bloom/extract.wgsl"), None, PipeLineType::Normal, &[("bloom_threshold", UniformType::Float), ("bloom_knee", UniformType::Float)]) as u8;
-        let down = graphics.load_shader(Some("src/shaders/bloom/down.wgsl"), None, PipeLineType::Normal) as u8;
-        let up = graphics.load_shader_with_uniform(Some("src/shaders/bloom/up.wgsl"), None, PipeLineType::NormalWithScreen, &[("bloom_radius", UniformType::Float), ("bloom_spread", UniformType::Float)]) as u8;
-        let composite = graphics.load_shader_with_uniform(Some("src/shaders/bloom/composite.wgsl"), None, PipeLineType::NormalWithScreen, &[("bloom_intensity", UniformType::Float)]) as u8;
+        let extract = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/bloom/extract.wgsl")), None, PipeLineType::Normal, &[("bloom_threshold", UniformType::Float), ("bloom_knee", UniformType::Float)]) as u8;
+        let down = graphics.load_shader(Some(shader!("../../../src/shaders/bloom/down.wgsl")), None, PipeLineType::Normal) as u8;
+        let up = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/bloom/up.wgsl")), None, PipeLineType::NormalWithScreen, &[("bloom_radius", UniformType::Float), ("bloom_spread", UniformType::Float)]) as u8;
+        let composite = graphics.load_shader_with_uniform(Some(shader!("../../../src/shaders/bloom/composite.wgsl")), None, PipeLineType::NormalWithScreen, &[("bloom_intensity", UniformType::Float)]) as u8;
 
         graphics.set_uniform("bloom_threshold", UniformValue::Float(0.4));
         graphics.set_uniform("bloom_knee", UniformValue::Float(0.2));
@@ -983,14 +985,14 @@ impl EngineEvent for App
             vignette,
         };
 
-        let caterpillar_shader = graphics.load_shader(Some("src/shaders/caterpillar.wgsl"), None, PipeLineType::Normal) as u8;
+        let caterpillar_shader = graphics.load_shader(Some(shader!("../../../src/shaders/caterpillar.wgsl")), None, PipeLineType::Normal) as u8;
         self.player.set_body_shader(caterpillar_shader);
 
         self.character_select.set_climber_texture(player_texture);
         self.character_select.set_body_shader(caterpillar_shader);
 
-        self.collect_sound = ctx.audio.load_sound("src/bin/game/assets/pickupCoin.wav");
-        self.lava_fall_sound = ctx.audio.load_sound("src/bin/game/assets/in_lava.wav");
+        self.collect_sound = ctx.audio.load_sound_from_bytes(include_bytes!("assets/pickupCoin.wav"));
+        self.lava_fall_sound = ctx.audio.load_sound_from_bytes(include_bytes!("assets/in_lava.wav"));
 
         ctx.audio.set_master_volume(0.3);
     }

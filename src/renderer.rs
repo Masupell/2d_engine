@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::ShaderModuleHandle, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -438,17 +438,17 @@ impl Renderer
         }
     }
 
-    fn build_entry(&self, device: &wgpu::Device, queue: Option<&wgpu::Queue>, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>) -> PipelineEntry
+    fn build_entry(&self, device: &wgpu::Device, queue: Option<&wgpu::Queue>, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>) -> PipelineEntry
     {
-        let vertex = match vertex_path
+        let vertex = match vertex
         {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "vs_main"),
+            Some(input) => ShaderModuleHandle::from_input(device, input, "vs_main"),
             None => self.default_vertex.clone() // cheap because arc
         };
 
-        let fragment = match fragment_path
+        let fragment = match fragment
         {
-            Some(path) => ShaderModuleHandle::from_path(device, path, "fs_main"),
+            Some(input) => ShaderModuleHandle::from_input(device, input, "fs_main"),
             None => self.default_fragment.clone()
         };
 
@@ -533,9 +533,9 @@ impl Renderer
         id
     }
 
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> usize
     {
-        let entry = self.build_entry(device, None, fragment_path, vertex_path, pipeline_type, None);
+        let entry = self.build_entry(device, None, fragment, vertex, pipeline_type, None);
         self.push_entry(device, entry)
     }
 
@@ -548,18 +548,18 @@ impl Renderer
     // Has to have the same order in rust as in the shader
     // Names technically dont have to match
     // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
-    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
     {
-        let entry = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
+        let entry = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
         self.push_entry(device, entry)
     }
 
-    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
     {
         // silently skips if not exisiting for now
         if pipeline_id >= self.pipelines.len() { return; }
 
-        self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment_path, vertex_path, pipeline_type, Some(uniforms));
+        self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
         self.fill_variant(device, pipeline_id);
     }
 
@@ -735,8 +735,18 @@ impl Renderer
 
     pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
-        let error = format!("Failed to load texture with path: {}", path);
-        let texture = Texture::new(device, queue, path, mag_filter, min_filter).expect(&error);
+        let texture = Texture::new(device, queue, path, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture '{path}': {e}"));
+        self.register_texture(device, texture)
+    }
+
+    pub(crate) fn load_texture_from_bytes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        let texture = Texture::from_bytes(device, queue, bytes, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture: {e}"));
+        self.register_texture(device, texture)
+    }
+
+    fn register_texture(&mut self, device: &wgpu::Device, texture: Texture) -> usize
+    {
         let extent = texture.texture.size();
         let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
         let id = self.textures.len();

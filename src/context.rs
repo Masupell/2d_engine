@@ -1,4 +1,4 @@
-use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
+use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -172,6 +172,11 @@ impl<'a> GraphicsContext<'a>
         self.renderer.load_texture(self.device, self.queue, path, mag_filter, min_filter)
     }
 
+    pub fn load_texture_from_bytes(&mut self, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        self.renderer.load_texture_from_bytes(self.device, self.queue, bytes, mag_filter, min_filter)
+    }
+
     pub fn load_char(&mut self, char: char) -> Option<usize>
     {
         self.renderer.load_char(self.device, self.queue, char)
@@ -182,19 +187,19 @@ impl<'a> GraphicsContext<'a>
         self.renderer.load_text(self.device, self.queue, text, size)
     }
 
-    pub fn load_shader(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType) -> usize
+    pub fn load_shader(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> usize
     {
-        self.renderer.add_pipeline(self.device, fragment_path, vertex_path, pipeline_type)
+        self.renderer.add_pipeline(self.device, fragment, vertex, pipeline_type)
     }
 
-    pub fn load_shader_with_uniform(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    pub fn load_shader_with_uniform(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
     {
-        self.renderer.add_pipeline_with_uniforms(self.device, self.queue, fragment_path, vertex_path, pipeline_type, uniforms)
+        self.renderer.add_pipeline_with_uniforms(self.device, self.queue, fragment, vertex, pipeline_type, uniforms)
     }
 
-    pub fn replace_shader_with_uniforms(&mut self, fragment_path: Option<&str>, vertex_path: Option<&str>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    pub fn replace_shader_with_uniforms(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
     {
-        self.renderer.replace_pipeline_with_uniforms(self.device, self.queue, fragment_path, vertex_path, pipeline_type, uniforms, pipeline_id);
+        self.renderer.replace_pipeline_with_uniforms(self.device, self.queue, fragment, vertex, pipeline_type, uniforms, pipeline_id);
     }
 
     pub fn create_render_target(&mut self, scale: f32, format: wgpu::TextureFormat) -> TargetHandle

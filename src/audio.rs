@@ -2,6 +2,7 @@ pub mod audio_backend;
 
 use crate::audio::audio_backend::{BackEnd, BackendSound};
 
+// If I don't load anything, but try to play something, it will give an error at the moment
 pub struct Audio
 {
     backend: Option<BackEnd>,
@@ -30,6 +31,18 @@ impl Audio
     pub fn load_sound(&mut self, path: &str) -> usize
     {
         let sound = BackendSound::load(path).unwrap_or_else(|e| panic!("Failed to load sound '{path}': {e}"));
+        self.register_sound(sound)
+    }
+
+    pub fn load_sound_from_bytes(&mut self, bytes: &'static [u8]) -> usize
+    {
+        let sound = BackendSound::from_bytes(bytes).unwrap_or_else(|e| panic!("Failed to load sound: {e}"));
+        self.register_sound(sound)
+    }
+
+    // Currently only for short sound-effects, no streaming yet
+    fn register_sound(&mut self, sound: BackendSound) -> usize
+    {
         let id = self.sounds.len();
         self.sounds.push(sound);
         id

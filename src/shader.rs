@@ -9,6 +9,15 @@ pub struct ShaderModuleHandle
 
 impl ShaderModuleHandle
 {
+    pub(crate) fn from_input(device: &wgpu::Device, input: ShaderInput, entry: &str) -> Self
+    {
+        match input
+        {
+            ShaderInput::File(path) => Self::from_path(device, path, entry),
+            ShaderInput::Code(code) => Self::from_source(device, code, entry),
+        }
+    }
+
     fn from_source(device: &wgpu::Device, source: &str, entry: &str) -> Self
     {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor
@@ -34,4 +43,18 @@ impl ShaderModuleHandle
     {
         Self::from_source(device, include_str!("shaders/shader.wgsl"), "fs_main")
     }
+}
+
+#[derive(Copy, Clone)]
+pub enum ShaderInput<'a>
+{
+    File(&'a str), // path
+    Code(&'a str), // wgsl source
+}
+
+// basically 'include_wgsl!', but my shader needs just the string, can change that eventually
+#[macro_export]
+macro_rules! shader
+{
+    ($path:literal) => { $crate::shader::ShaderInput::Code(include_str!($path)) };
 }
