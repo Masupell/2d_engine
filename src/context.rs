@@ -9,7 +9,9 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     fixed_dt: f64, // fixed dt
     fps: u32,
     pub(crate) pending_actions: Vec<ContextAction>,
-    pub audio: Audio
+    pub audio: Audio,
+    alpha: f32,
+    physics_step: u64
 }
 
 impl Context
@@ -24,7 +26,9 @@ impl Context
             fixed_dt: 1.0 / 60.0,
             fps: 0,
             pending_actions: Vec::new(),
-            audio: Audio::new()
+            audio: Audio::new(),
+            alpha: 0.0,
+            physics_step: 0
         }
     }
 
@@ -96,6 +100,11 @@ impl Context
     {
         self.pending_actions.push(ContextAction::Close);
     }
+
+    pub fn alpha(&self) -> f32 { self.alpha }
+    pub fn physics_step(&self) -> u64 { self.physics_step }
+    pub(crate) fn set_alpha(&mut self, a: f32) { self.alpha = a; }
+    pub(crate) fn next_physics_step(&mut self) { self.physics_step += 1; } // before each physics_update
 }
 
 pub enum ContextAction
@@ -269,5 +278,39 @@ impl<'a> GraphicsContext<'a>
     pub fn add_font(&mut self, font_path: &str, size: f32) -> usize
     {
         self.renderer.add_font(self.device, self.queue, font_path, size)
+    }
+}
+
+
+// Utility stuff like this, will move it somewhere else later
+pub trait Lerp: Copy { fn lerp(self, other: Self, t: f32) -> Self; }
+impl Lerp for f32 { fn lerp(self, other: Self, t: f32) -> Self { self + (other - self) * t } }
+impl Lerp for (f32, f32) { fn lerp(self, other: Self, t: f32) -> Self { (self.0.lerp(other.0, t), self.1.lerp(other.1, t)) } }
+
+/// like pos: Interpolated<(f32, f32)>, only things that are drawn, so velocity: f32 would stay the same
+///
+/// For interpolating things automatically, to make it look smoother for differnt fps then physcis_update ticks (60)
+pub struct Interpolated<T: Lerp> { prev: T, curr: T, step: u64 }
+
+impl<T: Lerp> Interpolated<T>
+{
+    pub fn new(v: T) -> Self { Self { prev: v, curr: v, step: 0 } }
+
+    pub fn set(&mut self, v: T, ctx: &Context)
+    {
+        if self.step != ctx.physics_step() { self.prev = self.curr; self.step = ctx.physics_step(); }
+        self.curr = v;
+    }
+
+    pub fn teleport(&mut self, v: T, ctx: &Context) { self.prev = v; self.curr = v; self.step = ctx.physics_step(); }
+
+    /// For update
+    pub fn get(&self) -> T { self.curr }
+
+    /// For rendering
+    pub fn visual(&self, ctx: &Context) -> T
+    {
+        if self.step != ctx.physics_step() { return self.curr; }
+        self.prev.lerp(self.curr, ctx.alpha())
     }
 }

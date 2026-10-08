@@ -109,12 +109,15 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let fixed_dt = ctx.fixed_dt();
                             while fixed_accumulator >= fixed_dt
                             {
+                                ctx.next_physics_step();
                                 input.begin_physics_step();
                                 let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                                 game.physics_update(&mut fixed_ctx);
                                 input.end_physics_step();
                                 fixed_accumulator -= fixed_dt;
                             }
+
+                            ctx.set_alpha((fixed_accumulator / fixed_dt) as f32);
 
                             // Process things like fullscreen toggle, etc
                             while let Some(action) = ctx.pending_actions.pop()
