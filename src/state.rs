@@ -17,7 +17,7 @@ pub struct State<'a>
 
 impl<'a> State<'a>
 {
-    pub async fn new(window: &'a Window) -> State<'a>
+    pub async fn new(window: &'a Window, screen_resolution: (f32, f32)) -> State<'a>
     {
         let size = window.inner_size();
 
@@ -73,7 +73,7 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &queue, view_format, (size.width.max(1), size.height.max(1)), config.usage.contains(wgpu::TextureUsages::COPY_SRC), (size.width as f32, size.height as f32));
+        let renderer = Renderer::new(&device, &queue, view_format, (size.width.max(1), size.height.max(1)), config.usage.contains(wgpu::TextureUsages::COPY_SRC), screen_resolution);
 
         Self
         {

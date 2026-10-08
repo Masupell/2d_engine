@@ -49,7 +49,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
         let _ = window.request_inner_size(PhysicalSize::new(450, 400));
     }
 
-    let mut state = State::new(&window).await;
+    let mut state = State::new(&window, (size.0 as f32, size.1 as f32)).await;
     let mut surface_configured = false;
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
