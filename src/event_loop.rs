@@ -8,7 +8,7 @@ pub trait EngineEvent
     // fn update(&mut self, input: &Input, dt: f64);
     // fn render(&self, renderer: &mut Renderer);
     fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input);
-    fn update(&mut self, update_ctx: &mut UpdateContext);
+    fn update(&mut self, _update_ctx: &mut UpdateContext) {}
     fn physics_update(&mut self, update_ctx: &mut UpdateContext);
     fn render(&self, render_ctx: &mut RenderContext);
 }
@@ -109,9 +109,10 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                             let fixed_dt = ctx.fixed_dt();
                             while fixed_accumulator >= fixed_dt
                             {
+                                input.begin_physics_step();
                                 let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                                 game.physics_update(&mut fixed_ctx);
-                                input.consume_once();
+                                input.end_physics_step();
                                 fixed_accumulator -= fixed_dt;
                             }
 
@@ -174,7 +175,7 @@ pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, 
                                 fps_counter = 0;
                             }
 
-                            input.prev_update();
+                            input.end_frame();
                             state.window().request_redraw();
                         }
                         _ => {}

@@ -12,8 +12,6 @@ pub mod mesh_builder;
 pub mod target;
 pub mod audio;
 
-pub mod no_if;
-
 pub use event_loop::{EngineEvent, game_loop};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
 pub use renderer::{Renderer, ScreenReadMode, ScaleMode};
@@ -21,10 +19,6 @@ pub use input::Input;
 
 pub use winit::keyboard::KeyCode as Key; // Temporary here
 pub use winit::event::MouseButton as Button; // Temporary here
-pub use no_if::button::*;
-pub use no_if::vector::Vec2;
-pub use no_if::action::Action;
-pub use no_if::shapes::{Rect, Triangle};
 pub use texture::FilterMode;
 pub use utility::{MeshData, CoordSpace, UniformType, UniformValue};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
