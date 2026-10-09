@@ -230,7 +230,10 @@ pub struct Renderer
     uniform_values: HashMap<String, UniformValue>,
     pub(crate) screen_viewport: (f32, f32, f32, f32),
     scale_mode: ScaleMode,
-    pub view_size: (f32, f32) // like virtual size, but can be bigger, same scale as virtual size (so can be bigger/smaller than window size)
+    pub view_size: (f32, f32), // like virtual size, but can be bigger, same scale as virtual size (so can be bigger/smaller than window size)
+    pub camera_zoom: f32, // >1.0 zoomed in
+    pub camera_rotation: f32, // radians
+    pub pixels_per_unit: f32 // 1.0 is one pixel is one unit (unit meters best for physics), (virtual_width or height) / meters_visbile (in x or y)
 }
 
 impl Renderer
@@ -393,7 +396,10 @@ impl Renderer
             uniform_values: HashMap::new(),
             screen_viewport: letterbox(screen_size, window_size),
             scale_mode: ScaleMode::Letterbox,
-            view_size: window_size
+            view_size: window_size,
+            camera_zoom: 1.0,
+            camera_rotation: 0.0,
+            pixels_per_unit: 1.0 // default value makes it so you just say the pixel values basically (for the world)
         }
     }
 
@@ -1236,11 +1242,6 @@ impl Renderer
         self.clear_color = clear;
     }
 
-    pub fn set_camera_pos(&mut self, position: (f32, f32))
-    {
-        self.camera_pos = position;
-    }
-
     fn update_camera(&self, queue: &wgpu::Queue)
     {
         let camera = CameraUniform
@@ -1254,20 +1255,22 @@ impl Renderer
     // uses virtual size
     fn camera_matrix(&self) -> [[f32; 4]; 4]
     {
-        let width = self.view_size.0;
-        let height = self.view_size.1;
+        let scale = self.pixels_per_unit * self.camera_zoom;
+        let half_w = self.view_size.0 / scale * 0.5;
+        let half_h = self.view_size.1 / scale * 0.5;
 
-        let left = self.camera_pos.0 - width * 0.5;
-        let right = self.camera_pos.0 + width * 0.5;
+        let sx = 1.0 / half_w;
+        let sy = -1.0 / half_h;
 
-        let top = self.camera_pos.1 - height * 0.5;
-        let bottom = self.camera_pos.1 + height * 0.5;
+        let (sin, cos) = self.camera_rotation.sin_cos();
+        let (cx, cy) = self.camera_pos;
 
+        // scale * rotate(-rotation) * (world - camera)
         [
-            [2.0 / (right - left), 0.0, 0.0, 0.0],
-            [0.0, -2.0 / (bottom - top), 0.0, 0.0],
+            [sx * cos, -sy * sin, 0.0, 0.0],
+            [sx * sin,  sy * cos, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [-(right + left) / (right - left), (bottom + top) / (bottom - top), 0.0, 1.0]
+            [-sx * (cos * cx + sin * cy), -sy * (-sin * cx + cos * cy), 0.0, 1.0]
         ]
     }
 
@@ -1278,6 +1281,14 @@ impl Renderer
         self.view_size = view_size(self.screen_size, self.virtual_size, self.scale_mode);
         self.screen_viewport = letterbox(self.screen_size, self.view_size);
     }
+
+    pub fn set_camera_pos(&mut self, pos: (f32, f32)) { self.camera_pos = pos; }
+    pub fn change_camera_pos(&mut self, pos: (f32, f32)) { self.camera_pos.0 += pos.0; self.camera_pos.1 += pos.1; }
+    pub fn set_camera_zoom(&mut self, zoom: f32) { self.camera_zoom = zoom.max(0.0001); }
+    pub fn change_camera_zoom(&mut self, zoom: f32) { self.camera_zoom = (self.camera_zoom+zoom).max(0.0001); }
+    pub fn set_camera_rotation(&mut self, rotation: f32) { self.camera_rotation = rotation; }
+    pub fn change_camera_rotation(&mut self, rotation: f32) { self.camera_rotation += rotation; }
+    pub fn set_pixels_per_unit(&mut self, ppu: f32) { self.pixels_per_unit = ppu.max(0.0001); }
 }
 
 fn default_charset() -> String
