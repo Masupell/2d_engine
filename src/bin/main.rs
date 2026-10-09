@@ -6,9 +6,9 @@ struct App { x: f32, y: f32}
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
+    fn setup(&mut self, _ctx: &mut Context, graphics: &mut GraphicsContext, _input: &mut Input)
     {
-        graphics.set_clear_color([1.0, 0.0, 0.0, 1.0]);
+        graphics.set_clear_color([0.05, 0.03, 0.22, 1.0]);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -31,8 +31,7 @@ impl EngineEvent for App
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        // render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (100.0, 100.0), 0.0), [1.0, 1.0, 1.0, 1.0], 0, 0);
-        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (500.0, 500.0), 0.0), 1, 0, 0);
+        render_ctx.graphics.renderer.draw_text_centered("Hello", (640.0, 360.0), 45.0, [0.9, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::World, 0, 0);
     }
 }
 

@@ -21,7 +21,7 @@ pub use input::Input;
 pub use winit::keyboard::KeyCode as Key; // Temporary here
 pub use winit::event::MouseButton as Button; // Temporary here
 pub use texture::FilterMode;
-pub use utility::{MeshData, CoordSpace, UniformType, UniformValue};
+pub use utility::{MeshData, CoordSpace, UniformType, UniformValue, DrawLayer};
 pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;
 pub use target::TargetHandle;

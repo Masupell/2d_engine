@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{MeshBuilder, MeshTopology, TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, TextCache, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -20,7 +20,6 @@ pub const QUAD_INDICES: &[u16] =
 
 const DEFAULT_FONT_PATH: &str = "src/image/Montserrat-Bold.ttf"; // Gotta change the location later
 const DEFAULT_FONT_SIZE: f32 = 128.0; // Size for now, later add multiple sizes and it chooses from it, or better a 'MSDF' (creating a signed distance field, and reconstruct it when needed)
-const TEXT_CACHE_CAPACITY: usize = 64;
 
 const IDENTITY: [[f32; 4]; 4] =
 [
@@ -226,7 +225,6 @@ pub struct Renderer
     camera_bind_group_layout: wgpu::BindGroupLayout,
     clear_color: wgpu::Color,
     pub(crate) fonts: Vec<crate::text::FontAtlas>,
-    text_cache: TextCache,
     // when creating a new mesh, it can check if thee is free space here (from a previously deleted and freed mesh) and add it there, instead of allocating a new gpu buffer
     free_mesh_ids: Vec<usize>,
     uniform_values: HashMap<String, UniformValue>,
@@ -391,7 +389,6 @@ impl Renderer
             camera_bind_group_layout,
             clear_color: wgpu::Color {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
             fonts: vec![default_font],
-            text_cache: TextCache::new(TEXT_CACHE_CAPACITY),
             free_mesh_ids: Vec::new(),
             uniform_values: HashMap::new(),
             screen_viewport: letterbox(screen_size, window_size),
@@ -789,7 +786,6 @@ impl Renderer
     pub fn set_default_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_path: &str, size: f32)
     {
         self.fonts[0] = Self::build_font_atlas(device, queue, &self.texture_bindgroup_layout, &mut self.textures, font_path, &default_charset(), size);
-        self.text_cache.invalidate_font(0);
     }
 
     pub fn add_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_path: &str, size: f32) -> usize
@@ -1305,59 +1301,6 @@ impl Renderer
         self.push_command(mesh_id, transform, texture_id, tint.unwrap_or(WHITE), MODE_TEXTURE, FULL_UV_RECT, layer, z_index, shader_id);
     }
 
-    pub(crate) fn build_text_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str) -> usize
-    {
-        if let Some(mesh_id) = self.text_cache.get(font_id, text)
-        {
-            return mesh_id;
-        }
-
-        let reuse_id = self.text_cache.reserve_slot();
-
-        let mut mesh_builder = match reuse_id
-        {
-            Some(id) => MeshBuilder::with_mesh_id(MeshTopology::Triangles, id),
-            None => MeshBuilder::new(MeshTopology::Triangles)
-        };
-
-        let line_height = self.fonts[font_id].line_height;
-        let mut cursor_y = 0.0;
-
-        for line in text.lines()
-        {
-            let mut cursor_x = 0.0;
-
-            for ch in line.chars()
-            {
-                if let Some(glyph) = self.fonts[font_id].glyphs.get(&ch)
-                {
-                    if glyph.size[0] > 0.0 && glyph.size[1] > 0.0
-                    {
-                        let x0 = cursor_x + glyph.offset[0];
-                        let x1 = x0 + glyph.size[0];
-                        let y_top = cursor_y - glyph.offset[1];
-                        let y_bottom = cursor_y - (glyph.offset[1] + glyph.size[1]);
-
-                        mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
-                        mesh_builder.add_vertex((x0, y_bottom), (glyph.uv_min[0], glyph.uv_max[1]));
-                        mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
-
-                        mesh_builder.add_vertex((x0, y_top), (glyph.uv_min[0], glyph.uv_min[1]));
-                        mesh_builder.add_vertex((x1, y_bottom), (glyph.uv_max[0], glyph.uv_max[1]));
-                        mesh_builder.add_vertex((x1, y_top), (glyph.uv_max[0], glyph.uv_min[1]));
-                    }
-
-                    cursor_x += glyph.advance;
-                }
-            }
-            cursor_y -= line_height;
-        }
-
-        let mesh_id = mesh_builder.build(self, device, queue);
-        self.text_cache.insert(font_id, text.to_string(), mesh_id);
-        mesh_id
-    }
-
     pub fn text_size(&self, text: &str, height_px: f32) -> (f32, f32)
     {
         self.text_size_with_font(0, text, height_px)
@@ -1377,56 +1320,80 @@ impl Renderer
         (width, height)
     }
 
-    pub fn draw_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text(&mut self, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        self.draw_text_with_font(device, queue, 0, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font(0, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_with_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_with_font(&mut self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let atlas = &self.fonts[font_id];
         let scale = height_px / atlas.native_size;
         let texture_id = atlas.texture_id;
         let ascent = atlas.ascent;
-
-        let mesh_id = self.build_text_mesh(device, queue, font_id, text);
+        let line_height = atlas.line_height;
 
         let baseline_pos = (pos.0, pos.1 + ascent * scale);
-
-        // to rotate around center point
         let (width, height) = self.text_size_with_font(font_id, text, height_px);
         let center = (pos.0 + width * 0.5, pos.1 + height * 0.5);
-        let pivoted_pos = rotate_point_around(baseline_pos, center, rotation);
+        let origin = rotate_point_around(baseline_pos, center, rotation);
 
-        let transform = match space
+        let sin = rotation.sin();
+        let cos = rotation.cos();
+
+        let mut cursor_y = 0.0;
+        for line in text.lines()
         {
-            CoordSpace::World => self.matrix(pivoted_pos, (scale, scale), rotation),
-            CoordSpace::Screen => self.ui_matrix(pivoted_pos, (scale, scale), rotation),
-        };
+            let mut cursor_x = 0.0;
+            for ch in line.chars()
+            {
+                let Some(glyph) = self.fonts[font_id].glyphs.get(&ch) else { continue; };
 
-        self.draw_mesh_transformed(mesh_id, texture_id, transform, Some(color), layer, z_index, shader_id);
+                let (offset, size, uv_min, uv_max, advance) = (glyph.offset, glyph.size, glyph.uv_min, glyph.uv_max, glyph.advance);
+
+                if size[0] > 0.0 && size[1] > 0.0
+                {
+                    let y_top = cursor_y - offset[1];
+                    let local = (cursor_x + offset[0] + size[0] * 0.5, y_top - size[1] * 0.5);
+
+                    let world = (origin.0 + (cos * local.0 + sin * local.1) * scale, origin.1 + (sin * local.0 - cos * local.1) * scale);
+                    let glyph_size = (size[0] * scale, size[1] * scale);
+
+                    let transform = match space
+                    {
+                        CoordSpace::World => self.matrix(world, glyph_size, rotation),
+                        CoordSpace::Screen => self.ui_matrix(world, glyph_size, rotation),
+                    };
+
+                    let uv_rect = [uv_min[0], uv_min[1], uv_max[0] - uv_min[0], uv_max[1] - uv_min[1]];
+                    self.push_command(0, transform, texture_id, color, MODE_TEXTURE, uv_rect, layer, z_index, shader_id);
+                }
+                cursor_x += advance;
+            }
+            cursor_y -= line_height;
+        }
     }
 
-    pub fn draw_text_centered(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_centered(&mut self, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        self.draw_text_with_font_centered(device, queue, 0, text, center, height_px, color, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font_centered(0, text, center, height_px, color, rotation, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_with_font_centered(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_with_font_centered(&mut self, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let width = self.measure_text_width_with_font(font_id, text, height_px);
         let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
 
-        self.draw_text_with_font(device, queue, font_id, text, top_left, height_px, color, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font(font_id, text, top_left, height_px, color, rotation, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_outline(&mut self, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        self.draw_text_with_font_outline(device, queue, 0, text, pos, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font_outline(0, text, pos, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
     }
 
     // Only really works for a small outline width
-    pub fn draw_text_with_font_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_with_font_outline(&mut self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         const DIRECTIONS: [(f32, f32); 8] =
         [
@@ -1444,24 +1411,24 @@ impl Renderer
             for (dx, dy) in DIRECTIONS
             {
                 let offset_pos = (pos.0 + dx * radius, pos.1 + dy * radius);
-                self.draw_text_with_font(device, queue, font_id, text, offset_pos, height_px, outline_color, rotation, space, layer, z_index, shader_id);
+                self.draw_text_with_font(font_id, text, offset_pos, height_px, outline_color, rotation, space, layer, z_index, shader_id);
             }
         }
 
-        self.draw_text_with_font(device, queue, font_id, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font(font_id, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_centered_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_centered_outline(&mut self, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
-        self.draw_text_with_font_centered_outline(device, queue, 0, text, center, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font_centered_outline(0, text, center, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
     }
 
-    pub fn draw_text_with_font_centered_outline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
+    pub fn draw_text_with_font_centered_outline(&mut self, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
     {
         let width = self.measure_text_width_with_font(font_id, text, height_px);
         let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
 
-        self.draw_text_with_font_outline(device, queue, font_id, text, top_left, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
+        self.draw_text_with_font_outline(font_id, text, top_left, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
     }
 
     pub fn measure_text_width(&self, text: &str, height_px: f32) -> f32
