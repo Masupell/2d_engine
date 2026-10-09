@@ -4,7 +4,7 @@ Supports Pipeline switching, so you can have multiple shaders.
 
 Things still to implement:
 
-- Text using atlas wiht default mesh instead of building it's own esh
+- Text using atlas wiht default mesh instead of building it's own mesh; later using signed distance fields for texts
 - ui depends currently on the world-camera -> second camera buffer for ui
 - Culling (only pushing to draw commands if it is actually visible)
 - Better draw Api (stuct based?)
@@ -18,3 +18,4 @@ Things still to implement:
 - Hot reloading of shaders
 - Gamepad support
 - Frame stats for optimization
+- Rect clipping (render_pass.set_scissor_rect)
