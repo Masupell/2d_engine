@@ -22,7 +22,8 @@ impl EngineEvent for App
         {
             update_ctx.context.toggle_vsync();
         }
-        // update_ctx.graphics.set_camera_pos((self.x-640.0, self.y-360.0));
+        let position_change = ((self.x-640.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom), (self.y-360.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom));
+        update_ctx.graphics.set_camera_pos(position_change);
 
         if update_ctx.input.is_key_hold(Key::ArrowDown)
         {
@@ -52,7 +53,7 @@ impl EngineEvent for App
     {
         render_ctx.graphics.renderer.draw(Draw::rect((0.0, 0.0), (1.0, 1.0), 0.0, [1.0, 1.0, 1.0, 1.0])); // meters
         render_ctx.graphics.renderer.draw(Draw::rect((0.0, 0.8), (5.0, 0.25), 0.0, [1.0, 0.0, 0.0, 1.0]));
-        // render_ctx.graphics.renderer.draw_text(Text::new("Hello", (640.0, 360.0), 45.0, [0.0, 1.0, 0.0, 1.0]).center().ui());
+        render_ctx.graphics.renderer.draw_text(Text::new("Hello", (640.0, 360.0), 45.0, [0.0, 1.0, 0.0, 1.0]).center().ui());
     }
 }
 

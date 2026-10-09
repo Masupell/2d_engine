@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{CoordSpace, TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -70,6 +70,7 @@ pub(crate) struct DrawCommand
     pub(crate) color: [f32; 4],
     pub(crate) mode: u32, // color or texture
     pub(crate) pipeline_id: u8,
+    pub(crate) space: CoordSpace,
     pub(crate) layer: DrawLayer,
     // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
     // meshes with baked in uv, should leave this at default
@@ -87,7 +88,7 @@ impl DrawCommand
     // draws with the same values can be one instance
     fn batches_with(&self, other: &DrawCommand) -> bool
     {
-        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id)
+        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id) & (self.space == other.space)
     }
 }
 
@@ -192,6 +193,28 @@ pub enum ScaleMode
 }
 impl ScaleMode { pub const COUNT: usize = 4; }
 
+
+fn create_camera(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, label: &str) -> (wgpu::Buffer, wgpu::BindGroup)
+{
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor
+    {
+        label: Some(label),
+        size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false
+    });
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
+    {
+        label: Some(label),
+        layout,
+        entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }]
+    });
+
+    (buffer, bind_group)
+}
+
+
 pub struct Renderer
 {
     pipelines: Vec<PipelineEntry>,
@@ -222,6 +245,8 @@ pub struct Renderer
     pub camera_pos: (f32, f32),
     camera_buf: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    ui_camera_buf: wgpu::Buffer,
+    ui_camera_bind_group: wgpu::BindGroup,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     clear_color: wgpu::Color,
     pub(crate) fonts: Vec<crate::text::FontAtlas>,
@@ -262,24 +287,8 @@ impl Renderer
             }],
         });
 
-        let camera_buf = device.create_buffer(&wgpu::BufferDescriptor
-        {
-            label: Some("Camera Buffer"),
-            size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false
-        });
-
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            label: Some("Camera Bind Group"),
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry
-            {
-                binding: 0,
-                resource: camera_buf.as_entire_binding()
-            }]
-        });
+        let (camera_buf, camera_bind_group) = create_camera(device, &camera_bind_group_layout, "World Camera");
+        let (ui_camera_buf, ui_camera_bind_group) = create_camera(device, &camera_bind_group_layout, "UI Camera");
 
         let default_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
@@ -389,6 +398,8 @@ impl Renderer
             camera_pos: (0.0, 0.0),
             camera_buf,
             camera_bind_group,
+            ui_camera_buf,
+            ui_camera_bind_group,
             camera_bind_group_layout,
             clear_color: wgpu::Color {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
             fonts: vec![default_font],
@@ -1128,7 +1139,7 @@ impl Renderer
 
         render_pass.set_vertex_buffer(1, instance_buf.slice(..));
 
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        let mut bound_space: Option<CoordSpace> = None;
 
         let mut bound_pipeline = usize::MAX;
         let mut bound_mesh = usize::MAX;
@@ -1164,6 +1175,17 @@ impl Renderer
                 }
             }
 
+            if bound_space != Some(cmd.space)
+            {
+                bound_space = Some(cmd.space);
+                let camera = match cmd.space
+                {
+                    CoordSpace::World => &self.camera_bind_group,
+                    CoordSpace::Screen => &self.ui_camera_bind_group
+                };
+                render_pass.set_bind_group(0, camera, &[]);
+            }
+
             let mesh = &self.meshes[cmd.mesh_id];
             if mesh.index_count == 0
             {
@@ -1188,10 +1210,10 @@ impl Renderer
         }
     }
 
-    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
+    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, pipeline_id: u8)
     {
         let target = self.current_target;
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect, target });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, space, layer, uv_rect, target });
     }
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -1244,12 +1266,8 @@ impl Renderer
 
     fn update_camera(&self, queue: &wgpu::Queue)
     {
-        let camera = CameraUniform
-        {
-            view_proj: self.camera_matrix()
-        };
-
-        queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&camera));
+        queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&CameraUniform { view_proj: self.camera_matrix() }));
+        queue.write_buffer(&self.ui_camera_buf, 0, bytemuck::bytes_of(&CameraUniform { view_proj: self.ui_camera_matrix() }));
     }
 
     // uses virtual size
@@ -1271,6 +1289,19 @@ impl Renderer
             [sx * sin,  sy * cos, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [-sx * (cos * cx + sin * cy), -sy * (-sin * cx + cos * cy), 0.0, 1.0]
+        ]
+    }
+
+    fn ui_camera_matrix(&self) -> [[f32; 4]; 4]
+    {
+        let (view_w, view_h) = self.view_size;
+        let (virt_w, virt_h) = self.virtual_size;
+
+        [
+            [2.0 / view_w, 0.0, 0.0, 0.0],
+            [0.0, -2.0 / view_h, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [-virt_w / view_w, virt_h / view_h, 0.0, 1.0]
         ]
     }
 

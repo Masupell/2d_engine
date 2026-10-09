@@ -136,8 +136,8 @@ impl Renderer
     // basically for a post-proceses effect with a NormalWithScreen pipeline
     pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
     {
-        let transform = self.ui_matrix((self.view_size.0 * 0.5, self.view_size.1 * 0.5), self.view_size, 0.0);
-        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
+        let transform = self.matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.view_size, 0.0);
+        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, CoordSpace::Screen, DrawLayer::World, z_index, id);
     }
 
     pub fn draw(&mut self, d: Draw)
@@ -147,9 +147,9 @@ impl Renderer
             self.push_rect_outline(&d);
             return;
         }
-        let transform = self.transform_for(d.space, d.pos, d.size, d.rotation);
+        let transform = self.matrix(d.pos, d.size, d.rotation);
         // always using MODE_TEXTURE right now
-        self.push_command(d.mesh, transform, d.texture, d.color, MODE_TEXTURE, d.uv_rect, d.layer, d.z, d.shader);
+        self.push_command(d.mesh, transform, d.texture, d.color, MODE_TEXTURE, d.uv_rect, d.space, d.layer, d.z, d.shader);
     }
 
     pub fn draw_text(&mut self, t: Text)
@@ -188,15 +188,6 @@ impl Renderer
         self.push_text(&t, pos, t.color);
     }
 
-    fn transform_for(&self, space: CoordSpace, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    {
-        match space
-        {
-            CoordSpace::World => self.matrix(pos, size, rotation),
-            CoordSpace::Screen => self.ui_matrix(pos, size, rotation)
-        }
-    }
-
     fn push_text(&mut self, t: &Text, pos: (f32, f32), color: [f32; 4])
     {
         let atlas = &self.fonts[t.font];
@@ -231,10 +222,10 @@ impl Renderer
                     let world = (origin.0 + (cos * local.0 + sin * local.1) * scale, origin.1 + (sin * local.0 - cos * local.1) * scale);
                     let glyph_size = (size[0] * scale, size[1] * scale);
 
-                    let transform = self.transform_for(t.space, world, glyph_size, t.rotation);
+                    let transform = self.matrix(world, glyph_size, t.rotation);
                     let uv_rect = [uv_min[0], uv_min[1], uv_max[0] - uv_min[0], uv_max[1] - uv_min[1]];
 
-                    self.push_command(QUAD_MESH, transform, texture_id, color, MODE_TEXTURE, uv_rect, t.layer, t.z, t.shader);
+                    self.push_command(QUAD_MESH, transform, texture_id, color, MODE_TEXTURE, uv_rect, t.space, t.layer, t.z, t.shader);
                 }
 
                 cursor_x += advance;
@@ -266,8 +257,8 @@ impl Renderer
             let rotated = (offset.0 * cos - offset.1 * sin, offset.0 * sin + offset.1 * cos);
             let pos = (d.pos.0 + rotated.0, d.pos.1 + rotated.1);
 
-            let transform = self.transform_for(d.space, pos, edge_size, d.rotation);
-            self.push_command(QUAD_MESH, transform, WHITE_TEXTURE, d.color, MODE_COLOR, FULL_UV_RECT, d.layer, d.z, d.shader);
+            let transform = self.matrix(pos, edge_size, d.rotation);
+            self.push_command(QUAD_MESH, transform, WHITE_TEXTURE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader);
         }
     }
 
