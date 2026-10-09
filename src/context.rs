@@ -262,7 +262,7 @@ impl<'a> GraphicsContext<'a>
 
     pub fn set_camera_pos(&mut self, position: (f32, f32))
     {
-        self.renderer.set_camera_pos(position, self.queue);
+        self.renderer.set_camera_pos(position);
     }
 
     pub fn set_clear_color(&mut self, color: [f64; 4])

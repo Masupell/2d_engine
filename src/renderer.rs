@@ -1480,6 +1480,7 @@ impl Renderer
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
+        self.update_camera(queue);
         self.sort_keys.clear();
 
         if self.draw_commands.is_empty()
@@ -1525,10 +1526,9 @@ impl Renderer
         self.clear_color = clear;
     }
 
-    pub fn set_camera_pos(&mut self, position: (f32, f32), queue: &wgpu::Queue)
+    pub fn set_camera_pos(&mut self, position: (f32, f32))
     {
         self.camera_pos = position;
-        self.update_camera(queue);
     }
 
     fn update_camera(&self, queue: &wgpu::Queue)
