@@ -358,6 +358,34 @@ impl Renderer
     {
         self.matrix(pos, (texture_size.0 * scale.0, texture_size.1 * scale.1), rotation)
     }
+
+    // virtual pixels to world_position
+    pub fn screen_to_world(&self, screen: (f32, f32)) -> (f32, f32)
+    {
+        let scale = self.pixels_per_unit * self.camera_zoom;
+        let dx = (screen.0 - self.virtual_size.0 * 0.5) / scale;
+        let dy = (screen.1 - self.virtual_size.1 * 0.5) / scale;
+
+        let (sin, cos) = self.camera_rotation.sin_cos();
+        (
+            self.camera_pos.0 + dx * cos - dy * sin,
+            self.camera_pos.1 + dx * sin + dy * cos
+        )
+    }
+
+    // world_position to virtual pixels
+    pub fn world_to_screen(&self, world: (f32, f32)) -> (f32, f32)
+    {
+        let scale = self.pixels_per_unit * self.camera_zoom;
+        let dx = world.0 - self.camera_pos.0;
+        let dy = world.1 - self.camera_pos.1;
+
+        let (sin, cos) = self.camera_rotation.sin_cos();
+        (
+            (dx * cos + dy * sin) * scale + self.virtual_size.0 * 0.5,
+            (-dx * sin + dy * cos) * scale + self.virtual_size.1 * 0.5
+        )
+    }
 }
 
 // pivot point to rotate around (matrix uses the center, text uses top-left)
