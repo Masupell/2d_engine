@@ -2,7 +2,7 @@ use engine::*;
 // use rand::Rng;
 
 
-struct App { x: f32, y: f32, async_texture_test: usize, async_task_test: Option<Task<Vec<f32>>> }
+struct App { x: f32, y: f32, async_texture_test: usize, async_task_test: Loading<Vec<f32>> }
 
 impl EngineEvent for App
 {
@@ -46,7 +46,7 @@ impl EngineEvent for App
         if update_ctx.input.is_key_released(Key::Space)
         {
             self.async_texture_test = update_ctx.graphics.load_texture_async("src/image/font_atlas_debug.png", FilterMode::Linear, FilterMode::Linear);
-            self.async_task_test = Some(update_ctx.context.threads.spawn(move || heavy_calculation(12, 2048)));
+            self.async_task_test = Loading::Running(update_ctx.context.threads.spawn(move || heavy_calculation(12, 2048)));
         }
     }
 
@@ -54,12 +54,10 @@ impl EngineEvent for App
     {
         (self.x, self.y) = update_ctx.input.mouse_position_f32();
 
-        if let Some(task) = &mut self.async_task_test
+        self.async_task_test.update();
+        if let Some(result) = self.async_task_test.take()
         {
-            if let Some(result) = task.try_take()
-            {
-                println!("Finished {}", result.len());
-            }
+            println!("Finished {}", result.len());
         }
     }
 
@@ -77,7 +75,7 @@ impl App
 {
     fn new() -> Self
     {
-        Self { x: 0.0, y: 0.0, async_texture_test: 0, async_task_test: None }
+        Self { x: 0.0, y: 0.0, async_texture_test: 0, async_task_test: Loading::Idle }
     }
 }
 

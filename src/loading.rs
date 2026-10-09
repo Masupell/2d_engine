@@ -1,4 +1,4 @@
-use crate::{renderer::{Renderer, WHITE_TEXTURE}, texture::{FilterMode, Texture, TextureEntry}, threads::{Task, TaskPoll}};
+use crate::{renderer::{Renderer, WHITE_TEXTURE}, texture::{FilterMode, Texture, TextureEntry}, threads::{Task, TaskPoll, ThreadPool}};
 use std::sync::Arc;
 
 pub(crate) struct DecodedImage
@@ -98,4 +98,55 @@ impl Renderer
     {
         !self.pending_textures.iter().any(|load| load.texture_id == texture_id)
     }
+}
+
+
+pub enum Loading<T>
+{
+    Idle,
+    Running(Task<T>),
+    Done(T),
+    Failed
+}
+
+impl<T: Send + 'static> Loading<T>
+{
+    // Runs each frame, returns true at the moment it's done
+    pub fn update(&mut self) -> bool
+    {
+        let Loading::Running(task) = self else { return false; };
+
+        match task.poll()
+        {
+            TaskPoll::Pending => false,
+            TaskPoll::Ready(value) => { *self = Loading::Done(value); true }
+            TaskPoll::Failed => { *self = Loading::Failed; false }
+        }
+    }
+
+    // Borrow result (keep doing something with it constantly after it's done)
+    pub fn get(&self) -> Option<&T>
+    {
+        match self { Loading::Done(value) => Some(value), _ => None }
+    }
+
+    // one shot use (take value once) and returns to Idle
+    pub fn take(&mut self) -> Option<T>
+    {
+        match std::mem::replace(self, Loading::Idle)
+        {
+            Loading::Done(value) => Some(value),
+            other => { *self = other; None }
+        }
+    }
+
+    pub fn is_running(&self) -> bool
+    {
+        matches!(self, Loading::Running(_))
+    }
+}
+
+impl<T> Default for Loading<T>
+{
+    fn default() -> Self { Loading::Idle }
 }

@@ -31,3 +31,4 @@ pub use target::TargetHandle;
 pub use audio::Audio;
 pub use draw::{Draw, Text, TextAlign, QUAD_MESH};
 pub use threads::{Task, TaskPoll};
+pub use loading::Loading;
