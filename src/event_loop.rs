@@ -15,8 +15,25 @@ pub trait EngineEvent
 
 const MAX_FRAME_TIME: f64 = 0.25; // if for any reason there is some kind of freeze, that the dt does not get to huge
 
+pub fn run<T: EngineEvent + 'static>(game: T, title: &str, size: (i32, i32))
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        crate::executor::block_on(game_loop(Box::new(game), title, size));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let title = title.to_string();
+        wasm_bindgen_futures::spawn_local(async move
+        {
+            game_loop(Box::new(game), &title, size).await;
+        });
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-pub async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size: (i32, i32))
+async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size: (i32, i32))
 {
     cfg_if::cfg_if!
     {

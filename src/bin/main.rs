@@ -8,7 +8,7 @@ impl EngineEvent for App
 {
     fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, input: &mut Input)
     {
-
+        graphics.set_clear_color([1.0, 0.0, 0.0, 1.0]);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -31,7 +31,8 @@ impl EngineEvent for App
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-
+        // render_ctx.graphics.renderer.draw(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (100.0, 100.0), 0.0), [1.0, 1.0, 1.0, 1.0], 0, 0);
+        render_ctx.graphics.renderer.draw_texture(0, render_ctx.graphics.renderer.ui_matrix((640.0, 360.0), (500.0, 500.0), 0.0), 1, 0, 0);
     }
 }
 
@@ -45,5 +46,5 @@ impl App
 
 fn main()
 {
-    pollster::block_on(game_loop(Box::new(App::new()), "Example", (1280, 720)));
+    run(App::new(), "Example", (1280, 720));
 }

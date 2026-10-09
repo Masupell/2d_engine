@@ -11,8 +11,9 @@ pub mod asset_manager;
 pub mod mesh_builder;
 pub mod target;
 pub mod audio;
+pub mod executor;
 
-pub use event_loop::{EngineEvent, game_loop};
+pub use event_loop::{EngineEvent, run};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
 pub use renderer::{Renderer, ScreenReadMode, ScaleMode};
 pub use input::Input;
