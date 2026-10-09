@@ -1,4 +1,4 @@
-use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, utility::{PipeLineType, UniformType}};
+use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, threads::ThreadPool, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -11,12 +11,13 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     pub(crate) pending_actions: Vec<ContextAction>,
     pub audio: Audio,
     alpha: f32,
-    physics_step: u64
+    physics_step: u64,
+    pub threads: ThreadPool
 }
 
 impl Context
 {
-    pub(crate) fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool) -> Self
+    pub(crate) fn new(screen_size: (u32, u32), vsync: bool, fullscreen: bool, threads: ThreadPool) -> Self
     {
         Self
         {
@@ -28,7 +29,8 @@ impl Context
             pending_actions: Vec::new(),
             audio: Audio::new(),
             alpha: 0.0,
-            physics_step: 0
+            physics_step: 0,
+            threads
         }
     }
 
@@ -184,6 +186,16 @@ impl<'a> GraphicsContext<'a>
     pub fn load_texture_from_bytes(&mut self, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
         self.renderer.load_texture_from_bytes(self.device, self.queue, bytes, mag_filter, min_filter)
+    }
+
+    pub fn load_texture_async(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        self.renderer.load_texture_async(path, mag_filter, min_filter)
+    }
+
+    pub fn load_texture_from_bytes_async(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        self.renderer.load_texture_from_bytes_async(bytes, mag_filter, min_filter)
     }
 
     pub fn load_char(&mut self, char: char) -> Option<usize>

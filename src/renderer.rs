@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{CoordSpace, TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{CoordSpace, TargetHandle, loading::PendingTexture, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -258,12 +258,14 @@ pub struct Renderer
     pub view_size: (f32, f32), // like virtual size, but can be bigger, same scale as virtual size (so can be bigger/smaller than window size)
     pub camera_zoom: f32, // >1.0 zoomed in
     pub camera_rotation: f32, // radians
-    pub pixels_per_unit: f32 // 1.0 is one pixel is one unit (unit meters best for physics), (virtual_width or height) / meters_visbile (in x or y)
+    pub pixels_per_unit: f32, // 1.0 is one pixel is one unit (unit meters best for physics), (virtual_width or height) / meters_visbile (in x or y)
+    pub(crate) threads: ThreadPool,
+    pub(crate) pending_textures: Vec<PendingTexture>
 }
 
 impl Renderer
 {
-    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, screen_size: (u32, u32), screen_copyable: bool, window_size: (f32, f32)) -> Self
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, screen_size: (u32, u32), screen_copyable: bool, window_size: (f32, f32), threads: ThreadPool) -> Self
     {
         let texture_bindgroup_layout = Texture::bind_group_layout(&device);
 
@@ -410,7 +412,9 @@ impl Renderer
             view_size: window_size,
             camera_zoom: 1.0,
             camera_rotation: 0.0,
-            pixels_per_unit: 1.0 // default value makes it so you just say the pixel values basically (for the world)
+            pixels_per_unit: 1.0, // default value makes it so you just say the pixel values basically (for the world)
+            threads,
+            pending_textures: Vec::new()
         }
     }
 

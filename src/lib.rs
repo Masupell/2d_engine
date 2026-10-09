@@ -13,6 +13,8 @@ pub mod target;
 pub mod audio;
 pub mod executor;
 pub mod draw;
+pub mod threads;
+pub mod loading;
 
 pub use event_loop::{EngineEvent, run};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
@@ -28,3 +30,4 @@ pub use utility::PipeLineType;
 pub use target::TargetHandle;
 pub use audio::Audio;
 pub use draw::{Draw, Text, TextAlign, QUAD_MESH};
+pub use threads::{Task, TaskPoll};

@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::{Context, RenderContext, renderer::Renderer};
+use crate::{Context, RenderContext, renderer::Renderer, threads::ThreadPool};
 
 pub struct State<'a>
 {
@@ -17,7 +17,7 @@ pub struct State<'a>
 
 impl<'a> State<'a>
 {
-    pub async fn new(window: &'a Window, screen_resolution: (f32, f32)) -> State<'a>
+    pub async fn new(window: &'a Window, screen_resolution: (f32, f32), threads: ThreadPool) -> State<'a>
     {
         let size = window.inner_size();
 
@@ -73,7 +73,7 @@ impl<'a> State<'a>
         surface.configure(&device, &config);
 
         let size = window.inner_size();
-        let renderer = Renderer::new(&device, &queue, view_format, (size.width.max(1), size.height.max(1)), config.usage.contains(wgpu::TextureUsages::COPY_SRC), screen_resolution);
+        let renderer = Renderer::new(&device, &queue, view_format, (size.width.max(1), size.height.max(1)), config.usage.contains(wgpu::TextureUsages::COPY_SRC), screen_resolution, threads);
 
         Self
         {

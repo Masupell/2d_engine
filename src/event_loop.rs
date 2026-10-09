@@ -1,6 +1,6 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{context::{Context, ContextAction, GraphicsContext, RenderContext, UpdateContext}, input::Input, state::State};
+use crate::{context::{Context, ContextAction, GraphicsContext, RenderContext, UpdateContext}, input::Input, state::State, threads::ThreadPool};
 
 pub trait EngineEvent
 {
@@ -66,12 +66,14 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
         let _ = window.request_inner_size(PhysicalSize::new(450, 400));
     }
 
-    let mut state = State::new(&window, (size.0 as f32, size.1 as f32)).await;
+    let threads = ThreadPool::new();
+
+    let mut state = State::new(&window, (size.0 as f32, size.1 as f32), threads.clone()).await;
     let mut surface_configured = false;
     let size = window.inner_size();
     let mut input = Input::new((size.width as f64, size.height as f64));
 
-    let mut ctx = Context::new((size.width, size.height), false, false);
+    let mut ctx = Context::new((size.width, size.height), true, false, threads);
     {
         let mut graphics = GraphicsContext::new(&mut state.renderer, &state.device, &state.queue, &state.config);
         game.setup(&mut ctx, &mut graphics, &mut input); // Input just so I can assign inputs to actions
@@ -119,6 +121,7 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                                 dt = MAX_FRAME_TIME;
                             }
 
+                            state.renderer.poll_pending_textures(&state.device, &state.queue);
                             let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                             game.update(&mut update_ctx);
 
