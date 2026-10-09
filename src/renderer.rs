@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
-use crate::{TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, CoordSpace, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{TargetHandle, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -30,9 +30,9 @@ const IDENTITY: [[f32; 4]; 4] =
 ];
 
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-const WHITE_TEXTURE: usize = 0;
-const MODE_COLOR: u32 = 0;
-const MODE_TEXTURE: u32 = 1;
+pub(crate) const WHITE_TEXTURE: usize = 0;
+pub(crate) const MODE_COLOR: u32 = 0;
+pub(crate) const MODE_TEXTURE: u32 = 1;
 
 // Sort key layout (u128): [target: 16][layer: 8][z_index: 32][pipeline: 16][submission index: 32]
 // Sorting by this number = sorting by layer, then z, then pipeline, then submission order.
@@ -215,7 +215,7 @@ pub struct Renderer
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
-    textures: Vec<TextureEntry>,
+    pub(crate) textures: Vec<TextureEntry>,
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
     default_vertex: ShaderModuleHandle,
     default_fragment: ShaderModuleHandle,
@@ -1182,267 +1182,10 @@ impl Renderer
         }
     }
 
-    fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
+    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], layer: DrawLayer, z_index: u32, pipeline_id: u8)
     {
         let target = self.current_target;
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, layer, uv_rect, target });
-    }
-
-    pub fn texture_size(&self, texture_id: usize) -> (f32, f32)
-    {
-        self.textures[texture_id].size
-    }
-
-    // no anti-aliasing right now
-    pub fn draw_rect_outline(&mut self, center: (f32, f32), size: (f32, f32), thickness: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        let half = (size.0 * 0.5, size.1 * 0.5);
-        let t = thickness.min(half.0).min(half.1);
-        let inner_height = size.1 - 2.0 * t;
-
-        let edges =
-        [
-            ((0.0, -half.1 + t * 0.5), (size.0, t)), // top
-            ((0.0,  half.1 - t * 0.5), (size.0, t)), // bottom
-            ((-half.0 + t * 0.5, 0.0), (t, inner_height)), // left
-            (( half.0 - t * 0.5, 0.0), (t, inner_height)), // right
-        ];
-
-        let cos = rotation.cos();
-        let sin = rotation.sin();
-
-        for (offset, edge_size) in edges
-        {
-            let rotated = (offset.0 * cos - offset.1 * sin, offset.0 * sin + offset.1 * cos);
-            let pos = (center.0 + rotated.0, center.1 + rotated.1);
-
-            let transform = match space
-            {
-                CoordSpace::World => self.matrix(pos, edge_size, rotation),
-                CoordSpace::Screen => self.ui_matrix(pos, edge_size, rotation),
-            };
-
-            self.push_command(0, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, layer, z_index, shader_id);
-        }
-    }
-
-    // basically for a post-proceses effect with a NormalWithScreen pipeline
-    pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
-    {
-        let transform = self.ui_matrix((self.view_size.0 * 0.5, self.view_size.1 * 0.5), self.view_size, 0.0);
-        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
-    }
-
-    pub fn draw(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::World, z_index, id);
-    }
-
-    pub fn draw_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], color: [f32; 4], z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, WHITE_TEXTURE, color, MODE_COLOR, FULL_UV_RECT, DrawLayer::UI, z_index, id);
-    }
-
-    pub fn draw_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
-    }
-
-    pub fn draw_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::UI, z_index, id);
-    }
-
-    pub fn draw_tinted_texture(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, texture_id, tint, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::World, z_index, id);
-    }
-
-    pub fn draw_tinted_texture_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, tint: [f32; 4], z_index: u32, id: u8)
-    {
-        self.push_command(mesh_id, transform, texture_id, tint, MODE_TEXTURE, FULL_UV_RECT, DrawLayer::UI, z_index, id);
-    }
-
-    pub fn draw_texture_atlas(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), z_index: u32, shader_id: u8)
-    {
-        self.draw_texture_atlas_layer(mesh_id, transform, texture_id, rect_pos, rect_size, DrawLayer::World, z_index, shader_id);
-    }
-
-    pub fn draw_texture_atlas_ui(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), z_index: u32, shader_id: u8)
-    {
-        self.draw_texture_atlas_layer(mesh_id, transform, texture_id, rect_pos, rect_size, DrawLayer::UI, z_index, shader_id);
-    }
-
-    fn draw_texture_atlas_layer(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, rect_pos: (f32, f32), rect_size: (f32, f32), layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        let texture_size = self.textures[texture_id].size;
-
-        let uv_rect =
-        [
-            rect_pos.0 / texture_size.0,
-            rect_pos.1 / texture_size.1,
-            rect_size.0 / texture_size.0,
-            rect_size.1 / texture_size.1,
-        ];
-
-        self.push_command(mesh_id, transform, texture_id, WHITE, MODE_TEXTURE, uv_rect, layer, z_index, shader_id);
-    }
-
-
-    // draws mesh as is, so only use it for meshes created with world transform, not the quad in the beginning for example
-    pub fn draw_mesh(&mut self, mesh_id: usize, texture_id: usize, z_index: u32, shader_id: u8)
-    {
-        self.draw_mesh_transformed(mesh_id, texture_id, IDENTITY, None, DrawLayer::World, z_index, shader_id);
-    }
-
-    // Same as normal draw_mesh, but with tint and transform, meant only for local space, not world space (text for example)
-    pub fn draw_mesh_transformed(&mut self, mesh_id: usize, texture_id: usize, transform: [[f32; 4]; 4], tint: Option<[f32; 4]>, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        self.push_command(mesh_id, transform, texture_id, tint.unwrap_or(WHITE), MODE_TEXTURE, FULL_UV_RECT, layer, z_index, shader_id);
-    }
-
-    pub fn text_size(&self, text: &str, height_px: f32) -> (f32, f32)
-    {
-        self.text_size_with_font(0, text, height_px)
-    }
-
-    pub fn text_size_with_font(&self, font_id: usize, text: &str, height_px: f32) -> (f32, f32)
-    {
-        let atlas = &self.fonts[font_id];
-        let scale = height_px / atlas.native_size;
-
-        let width = self.measure_text_width_with_font(font_id, text, height_px);
-
-        let line_count = text.lines().count().max(1);
-        let scaled_line_height = atlas.line_height * scale;
-        let height = height_px + (line_count - 1) as f32 * scaled_line_height;
-
-        (width, height)
-    }
-
-    pub fn draw_text(&mut self, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        self.draw_text_with_font(0, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn draw_text_with_font(&mut self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        let atlas = &self.fonts[font_id];
-        let scale = height_px / atlas.native_size;
-        let texture_id = atlas.texture_id;
-        let ascent = atlas.ascent;
-        let line_height = atlas.line_height;
-
-        let baseline_pos = (pos.0, pos.1 + ascent * scale);
-        let (width, height) = self.text_size_with_font(font_id, text, height_px);
-        let center = (pos.0 + width * 0.5, pos.1 + height * 0.5);
-        let origin = rotate_point_around(baseline_pos, center, rotation);
-
-        let sin = rotation.sin();
-        let cos = rotation.cos();
-
-        let mut cursor_y = 0.0;
-        for line in text.lines()
-        {
-            let mut cursor_x = 0.0;
-            for ch in line.chars()
-            {
-                let Some(glyph) = self.fonts[font_id].glyphs.get(&ch) else { continue; };
-
-                let (offset, size, uv_min, uv_max, advance) = (glyph.offset, glyph.size, glyph.uv_min, glyph.uv_max, glyph.advance);
-
-                if size[0] > 0.0 && size[1] > 0.0
-                {
-                    let y_top = cursor_y - offset[1];
-                    let local = (cursor_x + offset[0] + size[0] * 0.5, y_top - size[1] * 0.5);
-
-                    let world = (origin.0 + (cos * local.0 + sin * local.1) * scale, origin.1 + (sin * local.0 - cos * local.1) * scale);
-                    let glyph_size = (size[0] * scale, size[1] * scale);
-
-                    let transform = match space
-                    {
-                        CoordSpace::World => self.matrix(world, glyph_size, rotation),
-                        CoordSpace::Screen => self.ui_matrix(world, glyph_size, rotation),
-                    };
-
-                    let uv_rect = [uv_min[0], uv_min[1], uv_max[0] - uv_min[0], uv_max[1] - uv_min[1]];
-                    self.push_command(0, transform, texture_id, color, MODE_TEXTURE, uv_rect, layer, z_index, shader_id);
-                }
-                cursor_x += advance;
-            }
-            cursor_y -= line_height;
-        }
-    }
-
-    pub fn draw_text_centered(&mut self, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        self.draw_text_with_font_centered(0, text, center, height_px, color, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn draw_text_with_font_centered(&mut self, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        let width = self.measure_text_width_with_font(font_id, text, height_px);
-        let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
-
-        self.draw_text_with_font(font_id, text, top_left, height_px, color, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn draw_text_outline(&mut self, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        self.draw_text_with_font_outline(0, text, pos, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
-    }
-
-    // Only really works for a small outline width
-    pub fn draw_text_with_font_outline(&mut self, font_id: usize, text: &str, pos: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        const DIRECTIONS: [(f32, f32); 8] =
-        [
-            (-1.0, -1.0), (0.0, -1.0), (1.0, -1.0),
-            (-1.0,  0.0),              (1.0,  0.0),
-            (-1.0,  1.0), (0.0,  1.0), (1.0,  1.0),
-        ];
-
-        let steps = outline_width.ceil().max(1.0) as i32;
-
-        for step in 1..=steps
-        {
-            let radius = outline_width * step as f32 / steps as f32;
-
-            for (dx, dy) in DIRECTIONS
-            {
-                let offset_pos = (pos.0 + dx * radius, pos.1 + dy * radius);
-                self.draw_text_with_font(font_id, text, offset_pos, height_px, outline_color, rotation, space, layer, z_index, shader_id);
-            }
-        }
-
-        self.draw_text_with_font(font_id, text, pos, height_px, color, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn draw_text_centered_outline(&mut self, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        self.draw_text_with_font_centered_outline(0, text, center, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn draw_text_with_font_centered_outline(&mut self, font_id: usize, text: &str, center: (f32, f32), height_px: f32, color: [f32; 4], outline_color: [f32; 4], outline_width: f32, rotation: f32, space: CoordSpace, layer: DrawLayer, z_index: u32, shader_id: u8)
-    {
-        let width = self.measure_text_width_with_font(font_id, text, height_px);
-        let top_left = (center.0 - width * 0.5, center.1 - height_px * 0.5);
-
-        self.draw_text_with_font_outline(font_id, text, top_left, height_px, color, outline_color, outline_width, rotation, space, layer, z_index, shader_id);
-    }
-
-    pub fn measure_text_width(&self, text: &str, height_px: f32) -> f32
-    {
-        self.measure_text_width_with_font(0, text, height_px)
-    }
-
-    pub fn measure_text_width_with_font(&self, font_id: usize, text: &str, height_px: f32) -> f32
-    {
-        let atlas = &self.fonts[font_id];
-        let scale = height_px / atlas.native_size;
-
-        let width = text.lines().map(|line| line.chars().filter_map(|ch| atlas.glyphs.get(&ch)).map(|glyph| glyph.advance).sum::<f32>()).fold(0.0_f32, f32::max);
-        width * scale
     }
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -1528,62 +1271,6 @@ impl Renderer
         ]
     }
 
-
-    pub fn pixel_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    {
-        let to_virtual = (self.virtual_size.0 / self.window_size.0, self.virtual_size.1 / self.window_size.1);
-
-        let virtual_pos = (pos.0 * to_virtual.0, pos.1 * to_virtual.1);
-        let virtual_size = (size.0 * to_virtual.0, size.1 * to_virtual.1);
-
-        self.ui_matrix(virtual_pos, virtual_size, rotation)
-    }
-
-    // to position ui-elements at the actual view_screen borders (if not ScaleMode::LetterBox)
-    // (left, top, right, bottom)
-    pub fn ui_bounds(&self) -> (f32, f32, f32, f32)
-    {
-        let extra_x = (self.view_size.0 - self.virtual_size.0) * 0.5;
-        let extra_y = (self.view_size.1 - self.virtual_size.1) * 0.5;
-
-        (-extra_x, -extra_y, self.virtual_size.0 + extra_x, self.virtual_size.1 + extra_y)
-    }
-
-    // stays with virtual size, centered in view_size
-    // so, left of it would be negative
-    pub fn ui_matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    {
-        let world_pos =
-        (
-            self.camera_pos.0 + pos.0 - self.virtual_size.0 * 0.5,
-            self.camera_pos.1 + pos.1 - self.virtual_size.1 * 0.5 // +, - => (0,0) is top-left, -,+ => (0,0) is bottom-left
-        );
-
-        self.matrix(world_pos, size, rotation)
-    }
-
-    // Still draws with pixels, but this time everything gets drawn like it looks with the original screen-size, so resized looks the same (in relation to each other)
-    // If using this, when trying to use the windowsize, use virtual_size instead of window_size
-    // Because everything here is in relation to the original "virtual" size, not the actual window size
-    pub fn matrix(&self, pos: (f32, f32), size: (f32, f32), rotation: f32) -> [[f32; 4]; 4]
-    {
-        let cos = rotation.cos();
-        let sin = rotation.sin();
-
-        [
-            [cos*size.0, sin*size.0, 0.0, 0.0],
-            [sin*size.1, -cos*size.1, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [pos.0, pos.1, 0.0, 1.0]
-        ]
-    }
-
-    // Size in relative to the original, not pixels
-    pub fn texture_matrix(&self, pos: (f32, f32), scale: (f32, f32), rotation: f32, texture_size: (f32, f32)) -> [[f32; 4]; 4]
-    {
-        self.matrix(pos, (texture_size.0 * scale.0, texture_size.1 * scale.1), rotation)
-    }
-
     // has to set inputs view_size and viewport as well, but can't at the moment, so for now, just don't use it during game
     pub fn set_scale_mode(&mut self, mode: ScaleMode)
     {
@@ -1596,17 +1283,6 @@ impl Renderer
 fn default_charset() -> String
 {
     (' '..='~').collect()
-}
-
-// gives pivot point to rotate around (for matrix, which uses center, and text which used top-left)
-fn rotate_point_around(point: (f32, f32), pivot: (f32, f32), rotation: f32) -> (f32, f32)
-{
-    let cos = rotation.cos();
-    let sin = rotation.sin();
-    let dx = point.0 - pivot.0;
-    let dy = point.1 - pivot.1;
-
-    (pivot.0 + dx * cos - dy * sin, pivot.1 + dx * sin + dy * cos)
 }
 
 fn letterbox(size: (u32, u32), virtual_size: (f32, f32)) -> (f32, f32, f32, f32)

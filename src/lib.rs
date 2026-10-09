@@ -12,6 +12,7 @@ pub mod mesh_builder;
 pub mod target;
 pub mod audio;
 pub mod executor;
+pub mod draw;
 
 pub use event_loop::{EngineEvent, run};
 pub use context::{Context, UpdateContext, RenderContext, GraphicsContext};
@@ -26,3 +27,4 @@ pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;
 pub use target::TargetHandle;
 pub use audio::Audio;
+pub use draw::{Draw, Text, TextAlign, QUAD_MESH};

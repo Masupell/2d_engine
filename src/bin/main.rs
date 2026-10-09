@@ -21,17 +21,19 @@ impl EngineEvent for App
         {
             update_ctx.context.toggle_vsync();
         }
+        update_ctx.graphics.set_camera_pos((self.x-640.0, self.y-360.0));
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
     {
-        self.x = update_ctx.input.mouse_position().0 as f32;
-        self.y = update_ctx.input.mouse_position().1 as f32;
+        (self.x, self.y) = update_ctx.input.mouse_position_f32();
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
     {
-        render_ctx.graphics.renderer.draw_text_centered("Hello", (640.0, 360.0), 45.0, [0.9, 0.8, 0.8, 1.0], 0.0, CoordSpace::Screen, DrawLayer::World, 0, 0);
+        render_ctx.graphics.renderer.draw(Draw::rect((0.0, 0.0), (100.0, 100.0), 0.0, [1.0, 1.0, 1.0, 1.0]));
+        render_ctx.graphics.renderer.draw(Draw::rect((0.0, 80.0), (500.0, 25.0), 0.0, [1.0, 0.0, 0.0, 1.0]));
+        render_ctx.graphics.renderer.draw_text(Text::new("Hello", (640.0, 360.0), 45.0, [0.0, 1.0, 0.0, 1.0]).center().ui());
     }
 }
 
