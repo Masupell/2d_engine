@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, TargetHandle, loading::PendingTexture, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
+use crate::{CoordSpace, TargetHandle, loading::PendingTexture, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -417,7 +417,8 @@ impl Renderer
             index_buf,
             vertex_capacity,
             index_capacity,
-            index_count
+            index_count,
+            bounds: ([-0.5, -0.5], [0.5, 0.5])
         };
 
         let meshes = vec![quad_mesh];
@@ -821,7 +822,8 @@ impl Renderer
             index_buf,
             vertex_capacity: vertex_size,
             index_capacity: index_size,
-            index_count: data.indices.len() as u32
+            index_count: data.indices.len() as u32,
+            bounds: mesh_bounds(&data.vertices)
         };
 
         let id = self.meshes.len();
@@ -850,6 +852,7 @@ impl Renderer
             });
             queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(&data.vertices));
             mesh.vertex_capacity = new_capacity;
+            mesh.bounds = mesh_bounds(&data.vertices);
         }
         else
         {
@@ -868,6 +871,7 @@ impl Renderer
             });
             queue.write_buffer(&mesh.index_buf, 0, bytemuck::cast_slice(&data.indices));
             mesh.index_capacity = new_capacity;
+            mesh.bounds = mesh_bounds(&data.vertices);
         }
         else
         {
@@ -895,6 +899,7 @@ impl Renderer
                 mapped_at_creation: false
             });
             mesh.vertex_capacity = new_capacity;
+            mesh.bounds = mesh_bounds(vertices);
         }
         queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
     }
@@ -1382,7 +1387,15 @@ impl Renderer
         }
         debug_assert!(self.draw_commands.len() <= INDEX_MASK as usize, "more than {INDEX_MASK} draw commands in one frame");
 
-        self.sort_keys.extend(self.draw_commands.iter().enumerate().map(|(index, cmd)| cmd.sort_key(index)));
+        let view = self.world_view_bounds();
+        let meshes = &self.meshes;
+        self.sort_keys.extend(self.draw_commands.iter().enumerate().filter(|(_, cmd)| cmd.space == CoordSpace::Screen || is_visible(cmd, meshes, view)).map(|(index, cmd)| cmd.sort_key(index)));
+
+        if self.sort_keys.is_empty() // in case everythings off screen
+        {
+            self.build_segments(device);
+            return;
+        }
         self.sort_keys.sort_unstable();
 
         self.instances.clear();
@@ -1410,6 +1423,19 @@ impl Renderer
 
         queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&self.instances));
         self.build_segments(device);
+    }
+
+    fn world_view_bounds(&self) -> ((f32, f32), (f32, f32))
+    {
+        let scale = self.pixels_per_unit * self.camera_zoom;
+        let half_w = self.view_size.0 / scale * 0.5;
+        let half_h = self.view_size.1 / scale * 0.5;
+
+        let (sin, cos) = self.camera_rotation.sin_cos();
+        // for rotation, need a bounding box aligned with the screen axis
+        let extent = (cos.abs() * half_w + sin.abs() * half_h, sin.abs() * half_w + cos.abs() * half_h);
+
+        (self.camera_pos, extent)
     }
 
     pub(crate) fn set_clear_color(&mut self, color: [f64; 4])
@@ -1510,4 +1536,27 @@ fn view_size(screen: (u32, u32), virtual_size: (f32, f32), mode: ScaleMode) -> (
     let height = [virtual_size.1, taller][EXPAND_Y[mode as usize] as usize];
 
     (width, height)
+}
+
+fn is_visible(cmd: &DrawCommand, meshes: &[Mesh], (view_center, view_extent): ((f32, f32), (f32, f32))) -> bool
+{
+    let (min, max) = meshes[cmd.mesh_id].bounds;
+    let local_center = ((min[0] + max[0]) * 0.5, (min[1] + max[1]) * 0.5);
+    let local_extent = ((max[0] - min[0]) * 0.5, (max[1] - min[1]) * 0.5);
+
+    let m = &cmd.transform; // m[0] = width, m[1] = height, m[3] = position
+
+    let center =
+    (
+        m[0][0] * local_center.0 + m[1][0] * local_center.1 + m[3][0],
+        m[0][1] * local_center.0 + m[1][1] * local_center.1 + m[3][1]
+    );
+
+    let extent =
+    (
+        m[0][0].abs() * local_extent.0 + m[1][0].abs() * local_extent.1, // abs for same reason as in camera bounding box (rotation)
+        m[0][1].abs() * local_extent.0 + m[1][1].abs() * local_extent.1
+    );
+
+    ((center.0 - view_center.0).abs() <= extent.0 + view_extent.0) & ((center.1 - view_center.1).abs() <= extent.1 + view_extent.1)
 }

@@ -129,7 +129,19 @@ pub struct Mesh
     pub index_buf: wgpu::Buffer,
     pub vertex_capacity: usize,
     pub index_capacity: usize,
-    pub index_count: u32
+    pub index_count: u32,
+    pub bounds: ([f32; 2], [f32; 2]) // local (min, max) for culling
+}
+
+pub(crate) fn mesh_bounds(vertices: &[Vertex]) -> ([f32; 2], [f32; 2])
+{
+    if vertices.is_empty() { return ([0.0, 0.0], [0.0, 0.0]); }
+
+    vertices.iter().fold(([f32::MAX, f32::MAX], [f32::MIN, f32::MIN]), |(min, max), v|
+    (
+        [min[0].min(v.position[0]), min[1].min(v.position[1])],
+        [max[0].max(v.position[0]), max[1].max(v.position[1])]
+    ))
 }
 
 pub enum MeshID
