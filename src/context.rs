@@ -292,37 +292,3 @@ impl<'a> GraphicsContext<'a>
         self.renderer.add_font(self.device, self.queue, font_path, size)
     }
 }
-
-
-// Utility stuff like this, will move it somewhere else later
-pub trait Lerp: Copy { fn lerp(self, other: Self, t: f32) -> Self; }
-impl Lerp for f32 { fn lerp(self, other: Self, t: f32) -> Self { self + (other - self) * t } }
-impl Lerp for (f32, f32) { fn lerp(self, other: Self, t: f32) -> Self { (self.0.lerp(other.0, t), self.1.lerp(other.1, t)) } }
-
-/// like pos: Interpolated<(f32, f32)>, only things that are drawn, so velocity: f32 would stay the same
-///
-/// For interpolating things automatically, to make it look smoother for differnt fps then physcis_update ticks (60)
-pub struct Interpolated<T: Lerp> { prev: T, curr: T, step: u64 }
-
-impl<T: Lerp> Interpolated<T>
-{
-    pub fn new(v: T) -> Self { Self { prev: v, curr: v, step: 0 } }
-
-    pub fn set(&mut self, v: T, ctx: &Context)
-    {
-        if self.step != ctx.physics_step() { self.prev = self.curr; self.step = ctx.physics_step(); }
-        self.curr = v;
-    }
-
-    pub fn teleport(&mut self, v: T, ctx: &Context) { self.prev = v; self.curr = v; self.step = ctx.physics_step(); }
-
-    /// For update
-    pub fn get(&self) -> T { self.curr }
-
-    /// For rendering
-    pub fn visual(&self, ctx: &Context) -> T
-    {
-        if self.step != ctx.physics_step() { return self.curr; }
-        self.prev.lerp(self.curr, ctx.alpha())
-    }
-}

@@ -15,6 +15,7 @@ pub mod executor;
 pub mod draw;
 pub mod threads;
 pub mod loading;
+pub mod tools;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 pub mod hot_reload;
@@ -36,3 +37,4 @@ pub use draw::{Draw, Text, TextAlign, QUAD_MESH};
 pub use threads::{Task, TaskPoll};
 pub use loading::Loading;
 pub use shader::ShaderInput;
+pub use tools::*;

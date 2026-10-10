@@ -58,6 +58,12 @@ impl EngineEvent for App
             self.async_texture_test = update_ctx.graphics.load_texture_async("src/image/font_atlas_debug.png", FilterMode::Linear, FilterMode::Linear);
             self.async_task_test = Loading::Running(update_ctx.context.threads.spawn(move || heavy_calculation(12, 2048)));
         }
+
+        if update_ctx.input.is_key_pressed(Key::Enter)
+        {
+            let mut rng = Rng::new();
+            println!("{}", rng.range_f32(5.0, 100.0));
+        }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
