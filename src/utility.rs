@@ -180,6 +180,7 @@ pub struct CameraUniform
 }
 
 
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum PipeLineType
 {
     Normal, // takes camera layout

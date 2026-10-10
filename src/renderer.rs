@@ -2,6 +2,8 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
 use crate::{CoordSpace, TargetHandle, loading::PendingTexture, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex}};
 
 pub const QUAD_VERTICES: &[Vertex] =
@@ -315,7 +317,9 @@ pub struct Renderer
     pub camera_rotation: f32, // radians
     pub pixels_per_unit: f32, // 1.0 is one pixel is one unit (unit meters best for physics), (virtual_width or height) / meters_visbile (in x or y)
     pub(crate) threads: ThreadPool,
-    pub(crate) pending_textures: Vec<PendingTexture>
+    pub(crate) pending_textures: Vec<PendingTexture>,
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    shader_watcher: ShaderWatcher
 }
 
 impl Renderer
@@ -469,7 +473,9 @@ impl Renderer
             camera_rotation: 0.0,
             pixels_per_unit: 1.0, // default value makes it so you just say the pixel values basically (for the world)
             threads,
-            pending_textures: Vec::new()
+            pending_textures: Vec::new(),
+            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+            shader_watcher: ShaderWatcher::new()
         }
     }
 
@@ -492,10 +498,14 @@ impl Renderer
 
     fn fill_variant(&mut self, device: &wgpu::Device, pipeline_id: usize)
     {
-        let entry = &mut self.pipelines[pipeline_id];
+        Self::fill_entry_variants(&self.formats, device, &mut self.pipelines[pipeline_id]);
+    }
+
+    fn fill_entry_variants(formats: &[wgpu::TextureFormat], device: &wgpu::Device, entry: &mut PipelineEntry)
+    {
         let built_formats = entry.variants.len() / BlendMode::COUNT;
 
-        for (format_slot, &format) in self.formats.iter().enumerate().skip(built_formats)
+        for (format_slot, &format) in formats.iter().enumerate().skip(built_formats)
         {
             for blend in BlendMode::ALL
             {
@@ -530,6 +540,11 @@ impl Renderer
             None => self.default_fragment.clone()
         };
 
+        self.build_entry_from_modules(device, queue, vertex, fragment, pipeline_type, uniforms)
+    }
+
+    fn build_entry_from_modules(&self, device: &wgpu::Device, queue: Option<&wgpu::Queue>, vertex: ShaderModuleHandle, fragment: ShaderModuleHandle, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>) -> PipelineEntry
+    {
         let reads_screen = matches!(pipeline_type, PipeLineType::NormalWithScreen);
 
         let uniform_setup = uniforms.map(|uniforms|
@@ -614,7 +629,12 @@ impl Renderer
     pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> usize
     {
         let entry = self.build_entry(device, None, fragment, vertex, pipeline_type, None);
-        self.push_entry(device, entry)
+        let id = self.push_entry(device, entry);
+
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.shader_watcher.track(id, vertex, fragment, pipeline_type, None);
+
+        id
     }
 
     // Same as 'add_pipeline', but with uniforms
@@ -629,7 +649,12 @@ impl Renderer
     pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
     {
         let entry = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
-        self.push_entry(device, entry)
+        let id = self.push_entry(device, entry);
+
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.shader_watcher.track(id, vertex, fragment, pipeline_type, Some(uniforms));
+
+        id
     }
 
     pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
@@ -639,6 +664,9 @@ impl Renderer
 
         self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
         self.fill_variant(device, pipeline_id);
+
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.shader_watcher.track(pipeline_id, vertex, fragment, pipeline_type, Some(uniforms));
     }
 
     pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
@@ -694,6 +722,66 @@ impl Renderer
             }
         }
     }
+
+
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    pub(crate) fn reload_changed_shaders(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
+    {
+        for recipe in self.shader_watcher.changed()
+        {
+            self.rebuild_pipeline(device, queue, recipe);
+        }
+    }
+
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    fn rebuild_pipeline(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, recipe: ShaderRecipe)
+    {
+        let read = |file: &Option<crate::hot_reload::WatchedFile>| -> Result<Option<String>, ()>
+        {
+            match file
+            {
+                None => Ok(None),
+                Some(file) => std::fs::read_to_string(&file.path).map(Some).map_err(|e| log::warn!("Shader reload: couldn't read '{}': {e}", file.path))
+            }
+        };
+        let Ok(vertex_source) = read(&recipe.vertex) else { return; };
+        let Ok(fragment_source) = read(&recipe.fragment) else { return; };
+
+        let id = recipe.pipeline_id;
+        let current = &self.pipelines[id].source;
+
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+
+        let vertex = match &vertex_source
+        {
+            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.vertex.entry),
+            None => current.vertex.clone()
+        };
+        let fragment = match &fragment_source
+        {
+            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.fragment.entry),
+            None => current.fragment.clone()
+        };
+
+        let uniforms: Option<Vec<(&str, UniformType)>> = recipe.uniforms.as_ref().map(|list| list.iter().map(|(name, kind)| (name.as_str(), *kind)).collect());
+
+        let mut entry = self.build_entry_from_modules(device, Some(queue), vertex, fragment, recipe.pipeline_type, uniforms.as_deref());
+        Self::fill_entry_variants(&self.formats, device, &mut entry);
+
+        match crate::executor::block_on(device.pop_error_scope())
+        {
+            Some(error) =>
+            {
+                println!("Shader reload failed (pipeline {id}\n{error}");
+            }
+            None =>
+            {
+                entry.screen_read_mode = self.pipelines[id].screen_read_mode;
+                self.pipelines[id] = entry;
+            }
+        }
+    }
+
 
     // Marks a mesh slot available for reuse
     // DOes not free underlying gpy buffer immidiately though

@@ -2,14 +2,24 @@ use engine::*;
 // use rand::Rng;
 
 
-struct App { x: f32, y: f32, async_texture_test: usize, async_task_test: Loading<Vec<f32>> }
+struct App
+{
+    x: f32,
+    y: f32,
+    async_texture_test: usize,
+    async_task_test: Loading<Vec<f32>>,
+    shader_test: u8,
+    time: f32
+}
 
 impl EngineEvent for App
 {
     fn setup(&mut self, _ctx: &mut Context, graphics: &mut GraphicsContext, _input: &mut Input)
     {
-        graphics.set_clear_color([0.05, 0.03, 0.22, 1.0]);
+        // graphics.set_clear_color([0.05, 0.03, 0.22, 1.0]);
         graphics.renderer.set_pixels_per_unit(1280.0/12.0);
+
+        self.shader_test = graphics.load_shader_with_uniform(Some(ShaderInput::File("src/bin/reload_test.wgsl")), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -59,6 +69,9 @@ impl EngineEvent for App
         {
             println!("Finished {}", result.len());
         }
+
+        self.time += update_ctx.dt as f32;
+        update_ctx.graphics.set_uniform("time", UniformValue::Float(self.time));
     }
 
     fn render(&self, render_ctx: &mut RenderContext)
@@ -68,6 +81,8 @@ impl EngineEvent for App
         render_ctx.graphics.renderer.draw_text(Text::new("Hello", (640.0, 360.0), 45.0, [0.0, 1.0, 0.0, 1.0]).center().ui());
 
         render_ctx.graphics.renderer.draw(Draw::sprite(self.async_texture_test, (131.0, 125.0), (111.0, 105.0), 0.0).ui());
+
+        render_ctx.graphics.renderer.draw_fullscreen(0, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
     }
 }
 
@@ -75,7 +90,15 @@ impl App
 {
     fn new() -> Self
     {
-        Self { x: 0.0, y: 0.0, async_texture_test: 0, async_task_test: Loading::Idle }
+        Self
+        {
+            x: 0.0,
+            y: 0.0,
+            async_texture_test: 0,
+            async_task_test: Loading::Idle,
+            shader_test: 0,
+            time: 0.0
+        }
     }
 }
 

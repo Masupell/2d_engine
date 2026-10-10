@@ -122,6 +122,9 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                             }
 
                             state.renderer.poll_pending_textures(&state.device, &state.queue);
+                            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                            state.renderer.reload_changed_shaders(&state.device, &state.queue);
+
                             let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                             game.update(&mut update_ctx);
 
