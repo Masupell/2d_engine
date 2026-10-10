@@ -1,4 +1,4 @@
-use crate::{renderer::{Renderer, MODE_COLOR, MODE_TEXTURE, WHITE_TEXTURE}, utility::{CoordSpace, DrawLayer, FULL_UV_RECT}};
+use crate::{renderer::{BlendMode, MODE_COLOR, MODE_TEXTURE, Renderer, WHITE_TEXTURE}, utility::{CoordSpace, DrawLayer, FULL_UV_RECT}};
 
 pub const QUAD_MESH: usize = 0;
 
@@ -16,7 +16,8 @@ pub struct Draw
     pub space: CoordSpace,
     pub layer: DrawLayer,
     pub z: u32,
-    pub shader: u8
+    pub shader: u8,
+    pub blend: BlendMode
 }
 
 impl Default for Draw
@@ -36,7 +37,8 @@ impl Default for Draw
             space: CoordSpace::World,
             layer: DrawLayer::World,
             z: 0,
-            shader: 0
+            shader: 0,
+            blend: BlendMode::default()
         }
     }
 }
@@ -87,7 +89,8 @@ pub struct Text<'a>
     pub space: CoordSpace,
     pub layer: DrawLayer,
     pub z: u32,
-    pub shader: u8
+    pub shader: u8,
+    pub blend: BlendMode
 }
 
 impl Default for Text<'_>
@@ -107,7 +110,8 @@ impl Default for Text<'_>
             space: CoordSpace::World,
             layer: DrawLayer::World,
             z: 0,
-            shader: 0
+            shader: 0,
+            blend: BlendMode::Alpha
         }
     }
 }
@@ -137,7 +141,7 @@ impl Renderer
     pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
     {
         let transform = self.matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.view_size, 0.0);
-        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, CoordSpace::Screen, DrawLayer::World, z_index, id);
+        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, CoordSpace::Screen, DrawLayer::World, z_index, id, BlendMode::Alpha);
     }
 
     pub fn draw(&mut self, d: Draw)
@@ -149,7 +153,7 @@ impl Renderer
         }
         let transform = self.matrix(d.pos, d.size, d.rotation);
         // always using MODE_TEXTURE right now
-        self.push_command(d.mesh, transform, d.texture, d.color, MODE_TEXTURE, d.uv_rect, d.space, d.layer, d.z, d.shader);
+        self.push_command(d.mesh, transform, d.texture, d.color, MODE_TEXTURE, d.uv_rect, d.space, d.layer, d.z, d.shader, d.blend);
     }
 
     pub fn draw_text(&mut self, t: Text)
@@ -225,7 +229,7 @@ impl Renderer
                     let transform = self.matrix(world, glyph_size, t.rotation);
                     let uv_rect = [uv_min[0], uv_min[1], uv_max[0] - uv_min[0], uv_max[1] - uv_min[1]];
 
-                    self.push_command(QUAD_MESH, transform, texture_id, color, MODE_TEXTURE, uv_rect, t.space, t.layer, t.z, t.shader);
+                    self.push_command(QUAD_MESH, transform, texture_id, color, MODE_TEXTURE, uv_rect, t.space, t.layer, t.z, t.shader, t.blend);
                 }
 
                 cursor_x += advance;
@@ -258,7 +262,7 @@ impl Renderer
             let pos = (d.pos.0 + rotated.0, d.pos.1 + rotated.1);
 
             let transform = self.matrix(pos, edge_size, d.rotation);
-            self.push_command(QUAD_MESH, transform, WHITE_TEXTURE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader);
+            self.push_command(QUAD_MESH, transform, WHITE_TEXTURE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader, d.blend);
         }
     }
 

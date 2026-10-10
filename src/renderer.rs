@@ -69,6 +69,7 @@ pub(crate) struct DrawCommand
     pub(crate) texture_id: usize,
     pub(crate) color: [f32; 4],
     pub(crate) mode: u32, // color or texture
+    pub(crate) blend: BlendMode,
     pub(crate) pipeline_id: u8,
     pub(crate) space: CoordSpace,
     pub(crate) layer: DrawLayer,
@@ -82,13 +83,14 @@ impl DrawCommand
 {
     fn sort_key(&self, index: usize) -> u128
     {
-        (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | (self.pipeline_id as u128) << PIPELINE_SHIFT | index as u128
+        let pipeline = (self.blend as u128) << 8 | self.pipeline_id as u128;
+        (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | pipeline << PIPELINE_SHIFT | index as u128
     }
 
     // draws with the same values can be one instance
     fn batches_with(&self, other: &DrawCommand) -> bool
     {
-        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id) & (self.space == other.space)
+        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id) & (self.space == other.space) & (self.blend == other.blend)
     }
 }
 
@@ -101,16 +103,16 @@ struct PipelineSource
 
 impl PipelineSource
 {
-    fn create(&self, device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline
+    fn create(&self, device: &wgpu::Device, format: wgpu::TextureFormat, blend: BlendMode) -> wgpu::RenderPipeline
     {
-        create_render_pipeline(device, &self.layout, &self.vertex.module, &self.vertex.entry, &self.fragment.module, &self.fragment.entry, format)
+        create_render_pipeline(device, &self.layout, &self.vertex.module, &self.vertex.entry, &self.fragment.module, &self.fragment.entry, format, blend.state())
     }
 }
 
 pub(crate) struct PipelineEntry
 {
     source: PipelineSource,
-    variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc)
+    variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc), stores without option, as I don't have many right now
     uniforms: Option<PipelineUniforms>,
     reads_screen: bool,
     screen_read_mode: ScreenReadMode
@@ -118,13 +120,28 @@ pub(crate) struct PipelineEntry
 
 impl PipelineEntry
 {
-    fn variant(&self, format_slot: usize) -> &wgpu::RenderPipeline
+    fn variant(&self, key: PipelineKey) -> &wgpu::RenderPipeline
     {
-        &self.variants[format_slot]
+        &self.variants[key.index()]
     }
 }
 
-fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, vertex_module: &wgpu::ShaderModule, vertex_entry: &str, fragment_module: &wgpu::ShaderModule, fragment_entry: &str, format: wgpu::TextureFormat) -> wgpu::RenderPipeline
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct PipelineKey
+{
+    pub(crate) format_slot: usize,
+    pub(crate) blend: BlendMode
+}
+
+impl PipelineKey
+{
+    fn index(self) -> usize
+    {
+        self.format_slot * BlendMode::COUNT + self.blend as usize
+    }
+}
+
+fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, vertex_module: &wgpu::ShaderModule, vertex_entry: &str, fragment_module: &wgpu::ShaderModule, fragment_entry: &str, format: wgpu::TextureFormat, blend: wgpu::BlendState) -> wgpu::RenderPipeline
 {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
     {
@@ -144,7 +161,7 @@ fn create_render_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, 
             targets: &[Some(wgpu::ColorTargetState
             {
                 format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                blend: Some(blend),
                 write_mask: wgpu::ColorWrites::ALL
             })],
             compilation_options: wgpu::PipelineCompilationOptions::default()
@@ -212,6 +229,44 @@ fn create_camera(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, label: &
     });
 
     (buffer, bind_group)
+}
+
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+pub enum BlendMode
+{
+    #[default]
+    Alpha, // default, with trancparency
+    Additive, // light, overlaps get brighter
+    Multiply, // darkens what's below
+    PremultipliedAlpha, // alpha gets multiplied to rgb values
+    Replace // overwrite (no blending)
+}
+
+impl BlendMode
+{
+    pub const COUNT: usize = 5;
+    pub const ALL: [BlendMode; Self::COUNT] = [BlendMode::Alpha, BlendMode::Additive, BlendMode::Multiply, BlendMode::PremultipliedAlpha, BlendMode::Replace];
+
+    pub(crate) fn state(self) -> wgpu::BlendState
+    {
+        match self
+        {
+            BlendMode::Alpha => wgpu::BlendState::ALPHA_BLENDING,
+            BlendMode::PremultipliedAlpha => wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+            BlendMode::Replace => wgpu::BlendState::REPLACE,
+            BlendMode::Additive => wgpu::BlendState
+            {
+                color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::SrcAlpha, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                alpha: wgpu::BlendComponent::OVER
+            },
+            BlendMode::Multiply => wgpu::BlendState
+            {
+                color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Dst, dst_factor: wgpu::BlendFactor::Zero, operation: wgpu::BlendOperation::Add },
+                alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add }
+            }
+        }
+    }
 }
 
 
@@ -306,7 +361,7 @@ impl Renderer
         let default_source = PipelineSource { layout: default_layout, vertex: default_vertex.clone(), fragment: default_fragment.clone() };
         let default_pipeline = PipelineEntry
         {
-            variants: vec![default_source.create(device, format)],
+            variants: BlendMode::ALL.iter().map(|&blend| default_source.create(device, format, blend)).collect(),
             source: default_source,
             uniforms: None,
             reads_screen: false,
@@ -324,7 +379,7 @@ impl Renderer
             bind_group_layouts: &[&texture_bindgroup_layout],
             push_constant_ranges: &[]
         });
-        let blit_pipeline = create_render_pipeline(device, &blit_layout, &blit_module, "vs_main", &blit_module, "fs_main", format);
+        let blit_pipeline = create_render_pipeline(device, &blit_layout, &blit_module, "vs_main", &blit_module, "fs_main", format, BlendMode::Alpha.state());
 
         let fullscreen_instance = InstanceData { model: IDENTITY, color: WHITE, mode: MODE_TEXTURE, uv_rect: FULL_UV_RECT };
         let fullscreen_instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor
@@ -438,10 +493,15 @@ impl Renderer
     fn fill_variant(&mut self, device: &wgpu::Device, pipeline_id: usize)
     {
         let entry = &mut self.pipelines[pipeline_id];
+        let built_formats = entry.variants.len() / BlendMode::COUNT;
 
-        for &format in &self.formats[entry.variants.len()..]
+        for (format_slot, &format) in self.formats.iter().enumerate().skip(built_formats)
         {
-            entry.variants.push(entry.source.create(&device, format));
+            for blend in BlendMode::ALL
+            {
+                debug_assert_eq!(entry.variants.len(), PipelineKey { format_slot, blend }.index());
+                entry.variants.push(entry.source.create(&device, format, blend));
+            }
         }
     }
 
@@ -1145,7 +1205,8 @@ impl Renderer
 
         let mut bound_space: Option<CoordSpace> = None;
 
-        let mut bound_pipeline = usize::MAX;
+        let mut bound_pipeline: Option<(usize, PipelineKey)> = None;
+
         let mut bound_mesh = usize::MAX;
         let mut bound_texture = usize::MAX;
 
@@ -1162,11 +1223,12 @@ impl Renderer
             }
 
             let pipeline_id = cmd.pipeline_id as usize;
-            if pipeline_id != bound_pipeline
+            let key = PipelineKey { format_slot, blend: cmd.blend };
+            if bound_pipeline != Some((pipeline_id, key))
             {
-                bound_pipeline = pipeline_id;
+                bound_pipeline = Some((pipeline_id, key));
                 let entry = &self.pipelines[pipeline_id];
-                render_pass.set_pipeline(entry.variant(format_slot));
+                render_pass.set_pipeline(entry.variant(key));
 
                 if let (true, Some(snapshot)) = (entry.reads_screen, snapshot)
                 {
@@ -1214,10 +1276,10 @@ impl Renderer
         }
     }
 
-    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, pipeline_id: u8)
+    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, pipeline_id: u8, blend: BlendMode)
     {
         let target = self.current_target;
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, pipeline_id, space, layer, uv_rect, target });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, blend, pipeline_id, space, layer, uv_rect, target });
     }
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
