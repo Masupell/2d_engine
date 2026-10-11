@@ -66,6 +66,11 @@ impl EngineEvent for App
         }
 
         if update_ctx.input.is_key_pressed(Key::F3) { update_ctx.context.toggle_stats(); }
+
+        if update_ctx.input.is_key_released(Key::KeyU)
+        {
+            update_ctx.graphics.renderer.unload_texture(self.async_texture_test);
+        }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)

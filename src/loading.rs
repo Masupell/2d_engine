@@ -31,6 +31,19 @@ pub(crate) struct TextureKey
     min_filter: FilterMode
 }
 
+impl TextureKey
+{
+    fn path(path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> Self
+    {
+        Self { source: TextureSource::Path(path.to_string()), mag_filter, min_filter }
+    }
+
+    fn bytes(bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> Self
+    {
+        Self { source: TextureSource::Bytes(bytes.as_ptr() as usize, bytes.len()), mag_filter, min_filter }
+    }
+}
+
 fn decode_file(path: &str) -> Result<DecodedImage, String>
 {
     let bytes = std::fs::read(path).map_err(|e| format!("'{path}': {e}"))?;
@@ -49,7 +62,7 @@ impl Renderer
     // returns id immidiately, but is white until it is loaded
     pub fn load_texture_async(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
-        let key = TextureKey { source: TextureSource::Path(path.to_string()), mag_filter, min_filter };
+        let key = TextureKey::path(path, mag_filter, min_filter);
         if let Some(&id) = self.texture_cache.get(&key) { return id; }
 
         let path = path.to_string();
@@ -61,7 +74,7 @@ impl Renderer
 
     pub fn load_texture_from_bytes_async(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
-        let key = TextureKey { source: TextureSource::Bytes(bytes.as_ptr() as usize, bytes.len()), mag_filter, min_filter };
+        let key = TextureKey::bytes(bytes, mag_filter, min_filter);
         if let Some(&id) = self.texture_cache.get(&key) { return id; }
 
         let task = self.threads.spawn(move || decode_bytes(bytes));
@@ -119,9 +132,26 @@ impl Renderer
         self.pending_textures = pending;
     }
 
+
+    pub fn unload_texture(&mut self, id: usize)
+    {
+        // only removes game loaded texture (so if id does not exist, or it is engine loaded, like the white texture, ...)
+        let Some(key) = self.texture_keys.remove(&id) else
+        {
+            println!("texture({id} is not a loaded texture (engine owned or does not exist)");
+            return;
+        };
+
+        self.texture_cache.remove(&key);
+        self.pending_textures.retain(|load| load.texture_id != id);
+        self.textures[id] = TextureEntry { bind_group: Arc::clone(&self.textures[WHITE_TEXTURE].bind_group), size: (0.0, 0.0) };
+        self.unloaded_textures.insert(id);
+    }
+
+
     pub fn texture_count(&self) -> usize
     {
-        self.textures.len()
+        self.textures.len() - self.unloaded_textures.len()
     }
 
     // rough gpu memory of all textures, assumes 4 bytes per pixel
@@ -138,7 +168,41 @@ impl Renderer
 
     pub fn is_texture_loaded(&self, texture_id: usize) -> bool
     {
-        !self.pending_textures.iter().any(|load| load.texture_id == texture_id)
+        !self.unloaded_textures.contains(&texture_id) && !self.pending_textures.iter().any(|load| load.texture_id == texture_id)
+    }
+
+
+
+
+    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        let key = TextureKey::path(path, mag_filter, min_filter);
+        if let Some(&id) = self.texture_cache.get(&key) { return id; }
+
+        let texture = Texture::new(device, queue, path, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture '{path}': {e}"));
+        let id = self.register_texture(device, texture);
+        self.remember_texture(key, id);
+        id
+    }
+
+    pub(crate) fn load_texture_from_bytes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    {
+        let key = TextureKey::bytes(bytes, mag_filter, min_filter);
+        if let Some(&id) = self.texture_cache.get(&key) { return id; }
+
+        let texture = Texture::from_bytes(device, queue, bytes, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture: {e}"));
+        let id = self.register_texture(device, texture);
+        self.remember_texture(key, id);
+        id
+    }
+
+    fn register_texture(&mut self, device: &wgpu::Device, texture: Texture) -> usize
+    {
+        let extent = texture.texture.size();
+        let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+        let id = self.textures.len();
+        self.textures.push(TextureEntry { bind_group, size: (extent.width as f32, extent.height as f32) });
+        id
     }
 }
 

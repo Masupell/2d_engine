@@ -913,28 +913,6 @@ impl Renderer
         queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
     }
 
-    pub(crate) fn load_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
-    {
-        let texture = Texture::new(device, queue, path, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture '{path}': {e}"));
-        self.register_texture(device, texture)
-    }
-
-    pub(crate) fn load_texture_from_bytes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
-    {
-        let texture = Texture::from_bytes(device, queue, bytes, mag_filter, min_filter).unwrap_or_else(|e| panic!("Failed to load texture: {e}"));
-        self.register_texture(device, texture)
-    }
-
-    fn register_texture(&mut self, device: &wgpu::Device, texture: Texture) -> usize
-    {
-        let extent = texture.texture.size();
-        let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-        let id = self.textures.len();
-        self.textures.push(TextureEntry { bind_group, size: (extent.width as f32, extent.height as f32) });
-        id
-    }
-
-
     fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Vec<TextureEntry>, font_path: &str, charset: &str, size: f32) -> FontAtlas
     {
         let rasterized = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));

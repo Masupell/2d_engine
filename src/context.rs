@@ -189,7 +189,7 @@ impl<'a> GraphicsContext<'a>
         self.renderer.load_texture(self.device, self.queue, path, mag_filter, min_filter)
     }
 
-    pub fn load_texture_from_bytes(&mut self, bytes: &[u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture_from_bytes(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
         self.renderer.load_texture_from_bytes(self.device, self.queue, bytes, mag_filter, min_filter)
     }
