@@ -2,7 +2,7 @@ use std::sync::Arc;
 use anyhow::*;
 
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum FilterMode
 {
     Nearest,

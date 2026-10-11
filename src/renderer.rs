@@ -1,10 +1,10 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{collections::{HashMap, HashSet}, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, TargetHandle, loading::PendingTexture, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
+use crate::{CoordSpace, TargetHandle, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -320,7 +320,11 @@ pub struct Renderer
     pub(crate) pending_textures: Vec<PendingTexture>,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     shader_watcher: ShaderWatcher,
-    pub(crate) stats: crate::frame_stats::RenderStats
+    pub(crate) stats: crate::frame_stats::RenderStats,
+
+    pub(crate) texture_cache: HashMap<TextureKey, usize>, // key -> id, to check if it's already loaded
+    pub(crate) texture_keys: HashMap<usize, TextureKey>, // id -> key, for unloading in a second
+    pub(crate) unloaded_textures: HashSet<usize>, // also for unloading
 }
 
 impl Renderer
@@ -478,7 +482,10 @@ impl Renderer
             pending_textures: Vec::new(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             shader_watcher: ShaderWatcher::new(),
-            stats: crate::frame_stats::RenderStats::default()
+            stats: crate::frame_stats::RenderStats::default(),
+            texture_cache: HashMap::new(),
+            texture_keys: HashMap::new(),
+            unloaded_textures: HashSet::new()
         }
     }
 

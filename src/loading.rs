@@ -16,6 +16,21 @@ pub(crate) struct PendingTexture
     min_filter: FilterMode
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) enum TextureSource
+{
+    Path(String),
+    Bytes(usize, usize) // (address, length)
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct TextureKey
+{
+    source: TextureSource,
+    mag_filter: FilterMode,
+    min_filter: FilterMode
+}
+
 fn decode_file(path: &str) -> Result<DecodedImage, String>
 {
     let bytes = std::fs::read(path).map_err(|e| format!("'{path}': {e}"))?;
@@ -34,15 +49,31 @@ impl Renderer
     // returns id immidiately, but is white until it is loaded
     pub fn load_texture_async(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
+        let key = TextureKey { source: TextureSource::Path(path.to_string()), mag_filter, min_filter };
+        if let Some(&id) = self.texture_cache.get(&key) { return id; }
+
         let path = path.to_string();
         let task = self.threads.spawn(move || decode_file(&path));
-        self.push_pending(task, mag_filter, min_filter)
+        let id = self.push_pending(task, mag_filter, min_filter);
+        self.remember_texture(key, id);
+        id
     }
 
     pub fn load_texture_from_bytes_async(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
     {
+        let key = TextureKey { source: TextureSource::Bytes(bytes.as_ptr() as usize, bytes.len()), mag_filter, min_filter };
+        if let Some(&id) = self.texture_cache.get(&key) { return id; }
+
         let task = self.threads.spawn(move || decode_bytes(bytes));
-        self.push_pending(task, mag_filter, min_filter)
+        let id = self.push_pending(task, mag_filter, min_filter);
+        self.remember_texture(key, id);
+        id
+    }
+
+    fn remember_texture(&mut self, key: TextureKey, id: usize)
+    {
+        self.texture_keys.insert(id, key.clone());
+        self.texture_cache.insert(key, id);
     }
 
     fn push_pending(&mut self, task: Task<Result<DecodedImage, String>>, mag_filter: FilterMode, min_filter: FilterMode) -> usize
@@ -93,7 +124,7 @@ impl Renderer
         self.textures.len()
     }
 
-    /// Rough GPU memory of all textures, assuming 4 bytes per pixel
+    // rough gpu memory of all textures, assumes 4 bytes per pixel
     pub fn texture_memory_estimate(&self) -> usize
     {
         self.textures.iter().map(|t| (t.size.0 * t.size.1) as usize * 4).sum()
