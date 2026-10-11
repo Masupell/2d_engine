@@ -1,6 +1,6 @@
 use winit::{dpi::LogicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::{context::{Context, ContextAction, GraphicsContext, RenderContext, UpdateContext}, input::Input, state::State, threads::ThreadPool};
+use crate::{context::{Context, ContextAction, GraphicsContext, RenderContext, UpdateContext}, frame_stats::Section, input::Input, state::State, threads::ThreadPool};
 
 pub trait EngineEvent
 {
@@ -125,13 +125,17 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
                             state.renderer.reload_changed_shaders(&state.device, &state.queue);
 
+                            let t = ctx.stats.start();
                             let mut update_ctx = UpdateContext::new(&mut input, &mut ctx, dt, &mut state.renderer, &state.device, &state.queue, &state.config);
                             game.update(&mut update_ctx);
+                            ctx.stats.record(Section::Update, t);
 
                             fixed_accumulator += dt;
                             let fixed_dt = ctx.fixed_dt();
+                            let t = ctx.stats.start();
                             while fixed_accumulator >= fixed_dt
                             {
+                                ctx.stats.count_physics_step();
                                 ctx.next_physics_step();
                                 input.begin_physics_step();
                                 let mut fixed_ctx = UpdateContext::new(&mut input, &mut ctx, fixed_dt, &mut state.renderer, &state.device, &state.queue, &state.config);
@@ -139,6 +143,7 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                                 input.end_physics_step();
                                 fixed_accumulator -= fixed_dt;
                             }
+                            ctx.stats.record(Section::Physics, t);
 
                             ctx.set_alpha((fixed_accumulator / fixed_dt) as f32);
 
@@ -176,6 +181,7 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                             match state.render(&mut ctx, |render_ctx|
                             {
                                 game.render(render_ctx);
+                                crate::frame_stats::draw_overlay(render_ctx);
                             })
                             {
                                 Ok(_) => {}
@@ -201,6 +207,7 @@ async fn game_loop<T: EngineEvent + 'static>(mut game: Box<T>, title: &str, size
                                 fps_counter = 0;
                             }
 
+                            ctx.stats.end_frame(&state.renderer, &ctx.threads);
                             input.end_frame();
                             state.window().request_redraw();
                         }

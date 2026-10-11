@@ -319,7 +319,8 @@ pub struct Renderer
     pub(crate) threads: ThreadPool,
     pub(crate) pending_textures: Vec<PendingTexture>,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-    shader_watcher: ShaderWatcher
+    shader_watcher: ShaderWatcher,
+    pub(crate) stats: crate::frame_stats::RenderStats
 }
 
 impl Renderer
@@ -476,7 +477,8 @@ impl Renderer
             threads,
             pending_textures: Vec::new(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-            shader_watcher: ShaderWatcher::new()
+            shader_watcher: ShaderWatcher::new(),
+            stats: crate::frame_stats::RenderStats::default()
         }
     }
 
@@ -1322,6 +1324,7 @@ impl Renderer
                 bound_pipeline = Some((pipeline_id, key));
                 let entry = &self.pipelines[pipeline_id];
                 render_pass.set_pipeline(entry.variant(key));
+                crate::frame_stats::RenderStats::bump(&self.stats.pipeline_switches);
 
                 if let (true, Some(snapshot)) = (entry.reads_screen, snapshot)
                 {
@@ -1362,9 +1365,11 @@ impl Renderer
             {
                 bound_texture = cmd.texture_id;
                 render_pass.set_bind_group(1, self.textures[cmd.texture_id].bind_group.as_ref(), &[]);
+                crate::frame_stats::RenderStats::bump(&self.stats.texture_binds);
             }
 
             render_pass.draw_indexed(0..mesh.index_count, 0, start as u32..end as u32);
+            crate::frame_stats::RenderStats::bump(&self.stats.draw_calls);
             start = end;
         }
     }
@@ -1377,12 +1382,14 @@ impl Renderer
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
     {
+        if cfg!(debug_assertions) { self.stats.reset(); }
         self.update_camera(queue);
         self.sort_keys.clear();
 
         if self.draw_commands.is_empty()
         {
             self.build_segments(device);
+            if cfg!(debug_assertions) { self.stats.passes = self.segments.len() as u32; }
             return;
         }
         debug_assert!(self.draw_commands.len() <= INDEX_MASK as usize, "more than {INDEX_MASK} draw commands in one frame");
@@ -1391,9 +1398,17 @@ impl Renderer
         let meshes = &self.meshes;
         self.sort_keys.extend(self.draw_commands.iter().enumerate().filter(|(_, cmd)| cmd.space == CoordSpace::Screen || is_visible(cmd, meshes, view)).map(|(index, cmd)| cmd.sort_key(index)));
 
+        if cfg!(debug_assertions)
+        {
+            self.stats.commands = self.draw_commands.len() as u32;
+            self.stats.instances = self.sort_keys.len() as u32;
+            self.stats.culled = self.stats.commands - self.stats.instances;
+        }
+
         if self.sort_keys.is_empty() // in case everythings off screen
         {
             self.build_segments(device);
+            if cfg!(debug_assertions) { self.stats.passes = self.segments.len() as u32; }
             return;
         }
         self.sort_keys.sort_unstable();
@@ -1423,6 +1438,7 @@ impl Renderer
 
         queue.write_buffer(self.instance_buf.as_ref().unwrap(), 0, bytemuck::cast_slice(&self.instances));
         self.build_segments(device);
+        if cfg!(debug_assertions) { self.stats.passes = self.segments.len() as u32; }
     }
 
     fn world_view_bounds(&self) -> ((f32, f32), (f32, f32))

@@ -1,6 +1,4 @@
 use engine::*;
-// use rand::Rng;
-
 
 struct App
 {
@@ -14,12 +12,14 @@ struct App
 
 impl EngineEvent for App
 {
-    fn setup(&mut self, _ctx: &mut Context, graphics: &mut GraphicsContext, _input: &mut Input)
+    fn setup(&mut self, ctx: &mut Context, graphics: &mut GraphicsContext, _input: &mut Input)
     {
         // graphics.set_clear_color([0.05, 0.03, 0.22, 1.0]);
         graphics.renderer.set_pixels_per_unit(1280.0/12.0);
 
         self.shader_test = graphics.load_shader_with_uniform(Some(ShaderInput::File("src/bin/reload_test.wgsl")), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
+
+        ctx.toggle_stats();
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -64,6 +64,8 @@ impl EngineEvent for App
             let mut rng = Rng::new();
             println!("{}", rng.range_f32(5.0, 100.0));
         }
+
+        if update_ctx.input.is_key_pressed(Key::F3) { update_ctx.context.toggle_stats(); }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)

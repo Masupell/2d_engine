@@ -1,7 +1,7 @@
 use std::iter;
 use winit::{event::*,window::Window};
 
-use crate::{Context, RenderContext, renderer::Renderer, threads::ThreadPool};
+use crate::{Context, RenderContext, frame_stats::Section, renderer::Renderer, threads::ThreadPool};
 
 pub struct State<'a>
 {
@@ -114,7 +114,11 @@ impl<'a> State<'a>
 
     pub fn render<T>(&mut self, context: &mut Context, draw: T) -> Result<(), wgpu::SurfaceError> where T: FnOnce(&mut RenderContext)
     {
+        let wait = context.stats.start();
         let output = self.surface.get_current_texture()?;
+        context.stats.record(Section::Wait, wait);
+
+        let cpu = context.stats.start();
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.view_format), ..Default::default() });
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor
@@ -133,7 +137,11 @@ impl<'a> State<'a>
         self.renderer.render_frame(&mut encoder, &output.texture, &view);
 
         self.queue.submit(iter::once(encoder.finish()));
+        context.stats.record(Section::Render, cpu);
+
+        let wait = context.stats.start();
         output.present();
+        context.stats.record(Section::Wait, wait);
 
         self.renderer.end_frame();
 

@@ -1,4 +1,4 @@
-use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, threads::ThreadPool, utility::{PipeLineType, UniformType}};
+use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, frame_stats::FrameStats, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, threads::ThreadPool, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -12,7 +12,8 @@ pub struct Context // General Settings, will hold AssetManager in the future and
     pub audio: Audio,
     alpha: f32,
     physics_step: u64,
-    pub threads: ThreadPool
+    pub threads: ThreadPool,
+    pub(crate) stats: FrameStats
 }
 
 impl Context
@@ -30,7 +31,8 @@ impl Context
             audio: Audio::new(),
             alpha: 0.0,
             physics_step: 0,
-            threads
+            threads,
+            stats: FrameStats::new()
         }
     }
 
@@ -107,6 +109,10 @@ impl Context
     pub fn physics_step(&self) -> u64 { self.physics_step }
     pub(crate) fn set_alpha(&mut self, a: f32) { self.alpha = a; }
     pub(crate) fn next_physics_step(&mut self) { self.physics_step += 1; } // before each physics_update
+
+    pub fn toggle_stats(&mut self) { let on = !self.stats.enabled(); self.stats.set_enabled(on); }
+    pub fn set_stats(&mut self, enabled: bool) { self.stats.set_enabled(enabled); }
+    pub fn stats_enabled(&self) -> bool { self.stats.enabled() }
 }
 
 pub enum ContextAction
