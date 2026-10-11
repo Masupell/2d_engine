@@ -117,7 +117,8 @@ pub(crate) struct PipelineEntry
     variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc), stores without option, as I don't have many right now
     uniforms: Option<PipelineUniforms>,
     reads_screen: bool,
-    screen_read_mode: ScreenReadMode
+    screen_read_mode: ScreenReadMode,
+    unloaded: bool
 }
 
 impl PipelineEntry
@@ -374,7 +375,8 @@ impl Renderer
             source: default_source,
             uniforms: None,
             reads_screen: false,
-            screen_read_mode: ScreenReadMode::Copy
+            screen_read_mode: ScreenReadMode::Copy,
+            unloaded: false
         };
 
         let blit_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
@@ -625,7 +627,7 @@ impl Renderer
             PipelineUniforms { buffer, bind_group, group_index, offsets }
         });
 
-        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms, reads_screen, screen_read_mode: ScreenReadMode::Copy }
+        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms, reads_screen, screen_read_mode: ScreenReadMode::Copy, unloaded: false }
     }
 
     fn push_entry(&mut self, device: &wgpu::Device, entry: PipelineEntry) -> usize
@@ -790,6 +792,33 @@ impl Renderer
                 self.pipelines[id] = entry;
             }
         }
+    }
+
+    pub fn unload_shader(&mut self, pipeline_id: usize)
+    {
+        if pipeline_id == 0 { return; } // default pipeline has to stay
+
+        let Some(entry) = self.pipelines.get_mut(pipeline_id) else
+        {
+            println!("shader({pipeline_id}) does not exist");
+            return;
+        };
+        if entry.unloaded { return; }
+
+        entry.variants.clear();
+        entry.uniforms = None;
+        entry.source.vertex = self.default_vertex.clone();
+        entry.source.fragment = self.default_fragment.clone();
+        entry.reads_screen = false;
+        entry.unloaded = true;
+
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.shader_watcher.untrack(pipeline_id);
+    }
+
+    pub fn is_shader_loaded(&self, pipeline_id: usize) -> bool
+    {
+        self.pipelines.get(pipeline_id).is_some_and(|entry| !entry.unloaded)
     }
 
 
@@ -1361,6 +1390,7 @@ impl Renderer
 
     pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, pipeline_id: u8, blend: BlendMode)
     {
+        if self.pipelines[pipeline_id as usize].unloaded { return; }
         let target = self.current_target;
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, blend, pipeline_id, space, layer, uv_rect, target });
     }

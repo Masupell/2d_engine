@@ -71,6 +71,11 @@ impl EngineEvent for App
         {
             update_ctx.graphics.renderer.unload_texture(self.async_texture_test);
         }
+
+        if update_ctx.input.is_key_released(Key::KeyS)
+        {
+            update_ctx.graphics.renderer.unload_shader(self.shader_test as usize);
+        }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)

@@ -71,6 +71,11 @@ impl ShaderWatcher
         }
         changed
     }
+
+    pub(crate) fn untrack(&mut self, pipeline_id: usize)
+    {
+        self.recipes.retain(|recipe| recipe.pipeline_id != pipeline_id);
+    }
 }
 
 fn modified_time(path: &str) -> Option<SystemTime>
