@@ -164,17 +164,21 @@ impl FrameStats
 
         self.text.clear();
 
+        let pool = threads.status();
+        let texture_mb = renderer.texture_memory_estimate() as f64 / (1024.0 * 1024.0);
         let _ = write!(self.text,
             "{fps:.0} FPS   frame {:.2} ms  (min {:.2} / max {:.2})\n\
              update {:.2}   physics {:.2} ({steps:.1} steps)   render {:.2}   wait {:.2} ms\n\
              commands {}  culled {}  instances {}\n\
-             draw calls {}  passes {}  pipelines {}  textures {}\n\
-             loading {}  workers {}/{}",
+             draw calls {}  passes {}  pipelines {}  texture binds {}\n\
+             textures: {} loaded (~{texture_mb:.1} MB)  {} loading\n\
+             thread: {} busy  {} alive / {} max  {} queued",
             ms(frame_avg), ms(self.frame_min), ms(self.frame_max),
             avg(s[Section::Update as usize]), avg(s[Section::Physics as usize]), avg(s[Section::Render as usize]), avg(s[Section::Wait as usize]),
             r.commands, r.culled, r.instances,
             r.draw_calls.get(), r.passes, r.pipeline_switches.get(), r.texture_binds.get(),
-            renderer.textures_loading(), threads.worker_count(), threads.max_workers()
+            renderer.texture_count(), renderer.textures_loading(),
+            pool.busy, pool.alive, pool.max, pool.queued
         );
     }
 }

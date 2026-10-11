@@ -88,6 +88,17 @@ impl Renderer
         self.pending_textures = pending;
     }
 
+    pub fn texture_count(&self) -> usize
+    {
+        self.textures.len()
+    }
+
+    /// Rough GPU memory of all textures, assuming 4 bytes per pixel
+    pub fn texture_memory_estimate(&self) -> usize
+    {
+        self.textures.iter().map(|t| (t.size.0 * t.size.1) as usize * 4).sum()
+    }
+
     // 0 -> everythings done (for loading screens for example)
     pub fn textures_loading(&self) -> usize
     {

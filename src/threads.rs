@@ -1,6 +1,8 @@
-use std::{collections::VecDeque, sync::{mpsc::{self, TryRecvError}, Arc, Condvar, Mutex}, thread};
+use std::{collections::VecDeque, sync::{Arc, Condvar, Mutex, mpsc::{self, TryRecvError}}, thread, time::Duration};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
+
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Queue
 {
@@ -37,6 +39,16 @@ impl Drop for Owner
         self.shared.signal.notify_all();
     }
 }
+
+
+pub struct PoolStatus
+{
+    pub busy: usize,   // running a job right now
+    pub alive: usize,  // spawned and not exited
+    pub max: usize,
+    pub queued: usize  // jobs waiting for a free worker
+}
+
 
 // Cloning give handle to same pool, because of arc
 // Max amount of workers is cores-1 (main thread has one core)
@@ -116,6 +128,13 @@ impl ThreadPool
         shared.signal.notify_one();
     }
 
+    pub fn status(&self) -> PoolStatus
+    {
+        let shared = &self.inner.shared;
+        let queue = shared.queue.lock().unwrap();
+        PoolStatus { busy: queue.workers - queue.idle, alive: queue.workers, max: shared.max_workers, queued: queue.jobs.len() }
+    }
+
     // no threads on wasm
     #[cfg(target_arch = "wasm32")]
     fn execute(&self, job: Job)
@@ -143,9 +162,20 @@ fn worker_loop(shared: Arc<Shared>)
                 if let Some(job) = queue.jobs.pop_front() { break job; }
                 if queue.shutdown { return; }
 
+                // queue.idle += 1;
+                // queue = shared.signal.wait(queue).unwrap();
+                // queue.idle -= 1;
                 queue.idle += 1;
-                queue = shared.signal.wait(queue).unwrap();
+                let (guard, wait) = shared.signal.wait_timeout(queue, IDLE_TIMEOUT).unwrap();
+                queue = guard;
                 queue.idle -= 1;
+
+                // nothing to do for a while: leave (under the lock, so execute() sees the right count and respawns when needed)
+                if wait.timed_out() && queue.jobs.is_empty()
+                {
+                    queue.workers -= 1;
+                    return;
+                }
             }
         };
 
