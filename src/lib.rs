@@ -17,6 +17,7 @@ pub mod threads;
 pub mod loading;
 pub mod tools;
 pub mod frame_stats;
+pub mod assets;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 pub mod hot_reload;

@@ -1,4 +1,4 @@
-use crate::{renderer::{Renderer, WHITE_TEXTURE}, texture::{FilterMode, Texture, TextureEntry}, threads::{Task, TaskPoll, ThreadPool}};
+use crate::{assets::AssetSource, renderer::{Renderer, WHITE_TEXTURE}, texture::{FilterMode, Texture, TextureEntry}, threads::{Task, TaskPoll, ThreadPool}};
 use std::sync::Arc;
 
 pub(crate) struct DecodedImage
@@ -17,16 +17,9 @@ pub(crate) struct PendingTexture
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum TextureSource
-{
-    Path(String),
-    Bytes(usize, usize) // (address, length)
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct TextureKey
 {
-    source: TextureSource,
+    source: AssetSource,
     mag_filter: FilterMode,
     min_filter: FilterMode
 }
@@ -35,12 +28,12 @@ impl TextureKey
 {
     fn path(path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> Self
     {
-        Self { source: TextureSource::Path(path.to_string()), mag_filter, min_filter }
+        Self { source: AssetSource::path(path), mag_filter, min_filter }
     }
 
     fn bytes(bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> Self
     {
-        Self { source: TextureSource::Bytes(bytes.as_ptr() as usize, bytes.len()), mag_filter, min_filter }
+        Self { source: AssetSource::bytes(bytes), mag_filter, min_filter }
     }
 }
 

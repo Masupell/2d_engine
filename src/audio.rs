@@ -1,12 +1,16 @@
 pub mod audio_backend;
 
-use crate::audio::audio_backend::{BackEnd, BackendSound};
+use std::collections::HashMap;
 
-// If I don't load anything, but try to play something, it will give an error at the moment
+use crate::{assets::AssetSource, audio::audio_backend::{BackEnd, BackendSound}};
+
 pub struct Audio
 {
     backend: Option<BackEnd>,
-    sounds: Vec<BackendSound>,
+    sounds: HashMap<usize, BackendSound>,
+    next_id: usize, // to not reuse ids
+    cache: HashMap<AssetSource, usize>, // source -> id, to check if it's already loaded
+    sources: HashMap<usize, AssetSource>, // id -> source, for unloading
     master_volume: f32
 }
 
@@ -17,35 +21,70 @@ impl Audio
         let backend = BackEnd::open();
         if backend.is_none()
         {
-            println!("NO audio device detected, running without audio");
+            println!("No audio device detected, running without audio");
         }
 
         Self
         {
             backend,
-            sounds: Vec::new(),
+            sounds: HashMap::new(),
+            next_id: 0,
+            cache: HashMap::new(),
+            sources: HashMap::new(),
             master_volume: 1.0
         }
     }
 
     pub fn load_sound(&mut self, path: &str) -> usize
     {
+        let source = AssetSource::path(path);
+        if let Some(&id) = self.cache.get(&source) { return id; }
+
         let sound = BackendSound::load(path).unwrap_or_else(|e| panic!("Failed to load sound '{path}': {e}"));
-        self.register_sound(sound)
+        self.register_sound(source, sound)
     }
 
     pub fn load_sound_from_bytes(&mut self, bytes: &'static [u8]) -> usize
     {
+        let source = AssetSource::bytes(bytes);
+        if let Some(&id) = self.cache.get(&source) { return id; }
+
         let sound = BackendSound::from_bytes(bytes).unwrap_or_else(|e| panic!("Failed to load sound: {e}"));
-        self.register_sound(sound)
+        self.register_sound(source, sound)
     }
 
     // Currently only for short sound-effects, no streaming yet
-    fn register_sound(&mut self, sound: BackendSound) -> usize
+    fn register_sound(&mut self, source: AssetSource, sound: BackendSound) -> usize
     {
-        let id = self.sounds.len();
-        self.sounds.push(sound);
+        let id = self.next_id;
+        self.next_id += 1;
+
+        self.sounds.insert(id, sound);
+        self.cache.insert(source.clone(), id);
+        self.sources.insert(id, source);
         id
+    }
+
+    pub fn unload_sound(&mut self, sound_id: usize)
+    {
+        let Some(source) = self.sources.remove(&sound_id) else
+        {
+            println!("sound({sound_id} does not exist");
+            return;
+        };
+
+        self.cache.remove(&source);
+        self.sounds.remove(&sound_id);
+    }
+
+    pub fn is_sound_loaded(&self, sound_id: usize) -> bool
+    {
+        self.sounds.contains_key(&sound_id)
+    }
+
+    pub fn sound_count(&self) -> usize
+    {
+        self.sounds.len()
     }
 
     pub fn play(&self, sound_id: usize)
@@ -60,9 +99,9 @@ impl Audio
         if volume <= 0.0 { return; }
         let pitch = pitch.max(0.01);
 
-        if let Some(backend) = &self.backend
+        if let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(&sound_id))
         {
-            backend.play(&self.sounds[sound_id], volume, pitch)
+            backend.play(sound, volume, pitch)
         }
     }
 
