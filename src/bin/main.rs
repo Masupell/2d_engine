@@ -93,6 +93,11 @@ impl EngineEvent for App
 
         render_ctx.graphics.renderer.draw(Draw::sprite(self.async_texture_test, (131.0, 125.0), (111.0, 105.0), 0.0).ui());
 
+        render_ctx.graphics.renderer.with_clip(ClipRect::ui((900.0, 50.0), (200.0, 100.0)), |r|
+        {
+            r.draw_text(Text::new("ClipText", (1000.0, 200.0-r.camera_zoom*100.0), 45.0, [1.0, 1.0, 1.0, 1.0]).center().ui());
+        });
+
         render_ctx.graphics.renderer.draw_fullscreen(TextureId::WHITE, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
     }
 }

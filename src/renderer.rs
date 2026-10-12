@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, handles::{SlotKey, Slots}, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
+use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, draw::ClipRect, handles::{SlotKey, Slots}, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -77,7 +77,8 @@ pub(crate) struct DrawCommand
     // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
     // meshes with baked in uv, should leave this at default
     pub(crate) uv_rect: [f32; 4],
-    pub(crate) target: u16 // target id or SCREEN_TARGET
+    pub(crate) target: u16, // target id or SCREEN_TARGET
+    pub(crate) clip: u16
 }
 
 impl DrawCommand
@@ -323,6 +324,9 @@ pub struct Renderer
 
     pub(crate) texture_cache: HashMap<TextureKey, TextureId>, // key -> id, to check if it's already loaded
     pub(crate) texture_keys: HashMap<TextureId, TextureKey>, // id -> key, for unloading in a second
+
+    clips: Vec<ClipRect>,
+    clip_stack: Vec<u16>
 }
 
 impl Renderer
@@ -488,7 +492,9 @@ impl Renderer
             shader_watcher: ShaderWatcher::new(),
             stats: crate::frame_stats::RenderStats::default(),
             texture_cache: HashMap::new(),
-            texture_keys: HashMap::new()
+            texture_keys: HashMap::new(),
+            clips: Vec::new(),
+            clip_stack: Vec::new()
         }
     }
 
@@ -1106,6 +1112,8 @@ impl Renderer
     {
         self.draw_commands.clear();
         self.current_target = SCREEN_TARGET;
+        self.clips.clear();
+        self.clip_stack.clear();
     }
 
     // Command in position in draw order
@@ -1247,7 +1255,7 @@ impl Renderer
             let viewport = [full, self.screen_viewport][(segment.target == SCREEN_TARGET) as usize];
 
             let snapshot_bind_group = snapshot.map(|snapshot| snapshot.entry.bind_group.as_ref());
-            self.draw_range(encoder, view, format_slot, segment.load, segment.start..segment.end, snapshot_bind_group, viewport);
+            self.draw_range(encoder, view, format_slot, segment.load, segment.start..segment.end, snapshot_bind_group, viewport, size);
         }
 
         if self.screen_to_canvas
@@ -1289,7 +1297,7 @@ impl Renderer
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
     }
 
-    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>, snapshot: Option<&wgpu::BindGroup>, viewport: (f32, f32, f32, f32))
+    fn draw_range(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, format_slot: usize, load: wgpu::LoadOp<wgpu::Color>, range: Range<usize>, snapshot: Option<&wgpu::BindGroup>, viewport: (f32, f32, f32, f32), target_size: (u32, u32))
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor
         {
@@ -1323,6 +1331,8 @@ impl Renderer
 
         let mut bound_mesh = usize::MAX;
         let mut bound_texture: Option<TextureId> = None;
+
+        let mut bound_clip: Option<u16> = None;
 
         let mut start = range.start;
         while start < range.end
@@ -1386,6 +1396,19 @@ impl Renderer
                 crate::frame_stats::RenderStats::bump(&self.stats.texture_binds);
             }
 
+            if bound_clip != Some(cmd.clip)
+            {
+                bound_clip = Some(cmd.clip);
+                let (x, y, w, h) = match cmd.clip
+                {
+                    0 => (0, 0, target_size.0, target_size.1),
+                    index => self.clip_to_pixels(&self.clips[index as usize - 1], viewport, target_size)
+                };
+
+                if w == 0 || h == 0 { start = end; continue; }
+                render_pass.set_scissor_rect(x, y, w, h);
+            }
+
             render_pass.draw_indexed(0..mesh.index_count, 0, start as u32..end as u32);
             crate::frame_stats::RenderStats::bump(&self.stats.draw_calls);
             start = end;
@@ -1396,7 +1419,7 @@ impl Renderer
     {
         if !self.pipelines.contains(shader) { return; }
         let target = self.current_target;
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture, color, mode, blend, shader: shader, space, layer, uv_rect, target });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture, color, mode, blend, shader: shader, space, layer, uv_rect, target, clip: self.current_clip() });
     }
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)
@@ -1459,6 +1482,60 @@ impl Renderer
         self.build_segments(device);
         if cfg!(debug_assertions) { self.stats.passes = self.segments.len() as u32; }
     }
+
+
+    fn clip_to_pixels(&self, clip: &ClipRect, viewport: (f32, f32, f32, f32), target_size: (u32, u32)) -> (u32, u32, u32, u32)
+    {
+        let (x, y) = clip.pos;
+        let (w, h) = clip.size;
+
+        let (min, max) = match clip.space
+        {
+            CoordSpace::Screen => ((x, y), (x + w, y + h)),
+            CoordSpace::World =>
+            {
+                [(x, y), (x + w, y), (x, y + h), (x + w, y + h)].iter().map(|&corner| self.world_to_screen(corner)).fold(((f32::MAX, f32::MAX), (f32::MIN, f32::MIN)), |(lo, hi), p| ((lo.0.min(p.0), lo.1.min(p.1)), (hi.0.max(p.0), hi.1.max(p.1))))
+            }
+        };
+
+        let (vx, vy, vw, vh) = viewport;
+        let offset = ((self.view_size.0 - self.virtual_size.0) * 0.5, (self.view_size.1 - self.virtual_size.1) * 0.5);
+        let scale = (vw / self.view_size.0, vh / self.view_size.1);
+        let to_pixels = |p: (f32, f32)| (vx + (p.0 + offset.0) * scale.0, vy + (p.1 + offset.1) * scale.1);
+
+        let (a, b) = (to_pixels(min), to_pixels(max));
+        let (tw, th) = (target_size.0 as f32, target_size.1 as f32);
+
+        let x0 = a.0.floor().clamp(0.0, tw);
+        let y0 = a.1.floor().clamp(0.0, th);
+        let x1 = b.0.ceil().clamp(0.0, tw);
+        let y1 = b.1.ceil().clamp(0.0, th);
+
+        (x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32)
+    }
+
+    pub(crate) fn push_clip(&mut self, rect: ClipRect)
+    {
+        let rect = match self.clip_stack.last()
+        {
+            Some(&parent) if self.clips[parent as usize - 1].space == rect.space => rect.intersect(self.clips[parent as usize - 1]),
+            _ => rect
+        };
+
+        self.clips.push(rect);
+        self.clip_stack.push(self.clips.len() as u16);
+    }
+
+    pub(crate) fn pop_clip(&mut self)
+    {
+        if self.clip_stack.pop().is_none() { return; }
+    }
+
+    fn current_clip(&self) -> u16
+    {
+        self.clip_stack.last().copied().unwrap_or(0)
+    }
+
 
     fn world_view_bounds(&self) -> ((f32, f32), (f32, f32))
     {

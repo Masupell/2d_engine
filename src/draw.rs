@@ -135,6 +135,31 @@ impl<'a> Text<'a>
 }
 
 
+// Top-left + size (virtual pixels on screen, world units in world)
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct ClipRect
+{
+    pub pos: (f32, f32),
+    pub size: (f32, f32),
+    pub space: CoordSpace
+}
+
+impl ClipRect
+{
+    pub fn ui(pos: (f32, f32), size: (f32, f32)) -> Self { Self { pos, size, space: CoordSpace::Screen } }
+    pub fn world(pos: (f32, f32), size: (f32, f32)) -> Self { Self { pos, size, space: CoordSpace::World } }
+
+    pub(crate) fn intersect(self, other: ClipRect) -> ClipRect
+    {
+        let x0 = self.pos.0.max(other.pos.0);
+        let y0 = self.pos.1.max(other.pos.1);
+        let x1 = (self.pos.0 + self.size.0).min(other.pos.0 + other.size.0);
+        let y1 = (self.pos.1 + self.size.1).min(other.pos.1 + other.size.1);
+        ClipRect { pos: (x0, y0), size: ((x1 - x0).max(0.0), (y1 - y0).max(0.0)), space: self.space }
+    }
+}
+
+
 impl Renderer
 {
     // basically for a post-proceses effect with a NormalWithScreen pipeline
@@ -264,6 +289,13 @@ impl Renderer
             let transform = self.matrix(pos, edge_size, d.rotation);
             self.push_command(QUAD_MESH, transform, TextureId::WHITE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader, d.blend);
         }
+    }
+
+    pub fn with_clip(&mut self, rect: ClipRect, draw: impl FnOnce(&mut Self))
+    {
+        self.push_clip(rect);
+        draw(self);
+        self.pop_clip();
     }
 
     pub fn text_size(&self, text: &str, height_px: f32) -> (f32, f32)
