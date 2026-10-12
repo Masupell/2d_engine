@@ -1,10 +1,10 @@
-use std::{collections::{HashMap, HashSet}, ops::Range, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, TargetHandle, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
+use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, handles::{SlotKey, Slots}, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -32,7 +32,6 @@ const IDENTITY: [[f32; 4]; 4] =
 ];
 
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-pub(crate) const WHITE_TEXTURE: usize = 0;
 pub(crate) const MODE_COLOR: u32 = 0;
 pub(crate) const MODE_TEXTURE: u32 = 1;
 
@@ -68,11 +67,11 @@ pub(crate) struct DrawCommand
     pub(crate) mesh_id: usize,
     pub(crate) transform: [[f32; 4]; 4], // 4x4 model matrix
     pub(crate) z_index: u32,
-    pub(crate) texture_id: usize,
+    pub(crate) texture: TextureId,
     pub(crate) color: [f32; 4],
     pub(crate) mode: u32, // color or texture
     pub(crate) blend: BlendMode,
-    pub(crate) pipeline_id: u8,
+    pub(crate) shader: ShaderId,
     pub(crate) space: CoordSpace,
     pub(crate) layer: DrawLayer,
     // default: [0, 0, 1, 1] (in uv-space, so from 0..1)
@@ -85,14 +84,14 @@ impl DrawCommand
 {
     fn sort_key(&self, index: usize) -> u128
     {
-        let pipeline = (self.blend as u128) << 8 | self.pipeline_id as u128;
+        let pipeline = (self.blend as u128) << 8 | self.shader.index() as u128;
         (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | pipeline << PIPELINE_SHIFT | index as u128
     }
 
     // draws with the same values can be one instance
     fn batches_with(&self, other: &DrawCommand) -> bool
     {
-        (self.pipeline_id == other.pipeline_id) & (self.mesh_id == other.mesh_id) & (self.texture_id == other.texture_id) & (self.space == other.space) & (self.blend == other.blend)
+        (self.shader == other.shader) & (self.mesh_id == other.mesh_id) & (self.texture == other.texture) & (self.space == other.space) & (self.blend == other.blend)
     }
 }
 
@@ -117,8 +116,7 @@ pub(crate) struct PipelineEntry
     variants: Vec<wgpu::RenderPipeline>, // for other formats (surfaceformat, hdr, etc), stores without option, as I don't have many right now
     uniforms: Option<PipelineUniforms>,
     reads_screen: bool,
-    screen_read_mode: ScreenReadMode,
-    unloaded: bool
+    screen_read_mode: ScreenReadMode
 }
 
 impl PipelineEntry
@@ -275,7 +273,7 @@ impl BlendMode
 
 pub struct Renderer
 {
-    pipelines: Vec<PipelineEntry>,
+    pipelines: Slots<ShaderId, PipelineEntry>,
     formats: Vec<wgpu::TextureFormat>,
     pub(crate) draw_commands: Vec<DrawCommand>,
     sort_keys: Vec<u128>,
@@ -296,7 +294,7 @@ pub struct Renderer
     meshes: Vec<Mesh>, // Simple for now, later gonna change it, so it does not load all meshes ni the beginning, but only creates a mesh the first time it is requested
     pub window_size: (f32, f32),
     pub virtual_size: (f32, f32),
-    pub(crate) textures: Vec<TextureEntry>,
+    pub(crate) textures: Slots<TextureId, TextureEntry>,
     pub(crate) texture_bindgroup_layout: wgpu::BindGroupLayout,
     default_vertex: ShaderModuleHandle,
     default_fragment: ShaderModuleHandle,
@@ -323,9 +321,8 @@ pub struct Renderer
     shader_watcher: ShaderWatcher,
     pub(crate) stats: crate::frame_stats::RenderStats,
 
-    pub(crate) texture_cache: HashMap<TextureKey, usize>, // key -> id, to check if it's already loaded
-    pub(crate) texture_keys: HashMap<usize, TextureKey>, // id -> key, for unloading in a second
-    pub(crate) unloaded_textures: HashSet<usize>, // also for unloading
+    pub(crate) texture_cache: HashMap<TextureKey, TextureId>, // key -> id, to check if it's already loaded
+    pub(crate) texture_keys: HashMap<TextureId, TextureKey>, // id -> key, for unloading in a second
 }
 
 impl Renderer
@@ -375,8 +372,7 @@ impl Renderer
             source: default_source,
             uniforms: None,
             reads_screen: false,
-            screen_read_mode: ScreenReadMode::Copy,
-            unloaded: false
+            screen_read_mode: ScreenReadMode::Copy
         };
 
         let blit_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
@@ -433,13 +429,19 @@ impl Renderer
         let default_texture = Texture::white(device, queue, FilterMode::Linear, FilterMode::Linear).unwrap();
         let default_bindgroup = Arc::new(default_texture.bind_group(device, &texture_bindgroup_layout));
 
-        let mut textures = vec![TextureEntry { bind_group: default_bindgroup, size: (1.0, 1.0) }];
+        let mut textures = Slots::new();
+        let white = textures.insert(TextureEntry { bind_group: default_bindgroup, size: (1.0, 1.0) });
+        debug_assert_eq!(white, TextureId::WHITE);
+
+        let mut pipelines = Slots::new();
+        let default = pipelines.insert(default_pipeline);
+        debug_assert_eq!(default, ShaderId::DEFAULT);
 
         let default_font = Self::build_font_atlas(device, queue, &texture_bindgroup_layout, &mut textures, DEFAULT_FONT_PATH, &default_charset(), DEFAULT_FONT_SIZE);
 
         Self
         {
-            pipelines: vec![default_pipeline],
+            pipelines,
             formats: vec![format],
             draw_commands: Vec::new(),
             sort_keys: Vec::new(),
@@ -486,8 +488,7 @@ impl Renderer
             shader_watcher: ShaderWatcher::new(),
             stats: crate::frame_stats::RenderStats::default(),
             texture_cache: HashMap::new(),
-            texture_keys: HashMap::new(),
-            unloaded_textures: HashSet::new()
+            texture_keys: HashMap::new()
         }
     }
 
@@ -499,19 +500,16 @@ impl Renderer
             None =>
             {
                 self.formats.push(format);
-                for pipeline_id in 0..self.pipelines.len()
-                {
-                    self.fill_variant(device, pipeline_id);
-                }
+                for entry in self.pipelines.values_mut() { Self::fill_entry_variants(&self.formats, device, entry); }
                 self.formats.len() - 1
             }
         }
     }
 
-    fn fill_variant(&mut self, device: &wgpu::Device, pipeline_id: usize)
-    {
-        Self::fill_entry_variants(&self.formats, device, &mut self.pipelines[pipeline_id]);
-    }
+    // fn fill_variant(&mut self, device: &wgpu::Device, pipeline_id: usize)
+    // {
+    //     Self::fill_entry_variants(&self.formats, device, &mut self.pipelines[pipeline_id]);
+    // }
 
     fn fill_entry_variants(formats: &[wgpu::TextureFormat], device: &wgpu::Device, entry: &mut PipelineEntry)
     {
@@ -627,18 +625,18 @@ impl Renderer
             PipelineUniforms { buffer, bind_group, group_index, offsets }
         });
 
-        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms, reads_screen, screen_read_mode: ScreenReadMode::Copy, unloaded: false }
+        PipelineEntry { source: PipelineSource { layout, vertex, fragment }, variants: Vec::new(), uniforms, reads_screen, screen_read_mode: ScreenReadMode::Copy }
     }
 
-    fn push_entry(&mut self, device: &wgpu::Device, entry: PipelineEntry) -> usize
+    fn push_entry(&mut self, device: &wgpu::Device, mut entry: PipelineEntry) -> ShaderId
     {
-        let id = self.pipelines.len();
-        self.pipelines.push(entry);
-        self.fill_variant(device, id);
+        Self::fill_entry_variants(&self.formats, device, &mut entry);
+        let id = self.pipelines.insert(entry);
+        debug_assert!(id.index() < 256, "more than 256 pipelines alive at once");
         id
     }
 
-    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> usize
+    pub(crate) fn add_pipeline(&mut self, device: &wgpu::Device, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> ShaderId
     {
         let entry = self.build_entry(device, None, fragment, vertex, pipeline_type, None);
         let id = self.push_entry(device, entry);
@@ -658,7 +656,7 @@ impl Renderer
     // Has to have the same order in rust as in the shader
     // Names technically dont have to match
     // I am using a struct, instead of individual bindings, would hav to declare individual bindings otherwise (but costs more space as well, I believe, for simple things like float and int)
-    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    pub(crate) fn add_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> ShaderId
     {
         let entry = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
         let id = self.push_entry(device, entry);
@@ -669,21 +667,27 @@ impl Renderer
         id
     }
 
-    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    pub(crate) fn replace_pipeline_with_uniforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], id: ShaderId)
     {
-        // silently skips if not exisiting for now
-        if pipeline_id >= self.pipelines.len() { return; }
+        let mut entry = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
+        Self::fill_entry_variants(&self.formats, device, &mut entry);
 
-        self.pipelines[pipeline_id] = self.build_entry(device, Some(queue), fragment, vertex, pipeline_type, Some(uniforms));
-        self.fill_variant(device, pipeline_id);
+        let Some(slot) = self.pipelines.get_mut(id) else
+        {
+            return;
+        };
+        *slot = entry;
 
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-        self.shader_watcher.track(pipeline_id, vertex, fragment, pipeline_type, Some(uniforms));
+        self.shader_watcher.track(id, vertex, fragment, pipeline_type, Some(uniforms));
     }
 
-    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
+    pub fn set_screen_read_mode(&mut self, id: ShaderId, mode: ScreenReadMode)
     {
-        self.pipelines[pipeline_id].screen_read_mode = mode;
+        if let Some(entry) = self.pipelines.get_mut(id)
+        {
+            entry.screen_read_mode = mode;
+        }
     }
 
     // algined by wgsls uniform rules
@@ -725,7 +729,7 @@ impl Renderer
             None => { self.uniform_values.insert(name.to_string(), value); }
         }
 
-        for pipeline_uniforms in self.pipelines.iter().filter_map(|entry| entry.uniforms.as_ref())
+        for pipeline_uniforms in self.pipelines.values().filter_map(|entry| entry.uniforms.as_ref())
         {
             if let Some(&(offset, expected_kind)) = pipeline_uniforms.offsets.get(name)
             {
@@ -760,19 +764,19 @@ impl Renderer
         let Ok(fragment_source) = read(&recipe.fragment) else { return; };
 
         let id = recipe.pipeline_id;
-        let current = &self.pipelines[id].source;
+        let Some(current) = self.pipelines.get(id) else { return; };
 
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         let vertex = match &vertex_source
         {
-            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.vertex.entry),
-            None => current.vertex.clone()
+            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.source.vertex.entry),
+            None => current.source.vertex.clone()
         };
         let fragment = match &fragment_source
         {
-            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.fragment.entry),
-            None => current.fragment.clone()
+            Some(code) => ShaderModuleHandle::from_input(device, ShaderInput::Code(code), &current.source.fragment.entry),
+            None => current.source.fragment.clone()
         };
 
         let uniforms: Option<Vec<(&str, UniformType)>> = recipe.uniforms.as_ref().map(|list| list.iter().map(|(name, kind)| (name.as_str(), *kind)).collect());
@@ -784,41 +788,36 @@ impl Renderer
         {
             Some(error) =>
             {
-                println!("Shader reload failed (pipeline {id}\n{error}");
+                println!("Shader reload failed (pipeline {id:?}\n{error}");
             }
             None =>
             {
-                entry.screen_read_mode = self.pipelines[id].screen_read_mode;
-                self.pipelines[id] = entry;
+                if let Some(slot) = self.pipelines.get_mut(id)
+                {
+                    entry.screen_read_mode = slot.screen_read_mode;
+                    *slot = entry;
+                }
             }
         }
     }
 
-    pub fn unload_shader(&mut self, pipeline_id: usize)
+    pub fn unload_shader(&mut self, id: ShaderId)
     {
-        if pipeline_id == 0 { return; } // default pipeline has to stay
+        if id == ShaderId::DEFAULT { return; } // default pipeline has to stay
 
-        let Some(entry) = self.pipelines.get_mut(pipeline_id) else
+        if self.pipelines.remove(id).is_none()
         {
-            println!("shader({pipeline_id}) does not exist");
+            println!("shader({id:?}) does not exist");
             return;
-        };
-        if entry.unloaded { return; }
-
-        entry.variants.clear();
-        entry.uniforms = None;
-        entry.source.vertex = self.default_vertex.clone();
-        entry.source.fragment = self.default_fragment.clone();
-        entry.reads_screen = false;
-        entry.unloaded = true;
+        }
 
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-        self.shader_watcher.untrack(pipeline_id);
+        self.shader_watcher.untrack(id);
     }
 
-    pub fn is_shader_loaded(&self, pipeline_id: usize) -> bool
+    pub fn is_shader_loaded(&self, id: ShaderId) -> bool
     {
-        self.pipelines.get(pipeline_id).is_some_and(|entry| !entry.unloaded)
+        self.pipelines.contains(id)
     }
 
 
@@ -942,7 +941,7 @@ impl Renderer
         queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
     }
 
-    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Vec<TextureEntry>, font_path: &str, charset: &str, size: f32) -> FontAtlas
+    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Slots<TextureId, TextureEntry>, font_path: &str, charset: &str, size: f32) -> FontAtlas
     {
         let rasterized = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));
 
@@ -958,8 +957,10 @@ impl Renderer
 
         let texture = Texture::from_alpha_bitmap(device, queue, &rasterized.bitmap, rasterized.width, rasterized.height, FilterMode::Linear, FilterMode::Linear, Some(font_path)).expect("Failed to create font atlas texture");
         let bind_group = Arc::new(texture.bind_group(device, texture_bindgroup_layout));
-        let texture_id = textures.len();
-        textures.push(TextureEntry { bind_group, size: (rasterized.width as f32, rasterized.height as f32) });
+        // let texture_id = textures.len();
+        // textures.push(TextureEntry { bind_group, size: (rasterized.width as f32, rasterized.height as f32) });
+        let texture_entry = TextureEntry { bind_group, size: (rasterized.width as f32, rasterized.height as f32) };
+        let texture_id = textures.insert(texture_entry);
 
         FontAtlas
         {
@@ -986,54 +987,54 @@ impl Renderer
         id
     }
 
-    pub(crate) fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
-    {
-        if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
-        {
-            let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("char")).expect("Failed to create Texture");
-            let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-            let id = self.textures.len();
-            self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
-            Some(id)
-        }
-        else
-        {
-            None
-        }
-    }
+    // pub(crate) fn load_char(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, char: char) -> Option<usize>
+    // {
+    //     if let Ok(text) = crate::text::rasterize_char("engine/src/image/Montserrat-Bold.ttf", char)
+    //     {
+    //         let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("char")).expect("Failed to create Texture");
+    //         let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+    //         let id = self.textures.len();
+    //         self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
+    //         Some(id)
+    //     }
+    //     else
+    //     {
+    //         None
+    //     }
+    // }
 
-    pub(crate) fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
-    {
-        match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size)
-        {
-            Ok(text) =>
-            {
-                // Test
-                let output = image::GrayImage::from_vec(text.1 as u32, text.2 as u32, text.0.to_vec());
-                match output
-                {
-                    Some(image) =>
-                    {
-                        image.save("engine/src/image/text_texture.png").unwrap();
-                    }
-                    None => println!("Hello")
-                }
-                // output.save("engine/src/image/text_texture.png").unwrap();
-                //
+    // pub(crate) fn load_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &str, size: f32) -> Option<usize>
+    // {
+    //     match crate::text::rasterize_static_text("engine/src/image/Montserrat-Bold.ttf", text, size)
+    //     {
+    //         Ok(text) =>
+    //         {
+    //             // Test
+    //             let output = image::GrayImage::from_vec(text.1 as u32, text.2 as u32, text.0.to_vec());
+    //             match output
+    //             {
+    //                 Some(image) =>
+    //                 {
+    //                     image.save("engine/src/image/text_texture.png").unwrap();
+    //                 }
+    //                 None => println!("Hello")
+    //             }
+    //             // output.save("engine/src/image/text_texture.png").unwrap();
+    //             //
 
-                let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("text")).expect("Failed to create Texture");
-                let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
-                let id = self.textures.len();
-                self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
-                Some(id)
-            }
-            Err(e) =>
-            {
-                println!("Text Rasterizing Failed: {:?}", e);
-                None
-            }
-        }
-    }
+    //             let texture = Texture::from_alpha_bitmap(device, queue, &text.0, text.1, text.2, FilterMode::Linear, FilterMode::Linear, Some("text")).expect("Failed to create Texture");
+    //             let bind_group = Arc::new(texture.bind_group(device, &self.texture_bindgroup_layout));
+    //             let id = self.textures.len();
+    //             self.textures.push(TextureEntry { bind_group, size: (text.1 as f32, text.2 as f32) });
+    //             Some(id)
+    //         }
+    //         Err(e) =>
+    //         {
+    //             println!("Text Rasterizing Failed: {:?}", e);
+    //             None
+    //         }
+    //     }
+    // }
 
     pub fn surface_format(&self) -> wgpu::TextureFormat
     {
@@ -1050,8 +1051,7 @@ impl Renderer
         let size = scaled_size(self.screen_size, scale);
         let (texture, view, entry) = create_target_texture(device, &self.texture_bindgroup_layout, &self.target_sampler, format, size);
 
-        let texture_id = self.textures.len();
-        self.textures.push(entry);
+        let texture_id = self.textures.insert(entry);
 
         let format_slot = self.format_slot(device, format);
         self.targets.push(RenderTarget { scale, format, format_slot, texture, view, size, texture_id, clear: Some(wgpu::Color::TRANSPARENT), snapshot: None });
@@ -1074,7 +1074,7 @@ impl Renderer
             target.view = view;
             target.size = size;
             target.snapshot = None; // wrong size, recreated once its needed
-            self.textures[target.texture_id] = entry;
+            if let Some(slot) = self.textures.get_mut(target.texture_id) { *slot = entry; }
         }
         self.screen_snapshot = None;
         self.screen_canvas = None;
@@ -1173,7 +1173,12 @@ impl Renderer
 
             while position < count && (self.sort_keys[position] >> TARGET_SHIFT) as u16 == target
             {
-                let (reads, z) = { let cmd = self.command_at(position); (self.pipelines[cmd.pipeline_id as usize].reads_screen, cmd.z_index) };
+                let (reads, z) =
+                {
+                    let cmd = self.command_at(position);
+                    let reads = self.pipelines.get(cmd.shader).is_some_and(|entry| entry.reads_screen);
+                    (reads, cmd.z_index)
+                };
 
                 let needs_copy = reads & (dirty | (reader_dirty & (z != copy_z)));
                 if needs_copy
@@ -1314,10 +1319,10 @@ impl Renderer
 
         let mut bound_space: Option<CoordSpace> = None;
 
-        let mut bound_pipeline: Option<(usize, PipelineKey)> = None;
+        let mut bound_pipeline: Option<(ShaderId, PipelineKey)> = None;
 
         let mut bound_mesh = usize::MAX;
-        let mut bound_texture = usize::MAX;
+        let mut bound_texture: Option<TextureId> = None;
 
         let mut start = range.start;
         while start < range.end
@@ -1331,12 +1336,11 @@ impl Renderer
                 end += 1;
             }
 
-            let pipeline_id = cmd.pipeline_id as usize;
+            let Some(entry) = self.pipelines.get(cmd.shader) else { start = end; continue; };
             let key = PipelineKey { format_slot, blend: cmd.blend };
-            if bound_pipeline != Some((pipeline_id, key))
+            if bound_pipeline != Some((cmd.shader, key))
             {
-                bound_pipeline = Some((pipeline_id, key));
-                let entry = &self.pipelines[pipeline_id];
+                bound_pipeline = Some((cmd.shader, key));
                 render_pass.set_pipeline(entry.variant(key));
                 crate::frame_stats::RenderStats::bump(&self.stats.pipeline_switches);
 
@@ -1375,10 +1379,10 @@ impl Renderer
                 render_pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint16);
             }
 
-            if cmd.texture_id != bound_texture
+            if bound_texture != Some(cmd.texture)
             {
-                bound_texture = cmd.texture_id;
-                render_pass.set_bind_group(1, self.textures[cmd.texture_id].bind_group.as_ref(), &[]);
+                bound_texture = Some(cmd.texture);
+                render_pass.set_bind_group(1, self.texture_or_white(cmd.texture).bind_group.as_ref(), &[]);
                 crate::frame_stats::RenderStats::bump(&self.stats.texture_binds);
             }
 
@@ -1388,11 +1392,11 @@ impl Renderer
         }
     }
 
-    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture_id: usize, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, pipeline_id: u8, blend: BlendMode)
+    pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture: TextureId, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader: ShaderId, blend: BlendMode)
     {
-        if self.pipelines[pipeline_id as usize].unloaded { return; }
+        if !self.pipelines.contains(shader) { return; }
         let target = self.current_target;
-        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture_id, color, mode, blend, pipeline_id, space, layer, uv_rect, target });
+        self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture, color, mode, blend, shader: shader, space, layer, uv_rect, target });
     }
 
     pub(crate) fn prepare_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue)

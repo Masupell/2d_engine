@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use crate::texture::TextureEntry;
+use crate::{TextureId, texture::TextureEntry};
 
 // id for set_target, texture_id the normal texture_id
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct TargetHandle
 {
     pub id: usize,
-    pub texture_id: usize,
+    pub texture_id: TextureId,
 }
 
 pub(crate) struct RenderTarget
@@ -18,7 +18,7 @@ pub(crate) struct RenderTarget
     pub(crate) texture: wgpu::Texture,
     pub(crate) view: wgpu::TextureView,
     pub(crate) size: (u32, u32),
-    pub(crate) texture_id: usize,
+    pub(crate) texture_id: TextureId,
     pub(crate) clear: Option<wgpu::Color>,
     pub(crate) snapshot: Option<Snapshot>
 }

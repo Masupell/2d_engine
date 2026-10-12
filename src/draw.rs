@@ -1,4 +1,4 @@
-use crate::{renderer::{BlendMode, MODE_COLOR, MODE_TEXTURE, Renderer, WHITE_TEXTURE}, utility::{CoordSpace, DrawLayer, FULL_UV_RECT}};
+use crate::{ShaderId, TextureId, renderer::{BlendMode, MODE_COLOR, MODE_TEXTURE, Renderer}, utility::{CoordSpace, DrawLayer, FULL_UV_RECT}};
 
 pub const QUAD_MESH: usize = 0;
 
@@ -9,14 +9,14 @@ pub struct Draw
     pub size: (f32, f32),
     pub rotation: f32,
     pub color: [f32; 4],
-    pub texture: usize,
+    pub texture: TextureId,
     pub uv_rect: [f32; 4],
     pub outline: f32, // 0.0 = filled
     pub mesh: usize,
     pub space: CoordSpace,
     pub layer: DrawLayer,
     pub z: u32,
-    pub shader: u8,
+    pub shader: ShaderId,
     pub blend: BlendMode
 }
 
@@ -30,14 +30,14 @@ impl Default for Draw
             size: (1.0, 1.0),
             rotation: 0.0,
             color: [1.0, 1.0, 1.0, 1.0],
-            texture: WHITE_TEXTURE,
+            texture: TextureId::WHITE,
             uv_rect: FULL_UV_RECT,
             outline: 0.0,
             mesh: 0,
             space: CoordSpace::World,
             layer: DrawLayer::World,
             z: 0,
-            shader: 0,
+            shader: ShaderId::DEFAULT,
             blend: BlendMode::default()
         }
     }
@@ -50,7 +50,7 @@ impl Draw
         Self { pos, size, rotation, color, ..Default::default() }
     }
 
-    pub fn sprite(texture: usize, pos: (f32, f32), size: (f32, f32), rotation: f32) -> Self
+    pub fn sprite(texture: TextureId, pos: (f32, f32), size: (f32, f32), rotation: f32) -> Self
     {
         Self { pos, size, rotation, texture, ..Default::default() }
     }
@@ -89,7 +89,7 @@ pub struct Text<'a>
     pub space: CoordSpace,
     pub layer: DrawLayer,
     pub z: u32,
-    pub shader: u8,
+    pub shader: ShaderId,
     pub blend: BlendMode
 }
 
@@ -110,7 +110,7 @@ impl Default for Text<'_>
             space: CoordSpace::World,
             layer: DrawLayer::World,
             z: 0,
-            shader: 0,
+            shader: ShaderId::DEFAULT,
             blend: BlendMode::Alpha
         }
     }
@@ -138,10 +138,10 @@ impl<'a> Text<'a>
 impl Renderer
 {
     // basically for a post-proceses effect with a NormalWithScreen pipeline
-    pub fn draw_fullscreen(&mut self, texture_id: usize, color: [f32; 4], z_index: u32, id: u8)
+    pub fn draw_fullscreen(&mut self, texture: TextureId, color: [f32; 4], z_index: u32, shader: ShaderId)
     {
         let transform = self.matrix((self.virtual_size.0 * 0.5, self.virtual_size.1 * 0.5), self.view_size, 0.0);
-        self.push_command(0, transform, texture_id, color, MODE_TEXTURE, FULL_UV_RECT, CoordSpace::Screen, DrawLayer::World, z_index, id, BlendMode::Alpha);
+        self.push_command(0, transform, texture, color, MODE_TEXTURE, FULL_UV_RECT, CoordSpace::Screen, DrawLayer::World, z_index, shader, BlendMode::Alpha);
     }
 
     pub fn draw(&mut self, d: Draw)
@@ -262,15 +262,8 @@ impl Renderer
             let pos = (d.pos.0 + rotated.0, d.pos.1 + rotated.1);
 
             let transform = self.matrix(pos, edge_size, d.rotation);
-            self.push_command(QUAD_MESH, transform, WHITE_TEXTURE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader, d.blend);
+            self.push_command(QUAD_MESH, transform, TextureId::WHITE, d.color, MODE_COLOR, FULL_UV_RECT, d.space, d.layer, d.z, d.shader, d.blend);
         }
-    }
-
-
-
-    pub fn texture_size(&self, texture_id: usize) -> (f32, f32)
-    {
-        self.textures[texture_id].size
     }
 
     pub fn text_size(&self, text: &str, height_px: f32) -> (f32, f32)

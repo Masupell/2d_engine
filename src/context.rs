@@ -1,4 +1,4 @@
-use crate::{Audio, Input, Renderer, TargetHandle, UniformValue, frame_stats::FrameStats, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, threads::ThreadPool, utility::{PipeLineType, UniformType}};
+use crate::{Audio, Input, Renderer, ShaderId, TargetHandle, TextureId, UniformValue, frame_stats::FrameStats, renderer::ScreenReadMode, shader::ShaderInput, target::format_is_usable, texture::FilterMode, threads::ThreadPool, utility::{PipeLineType, UniformType}};
 
 
 pub struct Context // General Settings, will hold AssetManager in the future and things like that I think
@@ -184,49 +184,49 @@ impl<'a> GraphicsContext<'a>
         }
     }
 
-    pub fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> TextureId
     {
         self.renderer.load_texture(self.device, self.queue, path, mag_filter, min_filter)
     }
 
-    pub fn load_texture_from_bytes(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture_from_bytes(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> TextureId
     {
         self.renderer.load_texture_from_bytes(self.device, self.queue, bytes, mag_filter, min_filter)
     }
 
-    pub fn load_texture_async(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture_async(&mut self, path: &str, mag_filter: FilterMode, min_filter: FilterMode) -> TextureId
     {
         self.renderer.load_texture_async(path, mag_filter, min_filter)
     }
 
-    pub fn load_texture_from_bytes_async(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> usize
+    pub fn load_texture_from_bytes_async(&mut self, bytes: &'static [u8], mag_filter: FilterMode, min_filter: FilterMode) -> TextureId
     {
         self.renderer.load_texture_from_bytes_async(bytes, mag_filter, min_filter)
     }
 
-    pub fn load_char(&mut self, char: char) -> Option<usize>
-    {
-        self.renderer.load_char(self.device, self.queue, char)
-    }
+    // pub fn load_char(&mut self, char: char) -> Option<usize>
+    // {
+    //     self.renderer.load_char(self.device, self.queue, char)
+    // }
 
-    pub fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
-    {
-        self.renderer.load_text(self.device, self.queue, text, size)
-    }
+    // pub fn load_text(&mut self, text: &str, size: f32) -> Option<usize>
+    // {
+    //     self.renderer.load_text(self.device, self.queue, text, size)
+    // }
 
-    pub fn load_shader(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> usize
+    pub fn load_shader(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType) -> ShaderId
     {
         self.renderer.add_pipeline(self.device, fragment, vertex, pipeline_type)
     }
 
-    pub fn load_shader_with_uniform(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> usize
+    pub fn load_shader_with_uniform(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)]) -> ShaderId
     {
         self.renderer.add_pipeline_with_uniforms(self.device, self.queue, fragment, vertex, pipeline_type, uniforms)
     }
 
-    pub fn replace_shader_with_uniforms(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], pipeline_id: usize)
+    pub fn replace_shader_with_uniforms(&mut self, fragment: Option<ShaderInput>, vertex: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: &[(&str, UniformType)], shader: ShaderId)
     {
-        self.renderer.replace_pipeline_with_uniforms(self.device, self.queue, fragment, vertex, pipeline_type, uniforms, pipeline_id);
+        self.renderer.replace_pipeline_with_uniforms(self.device, self.queue, fragment, vertex, pipeline_type, uniforms, shader);
     }
 
     pub fn create_render_target(&mut self, scale: f32, format: wgpu::TextureFormat) -> TargetHandle
@@ -268,9 +268,9 @@ impl<'a> GraphicsContext<'a>
         self.renderer.set_target_clear(target, color);
     }
 
-    pub fn set_screen_read_mode(&mut self, pipeline_id: usize, mode: ScreenReadMode)
+    pub fn set_screen_read_mode(&mut self, shader: ShaderId, mode: ScreenReadMode)
     {
-        self.renderer.set_screen_read_mode(pipeline_id, mode);
+        self.renderer.set_screen_read_mode(shader, mode);
     }
 
     pub fn set_uniform(&mut self, name: &str, value: UniformValue)

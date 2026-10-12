@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use anyhow::{Ok, anyhow};
 
+use crate::TextureId;
+
 pub fn rasterize_char(font_path: &str, char: char) -> std::result::Result<(Vec<u8>, usize, usize), anyhow::Error>
 {
     let font_data = std::fs::read(font_path)?;
@@ -212,7 +214,7 @@ pub fn rasterize_static_text(font_path: &str, text: &str, text_scale: f32) -> st
 // Not so good for graphics application like gimp, because I can not resize the font after loading it
 pub struct FontAtlas
 {
-    pub texture_id: usize,
+    pub texture_id: TextureId,
     pub glyphs: HashMap<char, Glyph>,
     pub line_height: f32,
     pub ascent: f32, // distance from baseline to highest glyphs top

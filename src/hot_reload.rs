@@ -1,6 +1,6 @@
 use std::{fs, time::{Duration, Instant, SystemTime}};
 
-use crate::{shader::ShaderInput, utility::{PipeLineType, UniformType}};
+use crate::{ShaderId, shader::ShaderInput, utility::{PipeLineType, UniformType}};
 
 const CHECK_INTERVAL: Duration = Duration::from_millis(300);
 
@@ -14,7 +14,7 @@ pub(crate) struct WatchedFile
 #[derive(Clone)]
 pub(crate) struct ShaderRecipe
 {
-    pub(crate) pipeline_id: usize,
+    pub(crate) pipeline_id: ShaderId,
     pub(crate) vertex: Option<WatchedFile>,
     pub(crate) fragment: Option<WatchedFile>,
     pub(crate) pipeline_type: PipeLineType,
@@ -34,7 +34,7 @@ impl ShaderWatcher
         Self { recipes: Vec::new(), last_check: Instant::now() }
     }
 
-    pub(crate) fn track(&mut self, pipeline_id: usize, vertex: Option<ShaderInput>, fragment: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>)
+    pub(crate) fn track(&mut self, pipeline_id: ShaderId, vertex: Option<ShaderInput>, fragment: Option<ShaderInput>, pipeline_type: PipeLineType, uniforms: Option<&[(&str, UniformType)]>)
     {
         self.recipes.retain(|recipe| recipe.pipeline_id != pipeline_id);
 
@@ -72,7 +72,7 @@ impl ShaderWatcher
         changed
     }
 
-    pub(crate) fn untrack(&mut self, pipeline_id: usize)
+    pub(crate) fn untrack(&mut self, pipeline_id: ShaderId)
     {
         self.recipes.retain(|recipe| recipe.pipeline_id != pipeline_id);
     }

@@ -4,9 +4,9 @@ struct App
 {
     x: f32,
     y: f32,
-    async_texture_test: usize,
+    async_texture_test: TextureId,
     async_task_test: Loading<Vec<f32>>,
-    shader_test: u8,
+    shader_test: ShaderId,
     time: f32
 }
 
@@ -17,7 +17,7 @@ impl EngineEvent for App
         // graphics.set_clear_color([0.05, 0.03, 0.22, 1.0]);
         graphics.renderer.set_pixels_per_unit(1280.0/12.0);
 
-        self.shader_test = graphics.load_shader_with_uniform(Some(ShaderInput::File("src/bin/reload_test.wgsl")), None, PipeLineType::Normal, &[("time", UniformType::Float)]) as u8;
+        self.shader_test = graphics.load_shader_with_uniform(Some(ShaderInput::File("src/bin/reload_test.wgsl")), None, PipeLineType::Normal, &[("time", UniformType::Float)]);
 
         ctx.toggle_stats();
     }
@@ -74,7 +74,7 @@ impl EngineEvent for App
 
         if update_ctx.input.is_key_released(Key::KeyS)
         {
-            update_ctx.graphics.renderer.unload_shader(self.shader_test as usize);
+            update_ctx.graphics.renderer.unload_shader(self.shader_test);
         }
     }
 
@@ -100,7 +100,7 @@ impl EngineEvent for App
 
         render_ctx.graphics.renderer.draw(Draw::sprite(self.async_texture_test, (131.0, 125.0), (111.0, 105.0), 0.0).ui());
 
-        render_ctx.graphics.renderer.draw_fullscreen(0, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
+        render_ctx.graphics.renderer.draw_fullscreen(TextureId::WHITE, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
     }
 }
 
@@ -112,9 +112,9 @@ impl App
         {
             x: 0.0,
             y: 0.0,
-            async_texture_test: 0,
+            async_texture_test: TextureId::WHITE,
             async_task_test: Loading::Idle,
-            shader_test: 0,
+            shader_test: ShaderId::DEFAULT,
             time: 0.0
         }
     }
