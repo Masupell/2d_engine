@@ -19,6 +19,7 @@ pub mod tools;
 pub mod frame_stats;
 pub mod assets;
 pub mod handles;
+pub mod animation;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 pub mod hot_reload;
@@ -42,3 +43,4 @@ pub use loading::Loading;
 pub use shader::ShaderInput;
 pub use tools::*;
 pub use handles::{TextureId, ShaderId, SoundId};
+pub use animation::{Animation, AnimationPlayer};
