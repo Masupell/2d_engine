@@ -29,6 +29,14 @@ impl FrameInput
     }
 }
 
+struct HitRegion
+{
+    id: u32,
+    min: (f32, f32),
+    max: (f32, f32),
+    z: u32
+}
+
 pub struct Input
 {
     keys_down: HashSet<KeyCode>,
@@ -50,7 +58,11 @@ pub struct Input
     esc_pressed: bool,
 
     capture_requested: bool, // a text field wants the keyboard input
-    capturing_text: bool // key queries return false while true
+    capturing_text: bool, // key queries return false while true
+
+    hit_regions: Vec<HitRegion>,
+    hovered: Option<u32>, // each element that should block, gets its own ID
+    focus: Option<u32> // for anything focused, useful in wrold (like when there is an inworld scroll-list)
 }
 
 impl Input
@@ -74,7 +86,10 @@ impl Input
             enter_pressed: false,
             esc_pressed: false,
             capture_requested: false,
-            capturing_text: false
+            capturing_text: false,
+            hit_regions: Vec::new(),
+            hovered: None,
+            focus: None
         }
     }
 
@@ -187,6 +202,10 @@ impl Input
 
     pub(crate) fn end_frame(&mut self)
     {
+        let (mx, my) = self.mouse_position_f32();
+        self.hovered = self.hit_regions.iter().filter(|r| mx >= r.min.0 && mx < r.max.0 && my >= r.min.1 && my < r.max.1).max_by_key(|r| r.z).map(|r| r.id);
+        self.hit_regions.clear();
+
         self.frame.clear();
 
         self.typed.clear();
@@ -316,6 +335,27 @@ impl Input
         self.edges().scroll.1 < 0.0
     }
 
+
+
+    // Register a UI region (tope-left+size), run every frame
+    pub fn hover(&mut self, id: u32, pos: (f32, f32), size: (f32, f32), z: u32) -> bool
+    {
+        self.hit_regions.push(HitRegion { id, min: pos, max: (pos.0 + size.0, pos.1 + size.1), z });
+        self.hovered == Some(id)
+    }
+
+    // If any registered ui is under the mouse
+    pub fn pointer_over_ui(&self) -> bool
+    {
+        self.hovered.is_some()
+    }
+
+    pub fn hovered(&self) -> Option<u32> { self.hovered }
+
+    pub fn set_focus(&mut self, id: u32) { self.focus = Some(id); }
+    pub fn clear_focus(&mut self) { self.focus = None; }
+    pub fn has_focus(&self, id: u32) -> bool { self.focus == Some(id) }
+    pub fn focus(&self) -> Option<u32> { self.focus }
 
 
     pub fn typed_text(&self) -> &str { &self.typed }

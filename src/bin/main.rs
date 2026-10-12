@@ -7,8 +7,11 @@ struct App
     async_texture_test: TextureId,
     async_task_test: Loading<Vec<f32>>,
     shader_test: ShaderId,
-    time: f32
+    time: f32,
+    scroll: f32
 }
+
+const CLIP_PANEL: u32 = 1;
 
 impl EngineEvent for App
 {
@@ -34,8 +37,6 @@ impl EngineEvent for App
         }
         let position_change = ((self.x-640.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom), (self.y-360.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom));
         update_ctx.graphics.set_camera_pos(position_change);
-
-        update_ctx.graphics.renderer.camera_zoom *= 1.1_f32.powf(update_ctx.input.scroll_y());
 
         if update_ctx.input.is_key_hold(Key::ArrowLeft)
         {
@@ -81,6 +82,16 @@ impl EngineEvent for App
             println!("Finished {}", result.len());
         }
 
+        if update_ctx.input.hover(CLIP_PANEL, (900.0, 50.0), (200.0, 100.0), 0)
+        {
+            self.scroll += update_ctx.input.scroll_y();
+        }
+
+        if !update_ctx.input.pointer_over_ui()
+        {
+            update_ctx.graphics.renderer.camera_zoom *= 1.1_f32.powf(update_ctx.input.scroll_y());
+        }
+
         self.time += update_ctx.dt as f32;
         update_ctx.graphics.set_uniform("time", UniformValue::Float(self.time));
     }
@@ -95,7 +106,7 @@ impl EngineEvent for App
 
         render_ctx.graphics.renderer.with_clip(ClipRect::ui((900.0, 50.0), (200.0, 100.0)), |r|
         {
-            r.draw_text(Text::new("ClipText", (1000.0, 200.0-r.camera_zoom*100.0), 45.0, [1.0, 1.0, 1.0, 1.0]).center().ui());
+            r.draw_text(Text::new("ClipText", (1000.0, 100.0+self.scroll*10.0), 45.0, [1.0, 1.0, 1.0, 1.0]).center().ui());
         });
 
         render_ctx.graphics.renderer.draw_fullscreen(TextureId::WHITE, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
@@ -113,7 +124,8 @@ impl App
             async_texture_test: TextureId::WHITE,
             async_task_test: Loading::Idle,
             shader_test: ShaderId::DEFAULT,
-            time: 0.0
+            time: 0.0,
+            scroll: 0.0
         }
     }
 }
