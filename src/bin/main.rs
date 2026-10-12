@@ -35,14 +35,7 @@ impl EngineEvent for App
         let position_change = ((self.x-640.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom), (self.y-360.0)/(update_ctx.graphics.renderer.pixels_per_unit*update_ctx.graphics.renderer.camera_zoom));
         update_ctx.graphics.set_camera_pos(position_change);
 
-        if update_ctx.input.is_key_hold(Key::ArrowDown)
-        {
-            update_ctx.graphics.renderer.change_camera_zoom(-0.01);
-        }
-        if update_ctx.input.is_key_hold(Key::ArrowUp)
-        {
-            update_ctx.graphics.renderer.change_camera_zoom(0.01);
-        }
+        update_ctx.graphics.renderer.camera_zoom *= 1.1_f32.powf(update_ctx.input.scroll_y());
 
         if update_ctx.input.is_key_hold(Key::ArrowLeft)
         {

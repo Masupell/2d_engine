@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use winit::{event::{ElementState, MouseButton, WindowEvent}, keyboard::{Key, KeyCode, NamedKey, PhysicalKey}};
+use winit::{event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent}, keyboard::{Key, KeyCode, NamedKey, PhysicalKey}};
 
 #[derive(Default)]
 struct FrameInput
@@ -8,7 +8,8 @@ struct FrameInput
     keys_pressed: HashSet<KeyCode>,
     keys_released: HashSet<KeyCode>,
     mouse_pressed: HashSet<MouseButton>,
-    mouse_released: HashSet<MouseButton>
+    mouse_released: HashSet<MouseButton>,
+    scroll: (f32, f32)
 }
 
 impl FrameInput
@@ -19,6 +20,7 @@ impl FrameInput
         self.keys_released.clear();
         self.mouse_pressed.clear();
         self.mouse_released.clear();
+        self.scroll = (0.0, 0.0);
     }
 
     fn any_press(&self) -> bool
@@ -143,6 +145,21 @@ impl Input
                         }
                     }
                 }
+            }
+            WindowEvent::MouseWheel { delta, ..} =>
+            {
+                const PIXELS_PER_LINE: f32 = 20.0;
+
+                let (x, y) = match delta
+                {
+                    MouseScrollDelta::LineDelta(x, y) => (*x, *y),
+                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32 / PIXELS_PER_LINE, pos.y as f32 / PIXELS_PER_LINE)
+                };
+
+                self.frame.scroll.0 += x;
+                self.frame.scroll.1 += y;
+                self.physics.scroll.0 += x;
+                self.physics.scroll.1 += y;
             }
             WindowEvent::CursorMoved { position, .. } =>
             {
@@ -277,6 +294,27 @@ impl Input
         (x as f32, y as f32)
     }
 
+
+
+    pub fn scroll(&self) -> (f32, f32)
+    {
+        self.edges().scroll
+    }
+
+    pub fn scroll_y(&self) -> f32
+    {
+        self.edges().scroll.1
+    }
+
+    pub fn scrolled_up(&self) -> bool
+    {
+        self.edges().scroll.1 > 0.0
+    }
+
+    pub fn scrolled_down(&self) -> bool
+    {
+        self.edges().scroll.1 < 0.0
+    }
 
 
 
