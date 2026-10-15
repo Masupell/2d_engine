@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::io::Cursor;
-use rodio::{Decoder, MixerDeviceSink};
+use rodio::{Decoder, MixerDeviceSink, Player};
 use rodio::source::{Buffered, Source};
 
 type SoundSource = Buffered<Decoder<Cursor<Cow<'static, [u8]>>>>;
@@ -48,9 +48,33 @@ impl BackEnd
         })
     }
 
-    pub(crate) fn play(&self, sound: &BackendSound, volume: f32, pitch: f32)
+    pub(crate) fn play(&self, sound: &BackendSound, volume: f32, pitch: f32, looped: bool) -> BackendVoice
     {
-        let instance = sound.source.clone().amplify(volume).speed(pitch);
-        self.sink.mixer().add(instance);
+        let player = Player::connect_new(self.sink.mixer());
+        player.set_volume(volume);
+        player.set_speed(pitch);
+
+        match looped
+        {
+            true => player.append(sound.source.clone().repeat_infinite()),
+            false => player.append(sound.source.clone())
+        }
+
+        BackendVoice { player }
     }
+}
+
+pub(crate) struct BackendVoice
+{
+    player: Player
+}
+
+impl BackendVoice
+{
+    pub(crate) fn set_volume(&self, volume: f32) { self.player.set_volume(volume); }
+    pub(crate) fn set_pitch(&self, pitch: f32) { self.player.set_speed(pitch); }
+    pub(crate) fn pause(&self) { self.player.pause(); }
+    pub(crate) fn resume(&self) { self.player.play(); }
+    pub(crate) fn is_paused(&self) -> bool { self.player.is_paused() }
+    pub(crate) fn is_finished(&self) -> bool { self.player.empty() }
 }

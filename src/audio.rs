@@ -2,7 +2,7 @@ pub mod audio_backend;
 
 use std::collections::HashMap;
 
-use crate::{SoundId, assets::AssetSource, audio::audio_backend::{BackEnd, BackendSound}, handles::Slots};
+use crate::{PlaybackId, SoundId, assets::AssetSource, audio::audio_backend::{BackEnd, BackendSound, BackendVoice}, handles::Slots};
 
 pub struct Audio
 {
@@ -10,7 +10,14 @@ pub struct Audio
     sounds: Slots<SoundId, BackendSound>, //HashMap<usize, BackendSound>,
     cache: HashMap<AssetSource, SoundId>, // source -> id, to check if it's already loaded
     sources: HashMap<SoundId, AssetSource>, // id -> source, for unloading
+    voices: Slots<PlaybackId, Voice>, // sounds that are playing right now
     master_volume: f32
+}
+
+struct Voice
+{
+    backend: BackendVoice,
+    volume: f32 // without master volume
 }
 
 impl Audio
@@ -29,6 +36,7 @@ impl Audio
             sounds: Slots::new(),
             cache: HashMap::new(),
             sources: HashMap::new(),
+            voices: Slots::new(),
             master_volume: 1.0
         }
     }
@@ -82,27 +90,81 @@ impl Audio
         self.sounds.len()
     }
 
-    pub fn play(&self, id: SoundId)
+    // Id not important for one time sounds
+    pub fn play(&mut self, id: SoundId) -> PlaybackId
     {
-        self.play_with(id, 1.0, 1.0);
+        self.play_with(id, 1.0, 1.0)
     }
 
     // volume: 0.0..1.0
-    pub fn play_with(&self, id: SoundId, volume: f32, pitch: f32)
+    pub fn play_with(&mut self, id: SoundId, volume: f32, pitch: f32) -> PlaybackId
     {
-        let volume = (volume * self.master_volume).max(0.0);
-        if volume <= 0.0 { return; }
-        let pitch = pitch.max(0.01);
+        self.start(id, volume, pitch, false)
+    }
 
-        if let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(id))
+    pub fn play_looped(&mut self, id: SoundId, volume: f32, pitch: f32) -> PlaybackId
+    {
+        self.start(id, volume, pitch, true)
+    }
+
+    fn start(&mut self, id: SoundId, volume: f32, pitch: f32, looped: bool) -> PlaybackId
+    {
+        self.voices.retain(|voice| !voice.backend.is_finished());
+
+        let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(id)) else { return PlaybackId::NONE; };
+
+        let volume = volume.max(0.0);
+        let backend = backend.play(sound, volume * self.master_volume, pitch.max(0.01), looped);
+        self.voices.insert(Voice { backend, volume })
+    }
+
+    pub fn stop(&mut self, playback: PlaybackId)
+    {
+        self.voices.remove(playback);
+    }
+
+    pub fn stop_all(&mut self)
+    {
+        self.voices.retain(|_| false);
+    }
+
+    pub fn pause(&self, playback: PlaybackId)
+    {
+        if let Some(voice) = self.voices.get(playback) { voice.backend.pause(); }
+    }
+
+    pub fn resume(&self, playback: PlaybackId)
+    {
+        if let Some(voice) = self.voices.get(playback) { voice.backend.resume(); }
+    }
+
+    pub fn set_volume(&mut self, playback: PlaybackId, volume: f32)
+    {
+        let master = self.master_volume;
+        if let Some(voice) = self.voices.get_mut(playback)
         {
-            backend.play(sound, volume, pitch)
+            voice.volume = volume.max(0.0);
+            voice.backend.set_volume(voice.volume * master);
         }
+    }
+
+    pub fn set_pitch(&self, playback: PlaybackId, pitch: f32)
+    {
+        if let Some(voice) = self.voices.get(playback) { voice.backend.set_pitch(pitch.max(0.01)); }
+    }
+
+    pub fn is_playing(&self, playback: PlaybackId) -> bool
+    {
+        self.voices.get(playback).is_some_and(|voice| !voice.backend.is_finished() && !voice.backend.is_paused())
     }
 
     pub fn set_master_volume(&mut self, volume: f32)
     {
         self.master_volume = volume.max(0.0);
+        for voice in self.voices.values()
+        {
+            voice.backend.set_volume(voice.volume * self.master_volume);
+        }
     }
 
     pub fn master_volume(&self) -> f32

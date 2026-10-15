@@ -42,5 +42,5 @@ pub use threads::{Task, TaskPoll};
 pub use loading::Loading;
 pub use shader::ShaderInput;
 pub use tools::*;
-pub use handles::{TextureId, ShaderId, SoundId};
+pub use handles::{TextureId, ShaderId, SoundId, PlaybackId};
 pub use animation::{Animation, AnimationPlayer};

@@ -40,7 +40,8 @@ macro_rules! define_handle
 
 define_handle!(TextureId);
 define_handle!(ShaderId);
-define_handle!(SoundId);
+define_handle!(SoundId); // Loaded Sound
+define_handle!(PlaybackId); // Playing Sound
 
 impl TextureId
 {
@@ -50,6 +51,11 @@ impl TextureId
 impl ShaderId
 {
     pub const DEFAULT: Self = Self { index: 0, generation: 0 };
+}
+
+impl PlaybackId
+{
+    pub const NONE: Self = Self { index: u32::MAX, generation: 0 };
 }
 
 struct Slot<T>
@@ -119,6 +125,20 @@ impl<K: SlotKey, T> Slots<K, T>
         self.free.push(index);
         self.len -= 1;
         Some(value)
+    }
+
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&T) -> bool)
+    {
+        for (index, slot) in self.slots.iter_mut().enumerate()
+        {
+            if slot.value.as_ref().is_some_and(|value| !keep(value))
+            {
+                slot.value = None;
+                slot.generation = slot.generation.wrapping_add(1);
+                self.free.push(index as u32);
+                self.len -= 1;
+            }
+        }
     }
 
     /// Number of live values
