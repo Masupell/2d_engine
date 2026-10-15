@@ -68,8 +68,7 @@ pub fn seconds_to_samples(seconds: f32) -> usize
     (seconds.max(0.0) * RATE).round() as usize
 }
 
-// Also works for play_with: note(64.0) / note(60.0) is the pitch to play a recorded C4 as E4
-// 60 = C4, 261.35Hz
+// 60 = C4, 261.63Hz
 // +12 is one octave up, +1 one halftone
 pub fn note(number: f32) -> f32
 {

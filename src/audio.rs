@@ -151,27 +151,43 @@ impl Audio
 
     fn start(&mut self, id: SoundId, volume: f32, pitch: f32, looped: bool) -> PlaybackId
     {
-        self.voices.retain(|voice| !voice.backend.is_finished());
-
-        if self.backend.is_none() || !self.sounds.contains(id) { return PlaybackId::NONE; }
-        if self.voices.len() >= self.max_voices && !self.steal_voice() { return PlaybackId::NONE; }
-
+        if !self.sounds.contains(id) || !self.make_room() { return PlaybackId::NONE; }
         let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(id)) else { return PlaybackId::NONE; };
 
         let volume = volume.max(0.0);
         match backend.play(sound, volume * self.master_volume, pitch.max(0.01), looped)
         {
-            Ok(backend) =>
-            {
-                self.started += 1;
-                self.voices.insert(Voice { backend, volume, started: self.started, looped })
-            }
+            Ok(voice) => self.insert_voice(voice, volume, looped),
             Err(e) =>
             {
                 println!("Failed to play sound({id:?}): {e}");
                 PlaybackId::NONE
             }
         }
+    }
+
+    // Runs on audio thread, so has to keep up (44100 times per second, so nothing too crazy complicated)
+    // values above 1.0 distort
+    pub fn play_generator(&mut self, samples: impl Iterator<Item = f32> + Send + 'static, volume: f32) -> PlaybackId
+    {
+        if !self.make_room() { return PlaybackId::NONE; }
+        let Some(backend) = &self.backend else { return PlaybackId::NONE; };
+
+        let volume = volume.max(0.0);
+        let voice = backend.play_generator(samples, SAMPLE_RATE, volume * self.master_volume, 1.0);
+        self.insert_voice(voice, volume, false)
+    }
+
+    fn make_room(&mut self) -> bool
+    {
+        self.voices.retain(|voice| !voice.backend.is_finished());
+        self.backend.is_some() && (self.voices.len() < self.max_voices || self.steal_voice())
+    }
+
+    fn insert_voice(&mut self, backend: BackendVoice, volume: f32, looped: bool) -> PlaybackId
+    {
+        self.started += 1;
+        self.voices.insert(Voice { backend, volume, started: self.started, looped })
     }
 
     // Stops the oldest non-looping sound (so soundeffects, not music for example)

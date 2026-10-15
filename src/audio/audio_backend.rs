@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
 use std::num::NonZero;
+use std::time::Duration;
 use rodio::{Decoder, MixerDeviceSink, Player, Sample};
 use rodio::buffer::SamplesBuffer;
 use rodio::decoder::DecoderBuilder;
@@ -101,9 +102,7 @@ impl BackEnd
     // Can only fail for streamed sounds (e.g. file got deleted after loading)
     pub(crate) fn play(&self, sound: &BackendSound, volume: f32, pitch: f32, looped: bool) -> Result<BackendVoice, String>
     {
-        let player = Player::connect_new(self.sink.mixer());
-        player.set_volume(volume);
-        player.set_speed(pitch);
+        let player = self.new_player(volume, pitch);
 
         match (sound, looped)
         {
@@ -117,6 +116,46 @@ impl BackEnd
 
         Ok(BackendVoice { player })
     }
+
+    pub(crate) fn play_generator<I: Iterator<Item = f32> + Send + 'static>(&self, samples: I, sample_rate: u32, volume: f32, pitch: f32) -> BackendVoice
+    {
+        let player = self.new_player(volume, pitch);
+        let rate = NonZero::new(sample_rate).expect("sample rate can't be 0");
+        player.append(Generator { samples, rate });
+        BackendVoice { player }
+    }
+
+    fn new_player(&self, volume: f32, pitch: f32) -> Player
+    {
+        let player = Player::connect_new(self.sink.mixer());
+        player.set_volume(volume);
+        player.set_speed(pitch);
+        player
+    }
+}
+
+struct Generator<I>
+{
+    samples: I,
+    rate: NonZero<u32>
+}
+
+impl<I: Iterator<Item = f32>> Iterator for Generator<I>
+{
+    type Item = Sample;
+
+    fn next(&mut self) -> Option<Sample>
+    {
+        self.samples.next().map(|sample| sample as Sample)
+    }
+}
+
+impl<I: Iterator<Item = f32>> Source for Generator<I>
+{
+    fn current_span_len(&self) -> Option<usize> { None } // doesn't change
+    fn channels(&self) -> NonZero<u16> { NonZero::<u16>::MIN } // mono
+    fn sample_rate(&self) -> NonZero<u32> { self.rate }
+    fn total_duration(&self) -> Option<Duration> { None } // unknown
 }
 
 pub(crate) struct BackendVoice

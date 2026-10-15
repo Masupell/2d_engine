@@ -1,3 +1,6 @@
+use std::f32::consts::TAU;
+use std::sync::mpsc::{channel, Receiver, Sender};
+
 use engine::*;
 
 struct App
@@ -8,7 +11,8 @@ struct App
     async_task_test: Loading<Vec<f32>>,
     shader_test: ShaderId,
     time: f32,
-    scroll: f32
+    scroll: f32,
+    notes: Option<Sender<f32>>
 }
 
 const CLIP_PANEL: u32 = 1;
@@ -23,6 +27,10 @@ impl EngineEvent for App
         self.shader_test = graphics.load_shader_with_uniform(Some(ShaderInput::File("src/bin/reload_test.wgsl")), None, PipeLineType::Normal, &[("time", UniformType::Float)]);
 
         ctx.toggle_stats();
+
+        let (sender, receiver) = channel();
+        self.notes = Some(sender);
+        ctx.audio.play_generator(Instrument { notes: Vec::with_capacity(MAX_NOTES), incoming: receiver }, 0.5);
     }
 
     fn physics_update(&mut self, update_ctx: &mut UpdateContext)
@@ -81,6 +89,15 @@ impl EngineEvent for App
         {
             update_ctx.graphics.renderer.unload_shader(self.shader_test);
         }
+
+        if update_ctx.input.is_mouse_pressed(Button::Left)
+        {
+            const SCALE: [f32; 5] = [0.0, 2.0, 4.0, 7.0, 9.0];
+            let step = (self.x / 1280.0 * 15.0).clamp(0.0, 14.0) as usize;
+            let number = 48.0 + 12.0 * (step / SCALE.len()) as f32 + SCALE[step % SCALE.len()];
+
+            if let Some(notes) = &self.notes { let _ = notes.send(note(number)); }
+        }
     }
 
     fn update(&mut self, update_ctx: &mut UpdateContext)
@@ -136,7 +153,8 @@ impl App
             async_task_test: Loading::Idle,
             shader_test: ShaderId::DEFAULT,
             time: 0.0,
-            scroll: 0.0
+            scroll: 0.0,
+            notes: None
         }
     }
 }
@@ -144,6 +162,75 @@ impl App
 fn main()
 {
     run(App::new(), "Example", (1280, 720));
+}
+
+const MAX_NOTES: usize = 32;
+
+struct Pluck
+{
+    phase: f32, // 0..1
+    step: f32, // freq / SAMPLE_RATE
+    amplitude: f32,
+    decay: f32,
+    remaining: usize
+}
+
+impl Pluck
+{
+    fn new(freq: f32, seconds: f32) -> Self
+    {
+        Self
+        {
+            phase: 0.0,
+            step: freq / SAMPLE_RATE as f32,
+            amplitude: 0.3,
+            decay: (-3.0 / SAMPLE_RATE as f32).exp(),
+            remaining: seconds_to_samples(seconds)
+        }
+    }
+}
+
+impl Iterator for Pluck
+{
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32>
+    {
+        if self.remaining == 0 { return None; }
+        self.remaining -= 1;
+
+        let sample = (self.phase * TAU).sin() * self.amplitude;
+        self.phase = (self.phase + self.step).fract();
+        self.amplitude *= self.decay;
+        Some(sample)
+    }
+}
+
+struct Instrument
+{
+    notes: Vec<Pluck>,
+    incoming: Receiver<f32>
+}
+
+impl Iterator for Instrument
+{
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32>
+    {
+        while let Ok(frequency) = self.incoming.try_recv()
+        {
+            if self.notes.len() < MAX_NOTES { self.notes.push(Pluck::new(frequency, 1.5)); }
+        }
+
+        let mut sample = 0.0;
+        self.notes.retain_mut(|note| match note.next()
+        {
+            Some(value) => { sample += value; true }
+            None => false
+        });
+        Some(sample)
+    }
 }
 
 
