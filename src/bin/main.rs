@@ -51,11 +51,17 @@ impl EngineEvent for App
         {
             self.async_texture_test = update_ctx.graphics.load_texture_async("src/image/font_atlas_debug.png", FilterMode::Linear, FilterMode::Linear);
             self.async_task_test = Loading::Running(update_ctx.context.threads.spawn(move || heavy_calculation(12, 2048)));
-            update_ctx.context.threads.parallel_for(5, |i|
+            let old = vec![0, 1, 2, 3, 4, 5, 6];
+            let mut new = vec![0; old.len()];
+            update_ctx.context.threads.parallel_for_mut(&mut new, 2, |i, slice|
             {
-                print!("{i}, ");
+                let start = i*2;
+                for (j, value) in slice.iter_mut().enumerate()
+                {
+                    *value = old[start+j];
+                }
             });
-            println!();
+            println!("Old: {old:?}, New: {new:?}");
         }
 
         if update_ctx.input.is_key_pressed(Key::Enter)

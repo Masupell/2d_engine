@@ -149,6 +149,28 @@ impl ThreadPool
         if panicked { panic!("parallel_for: work panicked on a worker thread"); }
     }
 
+    // data gets split into chunks that get processed at the same time
+    // (data: &mut [0, 1, 2, 3]; chunk_length: 2, ...) => does [0, 1] and [2, 3] (not neccessarily in this order)
+    pub fn parallel_for_mut<T, F>(&self, data: &mut [T], chunk_len: usize, work: F)
+    where
+        T: Send,
+        F: Fn(usize, &mut [T]) + Sync
+    {
+        assert!(chunk_len > 0, "parallel_for_mut: chunk_len must be > 0");
+
+        let len = data.len();
+        let data = SlicePtr(data.as_mut_ptr());
+
+        self.parallel_for(len.div_ceil(chunk_len), |chunk_index|
+        {
+            let start = chunk_index * chunk_len;
+            let end = (start + chunk_len).min(len);
+            // Safe, because ranges never overlap
+            let chunk = unsafe { std::slice::from_raw_parts_mut(data.get().add(start), end - start) };
+            work(chunk_index, chunk);
+        });
+    }
+
     pub fn worker_count(&self) -> usize
     {
         self.inner.shared.queue.lock().map(|queue| queue.workers).unwrap_or(0)
@@ -252,6 +274,19 @@ impl ParallelFor
         state.running -= 1;
         drop(state);
         self.done.notify_all();
+    }
+}
+
+struct SlicePtr<T>(*mut T);
+
+unsafe impl<T: Send> Send for SlicePtr<T> {}
+unsafe impl<T: Send> Sync for SlicePtr<T> {}
+
+impl<T> SlicePtr<T>
+{
+    fn get(&self) -> *mut T
+    {
+        self.0
     }
 }
 
