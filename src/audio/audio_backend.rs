@@ -3,7 +3,9 @@
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use rodio::{Decoder, MixerDeviceSink, Player};
+use std::num::NonZero;
+use rodio::{Decoder, MixerDeviceSink, Player, Sample};
+use rodio::buffer::SamplesBuffer;
 use rodio::decoder::DecoderBuilder;
 use rodio::source::{Buffered, Source};
 
@@ -11,18 +13,25 @@ type SoundSource = Buffered<Decoder<Cursor<Cow<'static, [u8]>>>>;
 
 pub(crate) enum BackendSound
 {
-    Buffered(SoundSource), // decoded once, all samples stay in memory: short sound effects
-    StreamedFile(String), // decoded while playing, new decoder for each play: music, long ambience
-    StreamedBytes(&'static [u8]) // same, but from include_bytes! (only the compressed file stays in memory)
+    Buffered(SoundSource), // decoded once
+    StreamedFile(String), // decoded while playing
+    StreamedBytes(&'static [u8]),
+    Samples(SamplesBuffer) // generated, clone is cheap because of arc inside
 }
 
 impl BackendSound
 {
-    // Opened once here, so a missing/broken file fails at loading and not later when playing
     pub(crate) fn load_streamed(path: &str) -> Result<Self, String>
     {
         file_decoder(path)?.build().map_err(|e| e.to_string())?;
         Ok(BackendSound::StreamedFile(path.to_string()))
+    }
+
+    pub(crate) fn from_samples(samples: impl Iterator<Item = f32>, sample_rate: u32) -> Self
+    {
+        let samples: Vec<Sample> = samples.map(|sample| sample as Sample).collect();
+        let rate = NonZero::new(sample_rate).expect("sample rate can't be 0");
+        BackendSound::Samples(SamplesBuffer::new(NonZero::<u16>::MIN, rate, samples)) // 1 channel (mono)
     }
 
     pub(crate) fn from_bytes_streamed(bytes: &'static [u8]) -> Result<Self, String>
@@ -100,6 +109,8 @@ impl BackEnd
         {
             (BackendSound::Buffered(source), true) => player.append(source.clone().repeat_infinite()),
             (BackendSound::Buffered(source), false) => player.append(source.clone()),
+            (BackendSound::Samples(buffer), true) => player.append(buffer.clone().repeat_infinite()),
+            (BackendSound::Samples(buffer), false) => player.append(buffer.clone()),
             (BackendSound::StreamedFile(path), _) => append_stream(&player, file_decoder(path)?, looped)?,
             (BackendSound::StreamedBytes(bytes), _) => append_stream(&player, bytes_decoder(bytes), looped)?
         }

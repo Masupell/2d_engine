@@ -1,8 +1,9 @@
 pub mod audio_backend;
+pub mod synth;
 
 use std::collections::HashMap;
 
-use crate::{PlaybackId, SoundId, assets::AssetSource, audio::audio_backend::{BackEnd, BackendSound, BackendVoice}, handles::Slots};
+use crate::{PlaybackId, SoundId, assets::AssetSource, audio::{audio_backend::{BackEnd, BackendSound, BackendVoice}, synth::{SAMPLE_RATE, SoundBuilder}}, handles::Slots};
 
 pub struct Audio
 {
@@ -11,8 +12,12 @@ pub struct Audio
     cache: HashMap<SoundKey, SoundId>, // source -> id, to check if it's already loaded
     sources: HashMap<SoundId, SoundKey>, // id -> source, for unloading
     voices: Slots<PlaybackId, Voice>, // sounds that are playing right now
+    max_voices: usize,
+    started: u64, // to find oldest voice
     master_volume: f32
 }
+
+const DEFAULT_MAX_VOICES: usize = 32;
 
 // (source, streamed), to avoid getting it from cache, if loading a buffered and streamed sound
 type SoundKey = (AssetSource, bool);
@@ -20,7 +25,9 @@ type SoundKey = (AssetSource, bool);
 struct Voice
 {
     backend: BackendVoice,
-    volume: f32 // without master volume
+    volume: f32, // without master volume
+    started: u64,
+    looped: bool
 }
 
 impl Audio
@@ -40,6 +47,8 @@ impl Audio
             cache: HashMap::new(),
             sources: HashMap::new(),
             voices: Slots::new(),
+            max_voices: DEFAULT_MAX_VOICES,
+            started: 0,
             master_volume: 1.0
         }
     }
@@ -82,6 +91,15 @@ impl Audio
         self.register_sound(key, sound)
     }
 
+    // Not cached, every call makes a new sound
+    pub fn create_sound(&mut self, sound: &SoundBuilder) -> SoundId
+    {
+        let peak = sound.samples().iter().fold(0.0_f32, |peak, sample| peak.max(sample.abs())); // anything above 1.0 would clip, sound distorted
+        let scale = if peak > 1.0 { 1.0 / peak } else { 1.0 };
+
+        self.sounds.insert(BackendSound::from_samples(sound.samples().iter().map(|sample| sample * scale), SAMPLE_RATE))
+    }
+
     fn register_sound(&mut self, key: SoundKey, sound: BackendSound) -> SoundId
     {
         let id = self.sounds.insert(sound);
@@ -92,14 +110,16 @@ impl Audio
 
     pub fn unload_sound(&mut self, id: SoundId)
     {
-        let Some(source) = self.sources.remove(&id) else
+        if self.sounds.remove(id).is_none()
         {
-            println!("sound({id:?} does not exist");
+            println!("sound({id:?}) does not exist");
             return;
-        };
+        }
 
-        self.cache.remove(&source);
-        self.sounds.remove(id);
+        if let Some(source) = self.sources.remove(&id)
+        {
+            self.cache.remove(&source);
+        }
     }
 
     pub fn is_sound_loaded(&self, id: SoundId) -> bool
@@ -133,18 +153,43 @@ impl Audio
     {
         self.voices.retain(|voice| !voice.backend.is_finished());
 
+        if self.backend.is_none() || !self.sounds.contains(id) { return PlaybackId::NONE; }
+        if self.voices.len() >= self.max_voices && !self.steal_voice() { return PlaybackId::NONE; }
+
         let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(id)) else { return PlaybackId::NONE; };
 
         let volume = volume.max(0.0);
         match backend.play(sound, volume * self.master_volume, pitch.max(0.01), looped)
         {
-            Ok(backend) => self.voices.insert(Voice { backend, volume }),
+            Ok(backend) =>
+            {
+                self.started += 1;
+                self.voices.insert(Voice { backend, volume, started: self.started, looped })
+            }
             Err(e) =>
             {
                 println!("Failed to play sound({id:?}): {e}");
                 PlaybackId::NONE
             }
         }
+    }
+
+    // Stops the oldest non-looping sound (so soundeffects, not music for example)
+    // if nothing, then sound is not played (returns false)
+    fn steal_voice(&mut self) -> bool
+    {
+        let oldest = self.voices.iter().filter(|(_, voice)| !voice.looped).min_by_key(|(_, voice)| voice.started).map(|(id, _)| id);
+        oldest.is_some_and(|id| self.voices.remove(id).is_some())
+    }
+
+    pub fn set_max_voices(&mut self, max: usize)
+    {
+        self.max_voices = max.max(1);
+    }
+
+    pub fn voice_count(&self) -> usize
+    {
+        self.voices.len()
     }
 
     pub fn stop(&mut self, playback: PlaybackId)

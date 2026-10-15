@@ -37,6 +37,7 @@ pub use mesh_builder::{MeshBuilder, MeshTopology};
 pub use utility::PipeLineType;
 pub use target::TargetHandle;
 pub use audio::Audio;
+pub use audio::synth::*;
 pub use draw::{Draw, Text, TextAlign, QUAD_MESH, ClipRect};
 pub use threads::{Task, TaskPoll};
 pub use loading::Loading;

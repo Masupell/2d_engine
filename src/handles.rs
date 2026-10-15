@@ -53,6 +53,11 @@ impl ShaderId
     pub const DEFAULT: Self = Self { index: 0, generation: 0 };
 }
 
+impl SoundId
+{
+    pub const DEFAULT: Self = Self { index: 0, generation: 0 };
+}
+
 impl PlaybackId
 {
     pub const NONE: Self = Self { index: u32::MAX, generation: 0 };
@@ -157,13 +162,13 @@ impl<K: SlotKey, T> Slots<K, T>
         self.slots.iter_mut().filter_map(|slot| slot.value.as_mut())
     }
 
-    // pub(crate) fn iter(&self) -> impl Iterator<Item = (K, &T)>
-    // {
-    //     self.slots.iter().enumerate().filter_map(|(index, slot)|
-    //     {
-    //         slot.value.as_ref().map(|value| (K::from_parts(index as u32, slot.generation), value))
-    //     })
-    // }
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (K, &T)>
+    {
+        self.slots.iter().enumerate().filter_map(|(index, slot)|
+        {
+            slot.value.as_ref().map(|value| (K::from_parts(index as u32, slot.generation), value))
+        })
+    }
 }
 
 impl<K: SlotKey, T> Default for Slots<K, T>
