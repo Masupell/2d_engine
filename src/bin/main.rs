@@ -51,6 +51,11 @@ impl EngineEvent for App
         {
             self.async_texture_test = update_ctx.graphics.load_texture_async("src/image/font_atlas_debug.png", FilterMode::Linear, FilterMode::Linear);
             self.async_task_test = Loading::Running(update_ctx.context.threads.spawn(move || heavy_calculation(12, 2048)));
+            update_ctx.context.threads.parallel_for(5, |i|
+            {
+                print!("{i}, ");
+            });
+            println!();
         }
 
         if update_ctx.input.is_key_pressed(Key::Enter)

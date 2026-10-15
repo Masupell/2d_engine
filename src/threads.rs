@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Arc, Condvar, Mutex, mpsc::{self, TryRecvError}}, thread, time::Duration};
+use std::{collections::VecDeque, panic::{AssertUnwindSafe, catch_unwind, resume_unwind}, sync::{Arc, Condvar, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{self, TryRecvError}}, thread, time::Duration};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
@@ -94,6 +94,61 @@ impl ThreadPool
         self.execute(Box::new(work));
     }
 
+    // Calls work as many times as count, spread out over workers and calling thread.
+    // Block caller until everything is done, so it can borrow data
+    pub fn parallel_for<F>(&self, count: usize, work: F)
+    where
+        F: Fn(usize) + Sync
+    {
+        if count == 0 { return; }
+
+        // ~4 chunks per thread
+        let threads = self.max_workers() + 1;
+        let chunk = (count / (threads * 4)).max(1);
+        let helpers = self.max_workers().min(count.div_ceil(chunk) - 1);
+
+        if helpers == 0
+        {
+            (0..count).for_each(work);
+            return;
+        }
+
+        // Is safe, nothing uses 'ParallelFor', after this function returns
+        let work: &(dyn Fn(usize) + Sync) = &work;
+        let work: *const (dyn Fn(usize) + Sync + 'static) = unsafe { std::mem::transmute(work) };
+
+        let job = Arc::new(ParallelFor
+        {
+            work,
+            count,
+            chunk,
+            next: AtomicUsize::new(0),
+            state: Mutex::new(ForState { running: 0, closed: false, panicked: false }),
+            done: Condvar::new()
+        });
+
+        for _ in 0..helpers
+        {
+            let job = Arc::clone(&job);
+            self.execute(Box::new(move || job.help()));
+        }
+
+        // So the caller does not just sit around idle, it helps as well, caught so it waits for the workers
+        let result = catch_unwind(AssertUnwindSafe(|| job.run_chunks()));
+
+        let mut state = job.state.lock().unwrap();
+        state.closed = true;
+        while state.running > 0
+        {
+            state = job.done.wait(state).unwrap();
+        }
+        let panicked = state.panicked;
+        drop(state);
+
+        if let Err(payload) = result { resume_unwind(payload); }
+        if panicked { panic!("parallel_for: work panicked on a worker thread"); }
+    }
+
     pub fn worker_count(&self) -> usize
     {
         self.inner.shared.queue.lock().map(|queue| queue.workers).unwrap_or(0)
@@ -140,6 +195,63 @@ impl ThreadPool
     fn execute(&self, job: Job)
     {
         job();
+    }
+}
+
+// state.closed makes sure, that it can't be called after the borrow to the work ends.
+struct ParallelFor
+{
+    work: *const (dyn Fn(usize) + Sync),
+    count: usize,
+    chunk: usize,
+    next: AtomicUsize,
+    state: Mutex<ForState>,
+    done: Condvar
+}
+
+struct ForState
+{
+    running: usize,
+    closed: bool,
+    panicked: bool
+}
+
+unsafe impl Send for ParallelFor {}
+unsafe impl Sync for ParallelFor {}
+
+impl ParallelFor
+{
+    fn run_chunks(&self)
+    {
+        let work = unsafe { &*self.work };
+        loop
+        {
+            let start = self.next.fetch_add(self.chunk, Ordering::Relaxed);
+            if start >= self.count { return; }
+
+            let end = (start + self.chunk).min(self.count);
+            for index in start..end
+            {
+                work(index);
+            }
+        }
+    }
+
+    fn help(&self)
+    {
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.closed { return; }
+            state.running += 1;
+        }
+
+        let result = catch_unwind(AssertUnwindSafe(|| self.run_chunks()));
+
+        let mut state = self.state.lock().unwrap();
+        state.panicked |= result.is_err();
+        state.running -= 1;
+        drop(state);
+        self.done.notify_all();
     }
 }
 
