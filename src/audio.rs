@@ -8,11 +8,14 @@ pub struct Audio
 {
     backend: Option<BackEnd>,
     sounds: Slots<SoundId, BackendSound>, //HashMap<usize, BackendSound>,
-    cache: HashMap<AssetSource, SoundId>, // source -> id, to check if it's already loaded
-    sources: HashMap<SoundId, AssetSource>, // id -> source, for unloading
+    cache: HashMap<SoundKey, SoundId>, // source -> id, to check if it's already loaded
+    sources: HashMap<SoundId, SoundKey>, // id -> source, for unloading
     voices: Slots<PlaybackId, Voice>, // sounds that are playing right now
     master_volume: f32
 }
+
+// (source, streamed), to avoid getting it from cache, if loading a buffered and streamed sound
+type SoundKey = (AssetSource, bool);
 
 struct Voice
 {
@@ -41,30 +44,49 @@ impl Audio
         }
     }
 
+    // decodes in the beginning and keeps in memory, for short things like sound effects
     pub fn load_sound(&mut self, path: &str) -> SoundId
     {
-        let source = AssetSource::path(path);
-        if let Some(&id) = self.cache.get(&source) { return id; }
+        let key = (AssetSource::path(path), false);
+        if let Some(&id) = self.cache.get(&key) { return id; }
 
         let sound = BackendSound::load(path).unwrap_or_else(|e| panic!("Failed to load sound '{path}': {e}"));
-        self.register_sound(source, sound)
+        self.register_sound(key, sound)
     }
 
     pub fn load_sound_from_bytes(&mut self, bytes: &'static [u8]) -> SoundId
     {
-        let source = AssetSource::bytes(bytes);
-        if let Some(&id) = self.cache.get(&source) { return id; }
+        let key = (AssetSource::bytes(bytes), false);
+        if let Some(&id) = self.cache.get(&key) { return id; }
 
         let sound = BackendSound::from_bytes(bytes).unwrap_or_else(|e| panic!("Failed to load sound: {e}"));
-        self.register_sound(source, sound)
+        self.register_sound(key, sound)
     }
 
-    // Currently only for short sound-effects, no streaming yet
-    fn register_sound(&mut self, source: AssetSource, sound: BackendSound) -> SoundId
+    // Decodes while playing, does not use as much memory, but uses a bit of cpu, for things like music
+    pub fn load_sound_streamed(&mut self, path: &str) -> SoundId
+    {
+        let key = (AssetSource::path(path), true);
+        if let Some(&id) = self.cache.get(&key) { return id; }
+
+        let sound = BackendSound::load_streamed(path).unwrap_or_else(|e| panic!("Failed to load sound '{path}': {e}"));
+        self.register_sound(key, sound)
+    }
+
+    pub fn load_sound_streamed_from_bytes(&mut self, bytes: &'static [u8]) -> SoundId
+    {
+        let key = (AssetSource::bytes(bytes), true);
+        if let Some(&id) = self.cache.get(&key) { return id; }
+
+        let sound = BackendSound::from_bytes_streamed(bytes).unwrap_or_else(|e| panic!("Failed to load sound: {e}"));
+        self.register_sound(key, sound)
+    }
+
+    fn register_sound(&mut self, key: SoundKey, sound: BackendSound) -> SoundId
     {
         let id = self.sounds.insert(sound);
-        self.cache.insert(source.clone(), id);
-        self.sources.insert(id, source);
+        self.cache.insert(key.clone(), id);
+        self.sources.insert(id, key);
         id
     }
 
@@ -114,8 +136,15 @@ impl Audio
         let (Some(backend), Some(sound)) = (&self.backend, self.sounds.get(id)) else { return PlaybackId::NONE; };
 
         let volume = volume.max(0.0);
-        let backend = backend.play(sound, volume * self.master_volume, pitch.max(0.01), looped);
-        self.voices.insert(Voice { backend, volume })
+        match backend.play(sound, volume * self.master_volume, pitch.max(0.01), looped)
+        {
+            Ok(backend) => self.voices.insert(Voice { backend, volume }),
+            Err(e) =>
+            {
+                println!("Failed to play sound({id:?}): {e}");
+                PlaybackId::NONE
+            }
+        }
     }
 
     pub fn stop(&mut self, playback: PlaybackId)

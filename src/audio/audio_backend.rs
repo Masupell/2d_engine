@@ -1,19 +1,36 @@
 // If I ever want to swap out rodio for more low-level, like cpal
 
 use std::borrow::Cow;
-use std::io::Cursor;
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek};
 use rodio::{Decoder, MixerDeviceSink, Player};
+use rodio::decoder::DecoderBuilder;
 use rodio::source::{Buffered, Source};
 
 type SoundSource = Buffered<Decoder<Cursor<Cow<'static, [u8]>>>>;
 
-pub(crate) struct BackendSound
+pub(crate) enum BackendSound
 {
-    source: SoundSource
+    Buffered(SoundSource), // decoded once, all samples stay in memory: short sound effects
+    StreamedFile(String), // decoded while playing, new decoder for each play: music, long ambience
+    StreamedBytes(&'static [u8]) // same, but from include_bytes! (only the compressed file stays in memory)
 }
 
 impl BackendSound
 {
+    // Opened once here, so a missing/broken file fails at loading and not later when playing
+    pub(crate) fn load_streamed(path: &str) -> Result<Self, String>
+    {
+        file_decoder(path)?.build().map_err(|e| e.to_string())?;
+        Ok(BackendSound::StreamedFile(path.to_string()))
+    }
+
+    pub(crate) fn from_bytes_streamed(bytes: &'static [u8]) -> Result<Self, String>
+    {
+        bytes_decoder(bytes).build().map_err(|e| e.to_string())?;
+        Ok(BackendSound::StreamedBytes(bytes))
+    }
+
     pub(crate) fn load(path: &str) -> Result<Self, String>
     {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
@@ -28,8 +45,32 @@ impl BackendSound
     fn from_data(data: Cow<'static, [u8]>) -> Result<Self, String>
     {
         let decoder = Decoder::new(Cursor::new(data)).map_err(|e| e.to_string())?;
-        Ok(Self { source: decoder.buffered() })
+        Ok(BackendSound::Buffered(decoder.buffered()))
     }
+}
+
+// byte_len and seekable like rodio's own TryFrom<File>, helps it find the length/seek
+fn file_decoder(path: &str) -> Result<DecoderBuilder<BufReader<File>>, String>
+{
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    Ok(Decoder::builder().with_data(BufReader::new(file)).with_byte_len(len).with_seekable(true))
+}
+
+fn bytes_decoder(bytes: &'static [u8]) -> DecoderBuilder<Cursor<&'static [u8]>>
+{
+    Decoder::builder().with_data(Cursor::new(bytes)).with_byte_len(bytes.len() as u64).with_seekable(true)
+}
+
+// looped decoder starts again from the beginning, instead of repeat_infinite, which would keep all samples in memory again
+fn append_stream<R: Read + Seek + Send + Sync + 'static>(player: &Player, decoder: DecoderBuilder<R>, looped: bool) -> Result<(), String>
+{
+    match looped
+    {
+        true => player.append(decoder.build_looped().map_err(|e| e.to_string())?),
+        false => player.append(decoder.build().map_err(|e| e.to_string())?)
+    }
+    Ok(())
 }
 
 pub(crate) struct BackEnd
@@ -48,19 +89,22 @@ impl BackEnd
         })
     }
 
-    pub(crate) fn play(&self, sound: &BackendSound, volume: f32, pitch: f32, looped: bool) -> BackendVoice
+    // Can only fail for streamed sounds (e.g. file got deleted after loading)
+    pub(crate) fn play(&self, sound: &BackendSound, volume: f32, pitch: f32, looped: bool) -> Result<BackendVoice, String>
     {
         let player = Player::connect_new(self.sink.mixer());
         player.set_volume(volume);
         player.set_speed(pitch);
 
-        match looped
+        match (sound, looped)
         {
-            true => player.append(sound.source.clone().repeat_infinite()),
-            false => player.append(sound.source.clone())
+            (BackendSound::Buffered(source), true) => player.append(source.clone().repeat_infinite()),
+            (BackendSound::Buffered(source), false) => player.append(source.clone()),
+            (BackendSound::StreamedFile(path), _) => append_stream(&player, file_decoder(path)?, looped)?,
+            (BackendSound::StreamedBytes(bytes), _) => append_stream(&player, bytes_decoder(bytes), looped)?
         }
 
-        BackendVoice { player }
+        Ok(BackendVoice { player })
     }
 }
 
