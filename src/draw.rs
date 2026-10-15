@@ -183,14 +183,12 @@ impl Renderer
 
     pub fn draw_text(&mut self, t: Text)
     {
+        // measured once here, the same for every outline copy
+        let size = self.text_size_with_font(t.font, t.text, t.height);
         let pos = match t.align
         {
             TextAlign::TopLeft => t.pos,
-            TextAlign::Center =>
-            {
-                let (width, height) = self.text_size_with_font(t.font, t.text, t.height);
-                (t.pos.0 - width * 0.5, t.pos.1 - height * 0.5)
-            }
+            TextAlign::Center => (t.pos.0 - size.0 * 0.5, t.pos.1 - size.1 * 0.5)
         };
 
         if let Some((outline_color, outline_width)) = t.outline
@@ -209,15 +207,15 @@ impl Renderer
                 for (dx, dy) in DIRECTIONS
                 {
                     let offset_pos = (pos.0 + dx * radius, pos.1 + dy * radius);
-                    self.push_text(&t, offset_pos, outline_color);
+                    self.push_text(&t, offset_pos, size, outline_color);
                 }
             }
         }
 
-        self.push_text(&t, pos, t.color);
+        self.push_text(&t, pos, size, t.color);
     }
 
-    fn push_text(&mut self, t: &Text, pos: (f32, f32), color: [f32; 4])
+    fn push_text(&mut self, t: &Text, pos: (f32, f32), (width, height): (f32, f32), color: [f32; 4])
     {
         let atlas = &self.fonts[t.font];
         let scale = t.height / atlas.native_size;
@@ -226,7 +224,6 @@ impl Renderer
         let line_height = atlas.line_height;
 
         let baseline_pos = (pos.0, pos.1 + ascent * scale);
-        let (width, height) = self.text_size_with_font(t.font, t.text, t.height);
         let center = (pos.0 + width * 0.5, pos.1 + height * 0.5);
         let origin = rotate_point_around(baseline_pos, center, t.rotation);
 

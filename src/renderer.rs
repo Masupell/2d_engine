@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, draw::ClipRect, handles::{SlotKey, Slots}, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
+use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, draw::ClipRect, handles::Slots, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -35,12 +35,12 @@ const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub(crate) const MODE_COLOR: u32 = 0;
 pub(crate) const MODE_TEXTURE: u32 = 1;
 
-// Sort key layout (u128): [target: 16][layer: 8][z_index: 32][pipeline: 16][submission index: 32]
-// Sorting by this number = sorting by layer, then z, then pipeline, then submission order.
+// Sort key layout (u128): [target: 16][layer: 8][z_index: 32][submission index: 32]
+// Sorting by this number = sorting by layer, then z, then submission order.
+// No pipeline (shader/blend) in it: at the same z that would reorder overlapping draws, same problem as sorting by texture
 const INDEX_BITS: u32 = 32;
 const INDEX_MASK: u128 = (1 << INDEX_BITS) - 1;
-const PIPELINE_SHIFT: u32 = INDEX_BITS;
-const Z_SHIFT: u32 = PIPELINE_SHIFT + 16;
+const Z_SHIFT: u32 = INDEX_BITS;
 const LAYER_SHIFT: u32 = Z_SHIFT + 32;
 const TARGET_SHIFT: u32 = LAYER_SHIFT + 8;
 
@@ -85,14 +85,13 @@ impl DrawCommand
 {
     fn sort_key(&self, index: usize) -> u128
     {
-        let pipeline = (self.blend as u128) << 8 | self.shader.index() as u128;
-        (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | pipeline << PIPELINE_SHIFT | index as u128
+        (self.target as u128) << TARGET_SHIFT | (self.layer as u128) << LAYER_SHIFT | (self.z_index as u128) << Z_SHIFT | index as u128
     }
 
     // draws with the same values can be one instance
     fn batches_with(&self, other: &DrawCommand) -> bool
     {
-        (self.shader == other.shader) & (self.mesh_id == other.mesh_id) & (self.texture == other.texture) & (self.space == other.space) & (self.blend == other.blend)
+        (self.shader == other.shader) & (self.mesh_id == other.mesh_id) & (self.texture == other.texture) & (self.space == other.space) & (self.blend == other.blend) & (self.clip == other.clip)
     }
 }
 
@@ -638,7 +637,6 @@ impl Renderer
     {
         Self::fill_entry_variants(&self.formats, device, &mut entry);
         let id = self.pipelines.insert(entry);
-        debug_assert!(id.index() < 256, "more than 256 pipelines alive at once");
         id
     }
 
@@ -883,6 +881,7 @@ impl Renderer
         let vertex_size = data.vertices.len() * std::mem::size_of::<Vertex>();
         let index_size = data.indices.len() * std::mem::size_of::<u16>();
 
+        mesh.bounds = mesh_bounds(&data.vertices);
         if vertex_size > mesh.vertex_capacity
         {
             let new_capacity = vertex_size.next_power_of_two(); // Not final
@@ -895,7 +894,6 @@ impl Renderer
             });
             queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(&data.vertices));
             mesh.vertex_capacity = new_capacity;
-            mesh.bounds = mesh_bounds(&data.vertices);
         }
         else
         {
@@ -914,7 +912,6 @@ impl Renderer
             });
             queue.write_buffer(&mesh.index_buf, 0, bytemuck::cast_slice(&data.indices));
             mesh.index_capacity = new_capacity;
-            mesh.bounds = mesh_bounds(&data.vertices);
         }
         else
         {
@@ -942,8 +939,8 @@ impl Renderer
                 mapped_at_creation: false
             });
             mesh.vertex_capacity = new_capacity;
-            mesh.bounds = mesh_bounds(vertices);
         }
+        mesh.bounds = mesh_bounds(vertices);
         queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
     }
 
@@ -1398,14 +1395,15 @@ impl Renderer
 
             if bound_clip != Some(cmd.clip)
             {
-                bound_clip = Some(cmd.clip);
                 let (x, y, w, h) = match cmd.clip
                 {
                     0 => (0, 0, target_size.0, target_size.1),
                     index => self.clip_to_pixels(&self.clips[index as usize - 1], viewport, target_size)
                 };
 
+                // not marked as bound (scissor wasn't set), so the next batch with this clip gets checked and skipped as well
                 if w == 0 || h == 0 { start = end; continue; }
+                bound_clip = Some(cmd.clip);
                 render_pass.set_scissor_rect(x, y, w, h);
             }
 
@@ -1418,6 +1416,13 @@ impl Renderer
     pub(crate) fn push_command(&mut self, mesh_id: usize, transform: [[f32; 4]; 4], texture: TextureId, color: [f32; 4], mode: u32, uv_rect: [f32; 4], space: CoordSpace, layer: DrawLayer, z_index: u32, shader: ShaderId, blend: BlendMode)
     {
         if !self.pipelines.contains(shader) { return; }
+
+        let (blend, color) = match blend == BlendMode::Alpha && self.targets.iter().any(|target| target.texture_id == texture)
+        {
+            true => (BlendMode::PremultipliedAlpha, [color[0] * color[3], color[1] * color[3], color[2] * color[3], color[3]]),
+            false => (blend, color)
+        };
+
         let target = self.current_target;
         self.draw_commands.push(DrawCommand { mesh_id, transform, z_index, texture, color, mode, blend, shader: shader, space, layer, uv_rect, target, clip: self.current_clip() });
     }

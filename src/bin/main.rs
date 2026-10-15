@@ -117,7 +117,7 @@ impl EngineEvent for App
 
         render_ctx.graphics.renderer.with_clip(ClipRect::ui((900.0, 50.0), (200.0, 100.0)), |r|
         {
-            r.draw_text(Text::new("ClipText", (1000.0, 100.0+self.scroll*10.0), 45.0, [1.0, 1.0, 1.0, 1.0]).center().ui());
+            r.draw_text( Text { outline: Some(([1.0, 0.0, 0.0, 1.0], 1.0)), ..Text::new("ClipText", (1000.0, 100.0+self.scroll*10.0), 45.0, [1.0, 1.0, 1.0, 1.0]).center().ui() });
         });
 
         render_ctx.graphics.renderer.draw_fullscreen(TextureId::WHITE, [1.0, 1.0, 1.0, 1.0], 1, self.shader_test);
