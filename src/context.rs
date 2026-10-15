@@ -293,8 +293,18 @@ impl<'a> GraphicsContext<'a>
         self.renderer.set_default_font(self.device, self.queue, font_path, size);
     }
 
+    pub fn set_default_font_from_bytes(&mut self, font_data: &[u8], size: f32)
+    {
+        self.renderer.set_default_font_from_bytes(self.device, self.queue, font_data, size);
+    }
+
     pub fn add_font(&mut self, font_path: &str, size: f32) -> usize
     {
         self.renderer.add_font(self.device, self.queue, font_path, size)
+    }
+
+    pub fn add_font_from_bytes(&mut self, font_data: &[u8], size: f32) -> usize
+    {
+        self.renderer.add_font_from_bytes(self.device, self.queue, font_data, size)
     }
 }

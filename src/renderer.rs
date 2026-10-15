@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 use crate::hot_reload::{ShaderRecipe, ShaderWatcher};
-use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, draw::ClipRect, handles::Slots, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
+use crate::{CoordSpace, ShaderId, TargetHandle, TextureId, draw::ClipRect, handles::Slots, loading::{PendingTexture, TextureKey}, shader::{ShaderInput, ShaderModuleHandle}, target::{RenderTarget, Snapshot, create_snapshot, create_target_sampler, create_target_texture, format_is_usable, scaled_size}, text::{FontAtlas, rasterize_font_atlas_from_bytes}, texture::{FilterMode, Texture, TextureEntry}, threads::ThreadPool, utility::{CameraUniform, DrawLayer, FULL_UV_RECT, InstanceData, Mesh, MeshData, PipeLineType, PipelineUniforms, UniformType, UniformValue, Vertex, mesh_bounds}};
 
 pub const QUAD_VERTICES: &[Vertex] =
 &[
@@ -20,7 +20,7 @@ pub const QUAD_INDICES: &[u16] =
     2, 3, 0
 ];
 
-const DEFAULT_FONT_PATH: &str = "src/image/Montserrat-Bold.ttf"; // Gotta change the location later
+const DEFAULT_FONT: &[u8] = include_bytes!("image/Montserrat-Bold.ttf");
 const DEFAULT_FONT_SIZE: f32 = 128.0; // Size for now, later add multiple sizes and it chooses from it, or better a 'MSDF' (creating a signed distance field, and reconstruct it when needed)
 
 const IDENTITY: [[f32; 4]; 4] =
@@ -440,7 +440,7 @@ impl Renderer
         let default = pipelines.insert(default_pipeline);
         debug_assert_eq!(default, ShaderId::DEFAULT);
 
-        let default_font = Self::build_font_atlas(device, queue, &texture_bindgroup_layout, &mut textures, DEFAULT_FONT_PATH, &default_charset(), DEFAULT_FONT_SIZE);
+        let default_font = Self::build_font_atlas(device, queue, &texture_bindgroup_layout, &mut textures, DEFAULT_FONT, "default font", &default_charset(), DEFAULT_FONT_SIZE);
 
         Self
         {
@@ -944,9 +944,9 @@ impl Renderer
         queue.write_buffer(&mesh.vertex_buf, 0, bytemuck::cast_slice(vertices));
     }
 
-    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Slots<TextureId, TextureEntry>, font_path: &str, charset: &str, size: f32) -> FontAtlas
+    fn build_font_atlas(device: &wgpu::Device, queue: &wgpu::Queue, texture_bindgroup_layout: &wgpu::BindGroupLayout, textures: &mut Slots<TextureId, TextureEntry>, font_data: &[u8], label: &str, charset: &str, size: f32) -> FontAtlas
     {
-        let rasterized = rasterize_font_atlas(font_path, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", font_path, e));
+        let rasterized = rasterize_font_atlas_from_bytes(font_data, charset, size).unwrap_or_else(|e| panic!("Failed to rasterize font '{}': {:?}", label, e));
 
         // let output = image::GrayImage::from_vec(rasterized.width as u32, rasterized.height as u32, rasterized.bitmap.to_vec());
         // match output
@@ -958,7 +958,7 @@ impl Renderer
         //     None => println!("Could not create Image")
         // }
 
-        let texture = Texture::from_alpha_bitmap(device, queue, &rasterized.bitmap, rasterized.width, rasterized.height, FilterMode::Linear, FilterMode::Linear, Some(font_path)).expect("Failed to create font atlas texture");
+        let texture = Texture::from_alpha_bitmap(device, queue, &rasterized.bitmap, rasterized.width, rasterized.height, FilterMode::Linear, FilterMode::Linear, Some(label)).expect("Failed to create font atlas texture");
         let bind_group = Arc::new(texture.bind_group(device, texture_bindgroup_layout));
         // let texture_id = textures.len();
         // textures.push(TextureEntry { bind_group, size: (rasterized.width as f32, rasterized.height as f32) });
@@ -979,12 +979,24 @@ impl Renderer
     // changes default font
     pub fn set_default_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_path: &str, size: f32)
     {
-        self.fonts[0] = Self::build_font_atlas(device, queue, &self.texture_bindgroup_layout, &mut self.textures, font_path, &default_charset(), size);
+        self.set_default_font_from_bytes(device, queue, &read_font_file(font_path), size);
+    }
+
+    pub fn set_default_font_from_bytes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_data: &[u8], size: f32)
+    {
+        let atlas = Self::build_font_atlas(device, queue, &self.texture_bindgroup_layout, &mut self.textures, font_data, "default font", &default_charset(), size);
+        let old = std::mem::replace(&mut self.fonts[0], atlas);
+        self.textures.remove(old.texture_id);
     }
 
     pub fn add_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_path: &str, size: f32) -> usize
     {
-        let atlas = Self::build_font_atlas(device, queue, &self.texture_bindgroup_layout, &mut self.textures, font_path, &default_charset(), size);
+        self.add_font_from_bytes(device, queue, &read_font_file(font_path), size)
+    }
+
+    pub fn add_font_from_bytes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_data: &[u8], size: f32) -> usize
+    {
+        let atlas = Self::build_font_atlas(device, queue, &self.texture_bindgroup_layout, &mut self.textures, font_data, "font", &default_charset(), size);
         let id = self.fonts.len();
         self.fonts.push(atlas);
         id
@@ -1622,6 +1634,11 @@ impl Renderer
 fn default_charset() -> String
 {
     (' '..='~').collect()
+}
+
+fn read_font_file(font_path: &str) -> Vec<u8>
+{
+    std::fs::read(font_path).unwrap_or_else(|e| panic!("Failed to read font '{}': {}", font_path, e))
 }
 
 fn letterbox(size: (u32, u32), virtual_size: (f32, f32)) -> (f32, f32, f32, f32)

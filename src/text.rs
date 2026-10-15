@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
+use ab_glyph::{Font, FontArc, FontRef, PxScale, ScaleFont, point};
 use anyhow::{Ok, anyhow};
 
 use crate::TextureId;
@@ -236,7 +236,13 @@ pub struct RasterizedFont
 pub fn rasterize_font_atlas(font_path: &str, charset: &str, size: f32) -> std::result::Result<RasterizedFont, anyhow::Error>
 {
     let font_data = std::fs::read(font_path)?;
-    let font = FontArc::try_from_vec(font_data)?;
+    rasterize_font_atlas_from_bytes(&font_data, charset, size)
+}
+
+// bytes only have to live while rasterizing, the atlas doesn't need the font afterwards
+pub fn rasterize_font_atlas_from_bytes(font_data: &[u8], charset: &str, size: f32) -> std::result::Result<RasterizedFont, anyhow::Error>
+{
+    let font = FontRef::try_from_slice(font_data)?;
     let px_scale = PxScale::from(size);
     let scaled_font = font.as_scaled(px_scale);
 
