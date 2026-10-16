@@ -74,3 +74,37 @@ pub fn note(number: f32) -> f32
 {
     440.0 * 2.0_f32.powf((number - 69.0) / 12.0)
 }
+
+// saves as .wav (16 bit, mono, SAMPLE_RATE)
+// Header is simpler, no need for a crate (ai generated header)
+pub fn save_wav(path: &str, samples: &[f32]) -> std::io::Result<()>
+{
+    let peak = samples.iter().fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+    let scale = if peak > 1.0 { 1.0 / peak } else { 1.0 };
+    let data_len = (samples.len() * 2) as u32; // 2 bytes per sample
+
+    // header: what kind of file, then the format, then the samples
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes()); // size of everything after this
+    bytes.extend_from_slice(b"WAVE");
+
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes()); // size of this part
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // 1 = plain samples (PCM), no compression
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // channels
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // bytes per second
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // bytes per sample (all channels)
+    bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples
+    {
+        let value = (sample * scale).clamp(-1.0, 1.0) * i16::MAX as f32;
+        bytes.extend_from_slice(&(value as i16).to_le_bytes());
+    }
+
+    std::fs::write(path, bytes)
+}

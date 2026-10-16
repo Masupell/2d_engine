@@ -12,7 +12,9 @@ struct App
     shader_test: ShaderId,
     time: f32,
     scroll: f32,
-    notes: Option<Sender<f32>>
+    notes: Option<Sender<f32>>,
+    recorded: Vec<(f32, f32)>,
+    saved: usize
 }
 
 const CLIP_PANEL: u32 = 1;
@@ -97,6 +99,27 @@ impl EngineEvent for App
             let number = 48.0 + 12.0 * (step / SCALE.len()) as f32 + SCALE[step % SCALE.len()];
 
             if let Some(notes) = &self.notes { let _ = notes.send(note(number)); }
+            self.recorded.push((self.time, note(number))); // time not from audiothread, might differ b a bit, but not noticable, I think
+        }
+
+        if update_ctx.input.is_key_pressed(Key::ControlLeft) && !self.recorded.is_empty()
+        {
+            let first = self.recorded[0].0;
+            let mut song = SoundBuilder::new();
+            for &(time, frequency) in &self.recorded
+            {
+                let samples: Vec<f32> = Pluck::new(frequency, 1.5).map(|sample| sample * 0.5).collect();
+                song.add(time - first, &samples);
+            }
+
+            let path = format!("recording_{}.wav", self.saved);
+            match save_wav(&path, song.samples())
+            {
+                Ok(()) => println!("Saved {} notes, {:.1}s, to {path}", self.recorded.len(), song.duration()),
+                Err(e) => println!("Failed to save {path}: {e}")
+            }
+            self.saved += 1;
+            self.recorded.clear();
         }
     }
 
@@ -154,7 +177,9 @@ impl App
             shader_test: ShaderId::DEFAULT,
             time: 0.0,
             scroll: 0.0,
-            notes: None
+            notes: None,
+            recorded: Vec::new(),
+            saved: 0
         }
     }
 }
