@@ -219,6 +219,14 @@ impl Input
 
     pub(crate) fn update_screen(&mut self, size: (f64, f64), viewport: (f32, f32, f32, f32), view_size: (f32, f32))
     {
+        // Approximation, only works, when window was centered on screen
+        let (old_width, old_height) = self.window_size;
+        if old_width > 0.0 && old_height > 0.0
+        {
+            self.mouse_position.0 *= size.0 / old_width;
+            self.mouse_position.1 *= size.1 / old_height;
+        }
+
         self.window_size = size;
         self.viewport = (viewport.0 as f64, viewport.1 as f64, viewport.2 as f64, viewport.3 as f64);
         self.view_size = (view_size.0 as f64, view_size.1 as f64);
