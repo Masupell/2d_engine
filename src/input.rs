@@ -321,6 +321,14 @@ impl Input
         (x as f32, y as f32)
     }
 
+    pub fn virtual_to_normalized(&self, x: f64, y: f64) -> (f64, f64)
+    {
+        let (vx, vy, vw, vh) = self.viewport;
+        let px = (x + (self.view_size.0 - self.virtual_size.0) * 0.5) * (vw / self.view_size.0) + vx;
+        let py = (y + (self.view_size.1 - self.virtual_size.1) * 0.5) * (vh / self.view_size.1) + vy;
+        (px / self.window_size.0, py / self.window_size.1)
+    }
+
 
 
     pub fn scroll(&self) -> (f32, f32)
